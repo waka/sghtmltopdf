@@ -12,7 +12,39 @@ begin
   RUBY_VERSION =~ /(\d+\.\d+)/
   require "sghtmltopdf/#{Regexp.last_match(1)}/sghtmltopdf"
 rescue LoadError
-  require "sghtmltopdf/sghtmltopdf"
+  begin
+    require "sghtmltopdf/sghtmltopdf"
+  rescue LoadError
+    # どちらも無いのは、rubyプラットフォームのplaceholder gemが入っている状態
+    # (経緯はgemspecの`extensions`のコメント)。対応プラットフォームなら
+    # bundlerがprecompiled gemへ差し替えるので、通常ここへは来ない。
+    raise LoadError, <<~MESSAGE
+      sghtmltopdf could not load its native extension.
+
+      The installed gem is the pure-ruby placeholder variant, which carries no
+      renderer. It exists so that a Gemfile.lock with `PLATFORMS ruby` can
+      resolve sghtmltopdf; bundler normally replaces it at install time with the
+      precompiled gem for whichever platform you deploy to.
+
+      Precompiled gems are published for:
+        x86_64-linux, aarch64-linux, x86_64-linux-musl, aarch64-linux-musl,
+        arm64-darwin
+
+      This is #{RUBY_PLATFORM} on ruby #{RUBY_VERSION}.
+
+      If your platform is on that list, bundler chose the placeholder anyway.
+      That is usually `force_ruby_platform`:
+
+          bundle config unset force_ruby_platform
+          bundle install
+
+      If it is not on the list, sghtmltopdf cannot render in this process. Run
+      the renderer as a separate `sghtmltopdf server` (a container image is
+      published) and call it over HTTP from here.
+
+      https://waka.github.io/sghtmltopdf/en/usage/ruby_rails.html
+    MESSAGE
+  end
 end
 
 # `Error`(ネイティブ拡張が定義)を継承するため、拡張の読み込みより後に書く。

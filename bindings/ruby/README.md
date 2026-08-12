@@ -14,10 +14,14 @@ gem "sghtmltopdf"
 ```
 
 Precompiled native gems are published for `x86_64-linux`, `aarch64-linux`, `x86_64-linux-musl`, `aarch64-linux-musl`, and `arm64-darwin`.
-There is no build step on those platforms.
+There is no build step on those platforms, and no Rust toolchain is required.
 
-Elsewhere (Intel Mac, Windows) the gem cannot run in-process — the source gem does not carry the Rust core and will refuse to build with an explanatory message.
-Point those environments at a separate `sghtmltopdf server` process instead; see [Delegating to a server](#delegating-to-a-server).
+A `Gemfile.lock` that lists only the `ruby` platform is all you need.
+Bundler resolves that entry to the precompiled gem for whichever platform it is installing on, so `bundle lock --add-platform` is not necessary and the lockfile stays byte-identical whether you install on an Apple Silicon laptop or deploy to `x86_64-linux` or Alpine.
+
+Elsewhere (Intel Mac, Windows) there is no precompiled gem, and bundler falls back to the `ruby` platform gem.
+That gem is a placeholder: it installs without building anything — so `bundle install` succeeds rather than dying on a compile — but it carries no renderer and raises a `LoadError` explaining the situation when required.
+To render from such an environment, run the renderer as a separate `sghtmltopdf server` process (the [Docker image](https://waka.github.io/sghtmltopdf/en/getting-started/docker.html) does this) and call it over HTTP with any HTTP client; this gem itself cannot be loaded there.
 
 Requires Ruby >= 3.2.
 
@@ -96,7 +100,7 @@ end
 
 ## Delegating to a server
 
-If the gem cannot run where your app runs, or you would rather not spend the app's CPU on rendering, set `server_url` and the same calls are delegated over HTTP to a separate `sghtmltopdf server` process.
+If you would rather not spend the app's CPU on rendering, or you want one renderer shared by several apps, set `server_url` and the same calls are delegated over HTTP to a separate `sghtmltopdf server` process.
 
 ```ruby
 Sghtmltopdf.configure { |c| c.server_url = "http://pdf:8080" }

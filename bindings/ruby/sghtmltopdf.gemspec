@@ -27,13 +27,30 @@ Gem::Specification.new do |spec|
 
   # `gem build`はgemspecのあるディレクトリ配下しか集められないため、
   # LICENSEはリポジトリルートからコピーしたものを置いてある。
+  #
+  # ext/やCargo.*は入れない。rubyプラットフォームのgemはビルドしないので使わず、
+  # precompiled gemからはrb_sysがどうせ剥がすため(後述)。
   spec.files = Dir[
     "lib/**/*.rb",
-    "ext/**/*.{rb,rs,toml}",
-    "Cargo.{toml,lock}",
     "LICENSE*",
     "README*"
   ]
   spec.require_paths = ["lib"]
-  spec.extensions = ["ext/sghtmltopdf/extconf.rb"]
+
+  # `extensions`は意図的に宣言しない。
+  #
+  # このgemは対応プラットフォーム向けのprecompiled gemとして配布していて、
+  # rubyプラットフォームのgemは「ビルドを試みないplaceholder」にしてある。
+  # 狙いは`PLATFORMS`が`ruby`だけのGemfile.lockをそのまま使えるようにすること:
+  # bundlerはlockfileの`ruby`をインストール時にローカルのプラットフォームへ
+  # 解決し直すので、利用側は`bundle lock --add-platform`をしなくても
+  # デプロイ先ごとに適切なprecompiled gemが入る(lockfileも書き換わらない)。
+  #
+  # ここで`extensions`を宣言してしまうと、precompiled gemが無い環境
+  # (Intel Mac・Windowsなど)へフォールバックしたときにビルドが走る。
+  # ソースgemにRustコアを同梱していないので成功し得ず、`bundle install`ごと
+  # 落ちてしまう。読み込み時の案内は`lib/sghtmltopdf.rb`が出す。
+  #
+  # precompiled gemのビルドには影響しない。rake-compilerは`extensions`ではなく
+  # ext/のCargo.tomlを見てコンパイルし、native gemでは`extensions`を空にする。
 end

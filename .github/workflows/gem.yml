@@ -60,6 +60,120 @@ jobs:
           path: bindings/ruby/pkg/*-${{ matrix.platform }}.gem
           if-no-files-found: error
 
+  # rubyプラットフォームのgem(ビルドを試みないplaceholder)
+  # publishもこのジョブの成果物を使うので、出荷するものがそのまま検証される。
+  source-gem:
+    name: build ruby (placeholder)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+          cargo-cache: "false"
+          working-directory: bindings/ruby
+      - name: ソースgemをbuildする
+        working-directory: bindings/ruby
+        run: bundle exec rake build
+      - name: placeholderの条件を満たしているか確かめる
+        run: |
+          ruby -rrubygems/package -e '
+            spec = Gem::Package.new(ARGV[0]).spec
+            abort "platformがrubyではない: #{spec.platform}" unless spec.platform.to_s == "ruby"
+            # ここが空でないと、precompiled gemが無い環境でビルドが走って
+            # `bundle install`ごと落ちる(gemspecのコメント参照)。
+            abort "extensionsが空でない: #{spec.extensions.inspect}" unless spec.extensions.empty?
+            bad = spec.files.grep(/\.rs\z|Cargo\.(toml|lock)\z|extconf\.rb\z/)
+            abort "Rustのソースが混ざっている: #{bad.inspect}" unless bad.empty?
+            abort "libが入っていない" unless spec.files.include?("lib/sghtmltopdf.rb")
+            puts "ok: #{File.basename(ARGV[0])} / platform=#{spec.platform} / extensions=#{spec.extensions.inspect}"
+          ' bindings/ruby/pkg/sghtmltopdf-*.gem
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gem-ruby
+          path: bindings/ruby/pkg/sghtmltopdf-*.gem
+          if-no-files-found: error
+
+  # 利用側から見た振る舞いの確認
+  #
+  # 1. placeholder単体では、案内付きのLoadErrorで落ちる(黙って動かないのは避ける)
+  # 2. `PLATFORMS`が`ruby`だけのGemfile.lockでも、ローカルのプラットフォーム向けの
+  #    precompiled gemが入り、lockfileは書き換わらない
+  smoke-ruby-platform:
+    name: rubyプラットフォームのgemの扱い
+    needs: [source-gem, cross-gem]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem-ruby
+          path: pkg
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+      - name: placeholderだけならビルドせずに入り、requireで案内が出る
+        run: |
+          set -eux
+          # リポジトリのlibを見せないため、別のGEM_HOMEへ入れて別の場所で動かす
+          export GEM_HOME="$RUNNER_TEMP/placeholder-home"
+          export GEM_PATH="$GEM_HOME"
+          gem install --no-document --ignore-dependencies pkg/sghtmltopdf-*.gem
+          cd "$RUNNER_TEMP"
+          if ruby -e 'require "sghtmltopdf"' 2>err.txt; then
+            echo "::error::placeholderがrequireできてしまった(ネイティブ拡張が混ざっている)"
+            exit 1
+          fi
+          cat err.txt
+          grep -q "could not load its native extension" err.txt
+          grep -q "pure-ruby placeholder" err.txt
+      # placeholderとx86_64-linuxの両方をvendor/cacheへ置き、bundlerに選ばせる
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem-x86_64-linux
+          path: pkg
+      - name: PLATFORMSがrubyだけのGemfile.lockでもnative gemが入る
+        run: |
+          set -eux
+          version=$(ruby -e 'require "./bindings/ruby/lib/sghtmltopdf/version"; print Sghtmltopdf::VERSION')
+          app="$RUNNER_TEMP/app"
+          mkdir -p "$app/vendor/cache"
+          cp pkg/*.gem "$app/vendor/cache/"
+          cd "$app"
+          cat > Gemfile <<EOF
+          source "https://rubygems.org"
+          gem "sghtmltopdf", "$version"
+          EOF
+          cat > Gemfile.lock <<EOF
+          GEM
+            remote: https://rubygems.org/
+            specs:
+              sghtmltopdf ($version)
+
+          PLATFORMS
+            ruby
+
+          DEPENDENCIES
+            sghtmltopdf (= $version)
+          EOF
+          # --localなのでrubygems.orgへは出ない。vendor/cacheの中から選ばせる。
+          BUNDLE_PATH=vendor/bundle bundle install --local
+          # 入ったのがplaceholderではなくx86_64-linux向けであること
+          # (`bundle list`はplatformを出さないので、読み込まれたspecを見る)
+          platform=$(BUNDLE_PATH=vendor/bundle bundle exec ruby \
+            -e 'require "sghtmltopdf"; print Gem.loaded_specs["sghtmltopdf"].platform')
+          echo "installed platform: $platform"
+          case "$platform" in
+            x86_64-linux*) ;;
+            *) echo "::error::placeholderか想定外のplatformが入った: $platform"; exit 1 ;;
+          esac
+          # lockfileは書き換わっていないこと(利用側はplatformを足さなくてよい)
+          test "$(grep -c 'x86_64-linux' Gemfile.lock)" = "0"
+          grep -qx "  ruby" Gemfile.lock
+          # 実際に変換できること
+          BUNDLE_PATH=vendor/bundle bundle exec ruby "$GITHUB_WORKSPACE/bindings/ruby/script/smoke.rb"
+
   # x86_64-linux: ランナー上でそのままインストール
   smoke-linux:
     needs: cross-gem
@@ -177,6 +291,8 @@ jobs:
   publish:
     needs:
       - cross-gem
+      - source-gem
+      - smoke-ruby-platform
       - smoke-linux
       - smoke-linux-arm64
       - smoke-linux-musl
@@ -200,7 +316,9 @@ jobs:
           bundler-cache: true
           cargo-cache: "false"
           working-directory: bindings/ruby
-      # クロスビルドした5プラットフォーム分を`pkg/`へ集める
+      # クロスビルドした5プラットフォーム分と、rubyプラットフォームの
+      # placeholder(`gem-ruby`)を`pkg/`へ集める。
+      # ここでbuildし直さないので、smokeを通した成果物がそのままpublishされる。
       - uses: actions/download-artifact@v4
         with:
           pattern: gem-*
@@ -215,10 +333,6 @@ jobs:
             echo "::error::タグ($tag)とSghtmltopdf::VERSION($version)が一致しません" >&2
             exit 1
           fi
-      # プラットフォームが合わない環境向けのフォールバック
-      - name: ソースgemも作る
-        working-directory: bindings/ruby
-        run: bundle exec rake build
       - name: publishするgemの一覧
         run: |
           {

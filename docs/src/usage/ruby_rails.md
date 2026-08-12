@@ -24,8 +24,13 @@ gem "sghtmltopdf"
 | Ruby | 3.2以上 |
 
 Linuxはglibc(Debian/Ubuntu系)とmusl(Alpine)の両方があり、`gem install`が環境に合うほうを選びます。
-Windows・Intel Macは対象外で、これらの環境ではインストールできません。
-[サーバへ委譲する](#サーバへ委譲する)という手があります。
+
+Gemfile.lockの`PLATFORMS`は`ruby`だけでかまいません。
+bundlerはその行をインストール先のプラットフォーム向けのprecompiled gemへ解決するため、`bundle lock --add-platform`は要らず、手元のMacでもデプロイ先のLinuxでもlockfileは変わりません。
+
+Windows・Intel Mac向けのprecompiled gemはありません。
+これらの環境ではrubyプラットフォームのgem(ビルドを試みないplaceholder)が入るので`bundle install`は通りますが、レンダラを含まないため読み込むと案内付きの`LoadError`になります。
+変換するには`sghtmltopdf server`を別に動かしてHTTPで呼んでください(このgem自体を読み込めないので、`server_url`ではなく任意のHTTPクライアントを使います)。
 
 ## 基本
 

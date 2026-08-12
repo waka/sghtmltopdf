@@ -54,7 +54,10 @@ gem "sghtmltopdf"
 ```
 
 ビルド済み(precompiled)のgemを配布する方針のため、利用側にRustのツールチェインは要りません。
-対応は`x86_64-linux`・`aarch64-linux`・`arm64-darwin`(glibc)と、Ruby 3.2以上です。
+対応は`x86_64-linux`・`aarch64-linux`・`x86_64-linux-musl`・`aarch64-linux-musl`・`arm64-darwin`と、Ruby 3.2以上です。
+
+Gemfile.lockの`PLATFORMS`は`ruby`だけでかまいません。
+bundlerがインストール先のプラットフォーム向けのprecompiled gemへ解決するため、`bundle lock --add-platform`は要りません。
 
 外部プロセスは起動せず、ネイティブ拡張(magnus + rb-sys)として同じプロセスの中で変換します。
 重い処理の間はGVLを解放するので、Pumaの他のスレッドは止まりません。
