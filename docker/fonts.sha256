@@ -1,5 +1,5 @@
-# Dockerイメージへ同梱する日本語フォントのチェックサム(0061 決定4改訂)。
-# google/fonts の GOOGLE_FONTS_COMMIT に固定したファイルを検証する。
+# Checksums for the Japanese fonts bundled into the Docker image (decision 0061, revision 4).
+# Verifies the files pinned to GOOGLE_FONTS_COMMIT in google/fonts.
 258d7156c165f2ff774b6efee637c22c3b950de0d8a10e501137061bc8085d01  BIZUDPGothic-Regular.ttf
 30eba52fc837e8b62c97d4b82e6706583149fb7294e3712dd71a655eaea80a90  BIZUDPGothic-Bold.ttf
 dbcea04578ac1e9d3484525e870ce491bd04361768f4d2ba4b827d96e20f891d  BIZUDPMincho-Regular.ttf

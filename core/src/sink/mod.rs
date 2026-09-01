@@ -1,8 +1,8 @@
-//! PDFバイト列の書き出し先を抽象化するSink trait。
+//! The Sink trait, an abstraction over where the PDF bytes are written.
 //!
-//! エンジンは「バイト列をどこかに書き出す」ことだけを知っていればよく、
-//! 書き出し先が何であるか(メモリ/ファイル/将来的なRackレスポンスや
-//! マルチパートアップロード等)は一切気にしない設計にする。
+//! The engine only needs to know that it is "writing bytes somewhere"; what the
+//! destination actually is (memory, a file, or one day a Rack response or a
+//! multipart upload) is deliberately none of its business.
 
 use std::fs::File;
 use std::io::{self, Write};
@@ -16,7 +16,7 @@ pub trait Sink {
     fn finish(self) -> Result<Self::Output, Self::Error>;
 }
 
-/// テスト・同期返却モード向けのメモリバッファSink。
+/// In-memory buffer Sink, for tests and the synchronous-return mode.
 #[derive(Debug, Default)]
 pub struct MemorySink {
     buf: Vec<u8>,
@@ -42,15 +42,15 @@ impl Sink for MemorySink {
     }
 }
 
-/// ファイルへ書き出すSink(CLI向け)。
+/// Sink that writes to a file (for the CLI).
 ///
-/// 一時ファイル(`<出力先>.tmp-<pid>`)へ書き、[`Sink::finish`]が成功した
-/// ときだけ最終的な出力先へ`rename`する。レンダリング途中で失敗しても
-/// 壊れたPDFが出力先に残らないようにするため。`finish`されないまま破棄された
-/// 場合は`Drop`で一時ファイルを消す。
+/// It writes to a temporary file (`<output>.tmp-<pid>`) and only renames it onto the
+/// final output when [`Sink::finish`] succeeds, so a failure part-way through rendering
+/// never leaves a broken PDF at the output path. If it is dropped without `finish`,
+/// `Drop` removes the temporary file.
 pub struct FileSink {
-    /// `finish`で`take`する。`None`は「既に`finish`済み」を意味し、
-    /// `Drop`での一時ファイル削除の要否判定を兼ねる。
+    /// `take`n by `finish`. `None` means "already finished", which doubles as the check
+    /// for whether `Drop` still has a temporary file to remove.
     file: Option<File>,
     temp_path: PathBuf,
     final_path: PathBuf,
@@ -83,19 +83,19 @@ impl Sink for FileSink {
         match self.file.as_mut() {
             Some(file) => file.write_all(bytes),
             None => Err(io::Error::other(
-                "finish済みのFileSinkへ書き込もうとしました",
+                "tried to write to a FileSink that was already finished",
             )),
         }
     }
 
     fn finish(mut self) -> Result<Self::Output, Self::Error> {
         let Some(mut file) = self.file.take() else {
-            return Err(io::Error::other("FileSink::finishが二重に呼ばれました"));
+            return Err(io::Error::other("FileSink::finish was called twice"));
         };
         file.flush()?;
         drop(file);
         if let Err(e) = std::fs::rename(&self.temp_path, &self.final_path) {
-            // renameに失敗した場合は一時ファイルを残さない。
+            // If the rename fails, do not leave the temporary file behind.
             let _ = std::fs::remove_file(&self.temp_path);
             return Err(e);
         }
@@ -105,17 +105,17 @@ impl Sink for FileSink {
 
 impl Drop for FileSink {
     fn drop(&mut self) {
-        // `finish`まで到達しなかった(=エラーで中断した)場合のみ後始末する。
+        // Only clean up if `finish` was never reached (i.e. we aborted with an error).
         if self.file.take().is_some() {
             let _ = std::fs::remove_file(&self.temp_path);
         }
     }
 }
 
-/// 標準出力へ書き出すSink(`-o -`向け)。
+/// Sink that writes to standard output (for `-o -`).
 ///
-/// 既に書き出したバイトは取り消せないため、途中で失敗した場合は
-/// 呼び出し側がstderrとexit codeで失敗を伝える。
+/// Bytes already written cannot be taken back, so on a mid-way failure the caller
+/// reports it through stderr and the exit code.
 #[derive(Debug)]
 pub struct StdoutSink {
     out: io::Stdout,
@@ -146,25 +146,25 @@ impl Sink for StdoutSink {
     }
 }
 
-/// マルチパートアップロードの最小パートサイズ(最後のパートを除く)。
+/// Minimum part size for a multipart upload (all but the last part).
 pub const MULTIPART_MIN_PART_SIZE: usize = 5 * 1024 * 1024;
 
-/// `threshold`バイト溜まるごとに`on_part`を呼ぶSink。
+/// A Sink that calls `on_part` every time `threshold` bytes have accumulated.
 ///
-/// 「5MB溜めてマルチパートPUTするバッファ付きSink」
-/// ([`MULTIPART_MIN_PART_SIZE`]を`threshold`に使う想定)向けの汎用実装。
-/// マルチパートアップロードは最後のパート以外に最小サイズ制約があるため、
-/// flush boundary由来の小さいPDFチャンクをそのまま都度PUTするのではなく、
-/// 閾値まで溜めてからパートとしてまとめて渡す必要がある。
+/// A generic implementation for something like "a buffering Sink that PUTs a multipart
+/// chunk every 5MB" (the intended `threshold` being [`MULTIPART_MIN_PART_SIZE`]).
+/// Multipart uploads impose a minimum size on every part but the last, so rather than
+/// PUTting each small PDF chunk that a flush boundary produces, we accumulate up to the
+/// threshold and hand that over as one part.
 ///
-/// コアはRuby/AWS SDKに一切依存しない設計方針のため、実際のアップロード処理
-/// (HTTP PUT等)自体は行わない。`on_part`コールバックへ1パート分のバイト列を
-/// 渡すところまでがこの型の責務で、ストレージサービスへの実際のPUT呼び出しは
-/// FFI層(Ruby bindings)が`on_part`の中で行う想定。
+/// The core deliberately depends on neither Ruby nor the AWS SDK, so no actual upload
+/// (HTTP PUT or otherwise) happens here. This type's responsibility ends at handing one
+/// part's bytes to the `on_part` callback; the real PUT against the storage service is
+/// expected to happen inside `on_part`, in the FFI layer (the Ruby bindings).
 ///
-/// 最後のパート(`finish`が呼ばれた時点でバッファに残っている端数)は
-/// `threshold`未満でもそのまま`on_part`に渡す(最後のパートは最小サイズ未満が許される)。
-/// バッファがちょうど0バイトで`finish`を迎えた場合は、空のパートを送らない。
+/// The last part (whatever remains in the buffer when `finish` is called) is passed to
+/// `on_part` even if it is under `threshold` (the last part is allowed to be smaller).
+/// If the buffer happens to be empty at `finish`, no empty part is sent.
 pub struct BufferedSink<T, E, F: FnMut(Vec<u8>) -> Result<T, E>> {
     buf: Vec<u8>,
     threshold: usize,
@@ -173,9 +173,9 @@ pub struct BufferedSink<T, E, F: FnMut(Vec<u8>) -> Result<T, E>> {
 }
 
 impl<T, E, F: FnMut(Vec<u8>) -> Result<T, E>> BufferedSink<T, E, F> {
-    /// `threshold`バイト溜まるごとに`on_part`を呼ぶ`BufferedSink`を作る。
-    /// `threshold`が0の場合、`write`のたびに毎回1バイト単位で`on_part`が
-    /// 呼ばれることになり非効率なため、呼び出し側で正の値を渡すこと。
+    /// Create a `BufferedSink` that calls `on_part` every `threshold` bytes.
+    /// A `threshold` of 0 would call `on_part` for every single byte on every `write`,
+    /// which is wasteful, so callers must pass a positive value.
     pub fn new(threshold: usize, on_part: F) -> Self {
         Self {
             buf: Vec::new(),
@@ -187,7 +187,7 @@ impl<T, E, F: FnMut(Vec<u8>) -> Result<T, E>> BufferedSink<T, E, F> {
 }
 
 impl<T, E, F: FnMut(Vec<u8>) -> Result<T, E>> Sink for BufferedSink<T, E, F> {
-    /// 各パートを`on_part`に渡した際の戻り値(例: ETag)の一覧。
+    /// The values returned by each `on_part` call (an ETag, say), in order.
     type Output = Vec<T>;
     type Error = E;
 
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn buffered_sink_output_collects_each_parts_return_value() {
-        // `on_part`の戻り値(例: ETag)がOutputとして順番に集約されること。
+        // The values `on_part` returns (an ETag, say) are collected into Output in order.
         let mut next_etag = 0u32;
         let mut sink: BufferedSink<u32, io::Error, _> = BufferedSink::new(4, |_part| {
             next_etag += 1;

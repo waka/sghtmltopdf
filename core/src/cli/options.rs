@@ -1,4 +1,4 @@
-//! CLIオプションの定義。
+//! Definitions of the CLI options.
 
 use std::path::PathBuf;
 
@@ -14,15 +14,15 @@ use super::header_footer::{MarginBoxText, SimpleHeaderFooter};
 use super::toc::TocOptions;
 use super::units::parse_length_px;
 
-/// 入力・出力に`-`を指定したときの意味(stdin/stdout)。
+/// What `-` means for the input and the output (stdin/stdout).
 pub const STD_STREAM: &str = "-";
 
 #[derive(Debug, Parser)]
 #[command(
     name = "sghtmltopdf",
     version,
-    about = "Chromium/WebKit/Geckoに依存しないHTML→PDFレンダラー",
-    // 変換をサブコマンドにせず、位置引数のまま扱う。
+    about = "An HTML-to-PDF renderer that does not depend on Chromium, WebKit or Gecko",
+    // Conversion is not a subcommand; it stays a positional argument.
     args_conflicts_with_subcommands = true,
     subcommand_negates_reqs = true
 )]
@@ -38,71 +38,71 @@ pub struct Cli {
 #[cfg(feature = "server")]
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// HTTPサーバとして待ち受け、POST /pdf でHTMLをPDFへ変換する
+    /// Listen as an HTTP server and convert HTML to PDF via POST /pdf
     Server(ServerArgs),
 }
 
 #[cfg(feature = "server")]
 #[derive(Debug, Clone, Args)]
 pub struct ServerArgs {
-    /// 待ち受けアドレス(既定はループバック。外部公開はリバースプロキシ経由で)
+    /// Address to listen on (loopback by default; expose it through a reverse proxy)
     #[arg(long, default_value = "127.0.0.1:8080")]
     pub listen: String,
 
-    /// 同時に変換するワーカースレッド数(既定=CPUコア数)
+    /// Number of worker threads converting concurrently (default: CPU core count)
     #[arg(long, value_name = "N")]
     pub workers: Option<usize>,
 
-    /// 受理待ちキューの上限(既定=ワーカー数×4)。超えると503を返す
+    /// Maximum number of queued requests (default: workers x 4). Returns 503 beyond that
     #[arg(long, value_name = "N")]
     pub max_queue: Option<usize>,
 
-    /// リクエストボディの上限バイト数
+    /// Maximum request body size in bytes
     ///
-    /// テキスト量に比例するメモリは`MAX_NODES`では抑えられないため、ここが
-    /// その担当になる。実測では入力1MiBあたり約185MiBを使う(CJKテキストを
-    /// 敷き詰めた最悪ケース)ので、4MiBで約750MiBが上限の目安。
-    /// ワーカー数を掛けた値がプロセス全体の必要メモリになる。
+    /// Memory proportional to the amount of text is not bounded by `MAX_NODES`, so this
+    /// is what bounds it. Measurements show about 185MiB per 1MiB of input (worst case,
+    /// packed with CJK text), so 4MiB works out to roughly 750MiB. Multiply by the worker
+    /// count for the memory the whole process needs.
     #[arg(long, value_name = "BYTES", default_value_t = 4 * 1024 * 1024)]
     pub max_body_size: usize,
 
-    /// キュー待ちの上限秒数(超えると504)
+    /// Maximum seconds a request may wait in the queue (504 beyond that)
     #[arg(long, value_name = "SECS", default_value_t = 30)]
     pub timeout: u64,
 
-    /// 使用するフォントファイル(複数指定可。リクエストからは変更できない)。
-    /// 省略時はシステムフォントを使うが、出力を安定させるため明示を推奨する
+    /// Font files to use (repeatable; cannot be changed per request).
+    /// System fonts are used if omitted, but naming them is recommended for stable output
     #[arg(long, value_name = "PATH")]
     pub font: Vec<PathBuf>,
 
-    /// `font-family: sans-serif`の実体
+    /// The font behind `font-family: sans-serif`
     #[arg(long, value_name = "PATH")]
     pub gothic_font: Option<PathBuf>,
 
-    /// `font-family: serif`の実体
+    /// The font behind `font-family: serif`
     #[arg(long, value_name = "PATH")]
     pub serif_font: Option<PathBuf>,
 
-    /// `font-family: monospace`の実体
+    /// The font behind `font-family: monospace`
     #[arg(long, value_name = "PATH")]
     pub mono_font: Option<PathBuf>,
 
-    /// ローカルファイルの参照を許可する(サーバモードの既定は禁止)
+    /// Allow references to local files (forbidden by default in server mode)
     #[arg(long, action = ArgAction::SetTrue)]
     pub enable_local_file_access: bool,
 
-    /// ローカル参照を許可するディレクトリ(複数指定可)
+    /// Directories local references may read from (repeatable)
     #[arg(long, value_name = "PATH")]
     pub allow: Vec<PathBuf>,
 
-    /// http(s)のリモート取得を許可する(既定は禁止)
+    /// Allow remote http(s) fetches (forbidden by default)
     #[arg(long, action = ArgAction::SetTrue)]
     pub allow_remote_assets: bool,
 }
 
 #[cfg(feature = "server")]
 impl ServerArgs {
-    /// サーバ起動時に固定するフォント指定。
+    /// Font settings fixed when the server starts.
     pub fn font_specs(&self) -> Vec<FontArg> {
         self.font
             .iter()
@@ -113,7 +113,7 @@ impl ServerArgs {
             .collect()
     }
 
-    /// 汎用family名へ割り当てるフォント。
+    /// Fonts assigned to the generic family names.
     pub fn generic_font_args(&self) -> Vec<(GenericFamily, FontArg)> {
         [
             (GenericFamily::SansSerif, self.gothic_font.as_ref()),
@@ -136,298 +136,298 @@ impl ServerArgs {
     }
 }
 
-/// HTML→PDF変換のオプション。
+/// Options for HTML-to-PDF conversion.
 #[derive(Debug, Args)]
 pub struct ConvertArgs {
-    /// 入力HTMLファイル(`-`で標準入力)
+    /// Input HTML file (`-` for standard input)
     #[arg(value_name = "INPUT.HTML", required = true)]
     pub input: Option<String>,
 
-    /// 出力先PDF(既定は入力の拡張子を.pdfにしたもの。`-`で標準出力)
+    /// Output PDF (defaults to the input path with a .pdf extension; `-` for standard output)
     #[arg(short, long, value_name = "OUTPUT.PDF")]
     pub output: Option<String>,
 
-    /// 用紙サイズ
+    /// Paper size
     #[arg(short = 's', long, value_enum, ignore_case = true, value_name = "SIZE")]
     pub page_size: Option<PageSizeName>,
 
-    /// 用紙の幅(--page-sizeより優先。単位はmm/cm/in/pt/px、省略時はmm)
+    /// Paper width (wins over --page-size; units mm/cm/in/pt/px, mm if omitted)
     #[arg(long, value_name = "LENGTH")]
     pub page_width: Option<String>,
 
-    /// 用紙の高さ(--page-sizeより優先)
+    /// Paper height (wins over --page-size)
     #[arg(long, value_name = "LENGTH")]
     pub page_height: Option<String>,
 
-    /// 用紙の向き(Landscapeは最終的な幅と高さを入れ替える)
+    /// Paper orientation (Landscape swaps the final width and height)
     #[arg(short = 'O', long, value_enum, ignore_case = true)]
     pub orientation: Option<Orientation>,
 
-    /// 上マージン(既定1in)
+    /// Top margin (default 1in)
     #[arg(short = 'T', long, value_name = "LENGTH")]
     pub margin_top: Option<String>,
 
-    /// 下マージン(既定1in)
+    /// Bottom margin (default 1in)
     #[arg(short = 'B', long, value_name = "LENGTH")]
     pub margin_bottom: Option<String>,
 
-    /// 左マージン(既定1in)
+    /// Left margin (default 1in)
     #[arg(short = 'L', long, value_name = "LENGTH")]
     pub margin_left: Option<String>,
 
-    /// 右マージン(既定1in)
+    /// Right margin (default 1in)
     #[arg(short = 'R', long, value_name = "LENGTH")]
     pub margin_right: Option<String>,
 
-    /// 使用するフォントファイル(複数指定可。省略時はシステムフォントを使う)
+    /// Font files to use (repeatable; system fonts are used if omitted)
     #[arg(long, value_name = "PATH")]
     pub font: Vec<PathBuf>,
 
-    /// 直前の--fontに対する、TrueType Collection内のフェイス番号
+    /// Face index within a TrueType Collection, for the preceding --font
     #[arg(long, value_name = "N")]
     pub font_index: Vec<u32>,
 
-    /// `font-family: sans-serif`の実体として使うフォント
+    /// Font to use as `font-family: sans-serif`
     #[arg(long, value_name = "PATH")]
     pub gothic_font: Option<PathBuf>,
 
-    /// --gothic-fontのフェイス番号
+    /// Face index for --gothic-font
     #[arg(long, value_name = "N", requires = "gothic_font")]
     pub gothic_font_index: Option<u32>,
 
-    /// `font-family: serif`の実体として使うフォント
+    /// Font to use as `font-family: serif`
     #[arg(long, value_name = "PATH")]
     pub serif_font: Option<PathBuf>,
 
-    /// --serif-fontのフェイス番号
+    /// Face index for --serif-font
     #[arg(long, value_name = "N", requires = "serif_font")]
     pub serif_font_index: Option<u32>,
 
-    /// `font-family: monospace`の実体として使うフォント
+    /// Font to use as `font-family: monospace`
     #[arg(long, value_name = "PATH")]
     pub mono_font: Option<PathBuf>,
 
-    /// --mono-fontのフェイス番号
+    /// Face index for --mono-font
     #[arg(long, value_name = "N", requires = "mono_font")]
     pub mono_font_index: Option<u32>,
 
-    /// PDFのタイトル(未指定ならHTMLの<title>を使う)
+    /// PDF title (the HTML <title> is used if unset)
     #[arg(long, value_name = "TEXT")]
     pub title: Option<String>,
 
-    /// PDFの著者(Info辞書の/Author)
+    /// PDF author (/Author in the Info dictionary)
     #[arg(long, value_name = "TEXT")]
     pub author: Option<String>,
 
-    /// PDFの主題(Info辞書の/Subject)
+    /// PDF subject (/Subject in the Info dictionary)
     #[arg(long, value_name = "TEXT")]
     pub subject: Option<String>,
 
-    /// PDFのキーワード(Info辞書の/Keywords)
+    /// PDF keywords (/Keywords in the Info dictionary)
     #[arg(long, value_name = "TEXT")]
     pub keywords: Option<String>,
 
-    /// CSS pxを何dpiとして解釈するか(既定96。72にすると1px=1pt)
+    /// What dpi a CSS px is read as (default 96; 72 makes 1px = 1pt)
     #[arg(short = 'd', long, value_name = "DPI", default_value_t = 96.0)]
     pub dpi: f32,
 
-    /// 拡大率(既定1.0)
+    /// Scale factor (default 1.0)
     #[arg(long, value_name = "FACTOR", default_value_t = 1.0)]
     pub zoom: f32,
 
-    /// 塗り・線の色をグレースケールにする
+    /// Convert fill and stroke colours to grayscale
     #[arg(short = 'g', long, action = ArgAction::SetTrue)]
     pub grayscale: bool,
 
-    /// PDFオブジェクトのFlate圧縮を行わない(画像データは対象外)
+    /// Do not Flate-compress PDF objects (image data is unaffected)
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_pdf_compression: bool,
 
-    /// 相対参照の解決基準(ディレクトリかhttp(s)のURL。標準入力から読む場合に使う)
+    /// Base for resolving relative references (a directory or an http(s) URL; used when reading from standard input)
     #[arg(long, value_name = "URL|DIR")]
     pub base_url: Option<String>,
 
-    /// 画像(<img>とbackground-image)を読み込まない
+    /// Do not load images (<img> and background-image)
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_images: bool,
 
-    /// 要素の背景(色・画像)を描かない
+    /// Do not paint element backgrounds (colours and images)
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_background: bool,
 
-    /// ユーザーオリジンのCSSファイル(複数指定可)
+    /// User-origin CSS files (repeatable)
     #[arg(long, value_name = "PATH")]
     pub user_style_sheet: Vec<PathBuf>,
 
-    /// 算出font-sizeの下限(px)
+    /// Lower bound on the computed font-size (px)
     #[arg(long, value_name = "PX")]
     pub minimum_font_size: Option<f32>,
 
-    /// 外部リンク(http(s))のPDF注釈を作らない
+    /// Do not create PDF annotations for external links (http(s))
     #[arg(long, action = ArgAction::SetTrue)]
     pub disable_external_links: bool,
 
-    /// 内部リンク(#id)のPDF注釈を作らない
+    /// Do not create PDF annotations for internal links (#id)
     #[arg(long, action = ArgAction::SetTrue)]
     pub disable_internal_links: bool,
 
-    /// 相対URLの外部リンクを絶対URLへ解決せずそのまま書く
+    /// Write relative external link URLs as-is instead of resolving them to absolute URLs
     #[arg(long, action = ArgAction::SetTrue)]
     pub keep_relative_links: bool,
 
-    /// ヘッダー左のテキスト([page]等のプレースホルダが使える)
+    /// Text for the left of the header (placeholders such as [page] may be used)
     #[arg(long, value_name = "TEXT")]
     pub header_left: Option<String>,
 
-    /// ヘッダー中央のテキスト
+    /// Text for the centre of the header
     #[arg(long, value_name = "TEXT")]
     pub header_center: Option<String>,
 
-    /// ヘッダー右のテキスト
+    /// Text for the right of the header
     #[arg(long, value_name = "TEXT")]
     pub header_right: Option<String>,
 
-    /// フッター左のテキスト
+    /// Text for the left of the footer
     #[arg(long, value_name = "TEXT")]
     pub footer_left: Option<String>,
 
-    /// フッター中央のテキスト
+    /// Text for the centre of the footer
     #[arg(long, value_name = "TEXT")]
     pub footer_center: Option<String>,
 
-    /// フッター右のテキスト
+    /// Text for the right of the footer
     #[arg(long, value_name = "TEXT")]
     pub footer_right: Option<String>,
 
-    /// ヘッダーのフォント名
+    /// Header font name
     #[arg(long, value_name = "NAME")]
     pub header_font_name: Option<String>,
 
-    /// ヘッダーのフォントサイズ(px)
+    /// Header font size (px)
     #[arg(long, value_name = "SIZE")]
     pub header_font_size: Option<f32>,
 
-    /// フッターのフォント名
+    /// Footer font name
     #[arg(long, value_name = "NAME")]
     pub footer_font_name: Option<String>,
 
-    /// フッターのフォントサイズ(px)
+    /// Footer font size (px)
     #[arg(long, value_name = "SIZE")]
     pub footer_font_size: Option<f32>,
 
-    /// ヘッダーの下に罫線を引く
+    /// Draw a rule below the header
     #[arg(long, action = ArgAction::SetTrue)]
     pub header_line: bool,
 
-    /// フッターの上に罫線を引く
+    /// Draw a rule above the footer
     #[arg(long, action = ArgAction::SetTrue)]
     pub footer_line: bool,
 
-    /// ヘッダーと本文の間隔(mm)。その分だけ上マージンが増える
+    /// Gap between the header and the body (mm). The top margin grows by that much
     #[arg(long, value_name = "MM")]
     pub header_spacing: Option<f32>,
 
-    /// フッターと本文の間隔(mm)
+    /// Gap between the footer and the body (mm)
     #[arg(long, value_name = "MM")]
     pub footer_spacing: Option<f32>,
 
-    /// タイトルとページ番号の既定ヘッダーを付ける
+    /// Add a default header with the title and the page number
     #[arg(long, action = ArgAction::SetTrue)]
     pub default_header: bool,
 
-    /// ヘッダー/フッター内の[name]を値へ置換する(name=value、複数指定可)
+    /// Replace [name] in the header/footer with a value (name=value, repeatable)
     #[arg(long, value_name = "NAME=VALUE")]
     pub replace: Vec<String>,
 
-    /// 表紙にするHTML(ページ番号に数えず、ヘッダー/フッターも出さない)
+    /// HTML to use as a cover page (not counted in page numbers, and no header/footer)
     #[arg(long, value_name = "PATH")]
     pub cover: Option<PathBuf>,
 
-    /// 目次を本文の前に挿入する
+    /// Insert a table of contents before the body
     #[arg(long, action = ArgAction::SetTrue)]
     pub toc: bool,
 
-    /// 目次の見出し文字列
+    /// Heading text for the table of contents
     #[arg(long, value_name = "TEXT", default_value = "Table of Contents")]
     pub toc_header_text: String,
 
-    /// 目次の階層1段ごとのインデント(CSSの長さ)
+    /// Indentation per nesting level in the table of contents (a CSS length)
     #[arg(long, value_name = "WIDTH", default_value = "1em")]
     pub toc_level_indentation: String,
 
-    /// 目次の階層1段ごとの文字サイズ比
+    /// Font-size ratio per nesting level in the table of contents
     #[arg(long, value_name = "REAL", default_value_t = 0.8)]
     pub toc_text_size_shrink: f32,
 
-    /// 目次の点線(破線の下線)を引かない
+    /// Do not draw the dotted (dashed underline) leaders in the table of contents
     #[arg(long, action = ArgAction::SetTrue)]
     pub disable_dotted_lines: bool,
 
-    /// 目次から見出しへのリンクを張らない
+    /// Do not link table-of-contents entries to their headings
     #[arg(long, action = ArgAction::SetTrue)]
     pub disable_toc_links: bool,
 
-    /// 見出しから目次へ戻るリンクを張る
+    /// Link headings back to the table of contents
     #[arg(long, action = ArgAction::SetTrue)]
     pub enable_toc_back_links: bool,
 
-    /// ページ番号の起点をずらす
+    /// Offset the page numbering start
     #[arg(long, value_name = "OFFSET", default_value_t = 0)]
     pub page_offset: usize,
 
-    /// 各ページ上部へ合成するHTML(プレースホルダ展開後にレンダリングする)
+    /// HTML composited onto the top of every page (rendered after placeholder expansion)
     #[arg(long, value_name = "PATH")]
     pub header_html: Option<PathBuf>,
 
-    /// 各ページ下部へ合成するHTML
+    /// HTML composited onto the bottom of every page
     #[arg(long, value_name = "PATH")]
     pub footer_html: Option<PathBuf>,
 
-    /// 入力の文字エンコーディング(未指定ならBOM/<meta charset>/UTF-8の順で判定)
+    /// Character encoding of the input (BOM, then <meta charset>, then UTF-8, if unset)
     #[arg(long, value_name = "NAME")]
     pub encoding: Option<String>,
 
-    /// 画像・CSS・フォントの取得に失敗したときの挙動
+    /// What to do when fetching an image, stylesheet or font fails
     #[arg(long, value_enum, default_value_t = LoadErrorHandling::Ignore, value_name = "MODE")]
     pub load_media_error_handling: LoadErrorHandling,
 
-    /// 入力そのものの読み込みに失敗したときの挙動(常にabort相当)
+    /// What to do when reading the input itself fails (always equivalent to abort)
     #[arg(long, value_enum, default_value_t = LoadErrorHandling::Abort, value_name = "MODE")]
     pub load_error_handling: LoadErrorHandling,
 
-    /// ローカルファイルの参照を禁止する(既定は許可)
+    /// Forbid references to local files (allowed by default)
     #[arg(long, action = ArgAction::SetTrue, conflicts_with = "enable_local_file_access")]
     pub disable_local_file_access: bool,
 
-    /// ローカルファイルの参照を許可する(既定。サーバモードで明示するためのもの)
+    /// Allow references to local files (the default; here so server mode can be explicit)
     #[arg(long, action = ArgAction::SetTrue)]
     pub enable_local_file_access: bool,
 
-    /// ローカル参照を許可するディレクトリ(複数指定可。指定するとその配下だけ読める)
+    /// Directories local references may read from (repeatable; only these subtrees become readable)
     #[arg(long, value_name = "PATH")]
     pub allow: Vec<PathBuf>,
 
-    /// ストリーミングモードで処理する(一部のオプション・CSSは使えず、その場合はエラーになる)
+    /// Process in streaming mode (some options and CSS are unavailable and raise an error)
     #[arg(long, action = ArgAction::SetTrue)]
     pub streaming: bool,
 
-    /// <img src>/<link rel=stylesheet href>/@font-faceのurl()のhttp(s)フェッチを許可する
+    /// Allow http(s) fetches for <img src>, <link rel=stylesheet href> and url() in @font-face
     #[arg(long, action = ArgAction::SetTrue)]
     pub allow_remote_assets: bool,
 
-    /// ログの詳細度
+    /// Log verbosity
     #[arg(long, value_enum, default_value_t = LogLevel::Info)]
     pub log_level: LogLevel,
 
-    /// --log-level noneと同じ
+    /// Same as --log-level none
     #[arg(short, long, action = ArgAction::SetTrue)]
     pub quiet: bool,
 
-    /// 変換を打ち切る時刻。CLIのオプションではなく、HTTPサーバモードが
-    /// `--timeout`から算出して差し込む(`#[arg(skip)]`)。
+    /// Time at which the conversion is abandoned. Not a CLI option: HTTP server mode
+    /// derives it from `--timeout` and injects it (`#[arg(skip)]`).
     ///
-    /// ここに置くのは、`render`/`render_to_memory`のシグネチャを変えずに
-    /// エンジンまで運ぶため。CLIとRuby拡張では`None`のまま。
+    /// It lives here so it reaches the engine without changing the signature of
+    /// `render`/`render_to_memory`. It stays `None` for the CLI and the Ruby extension.
     #[arg(skip)]
     pub deadline: Option<std::time::Instant>,
 }
@@ -440,8 +440,8 @@ pub enum LogLevel {
     Info,
 }
 
-/// `--page-size`で選べる用紙。CSSの`@page { size: ... }`が受け付ける
-/// キーワードと同じ集合にしてある。
+/// The papers `--page-size` accepts. The same set of keywords that CSS
+/// `@page { size: ... }` accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum PageSizeName {
     #[value(name = "A3")]
@@ -468,12 +468,12 @@ impl PageSizeName {
     }
 }
 
-/// 取得失敗時の挙動(wkhtmltopdf互換。`skip`は入力が1つなので持たない)。
+/// What to do when a fetch fails (wkhtmltopdf compatible; there is no `skip` because there is only one input).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum LoadErrorHandling {
-    /// 失敗を無視して続行する(既定)
+    /// Ignore the failure and carry on (default)
     Ignore,
-    /// 失敗したら中断する
+    /// Abort on failure
     Abort,
 }
 
@@ -485,7 +485,7 @@ pub enum Orientation {
     Landscape,
 }
 
-/// フォントファイルとフェイス番号の組。
+/// A font file paired with a face index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FontArg {
     pub path: PathBuf,
@@ -493,19 +493,18 @@ pub struct FontArg {
 }
 
 impl ConvertArgs {
-    /// 実効的なログ出力可否(`--quiet`は`--log-level none`と同義)。
+    /// Whether logging is effectively on (`--quiet` means `--log-level none`).
     pub fn is_quiet(&self) -> bool {
         self.quiet || self.log_level == LogLevel::None
     }
 
-    /// ページサイズ・マージンのCLI指定を[`PageSettings`]へまとめる。
+    /// Collect the page size and margin options into [`PageSettings`].
     ///
-    /// ここで返すのは初期値であり、CSSに`@page`の宣言があれば
-    /// プロパティ単位でそちらが優先される(合成は
-    /// `engine::apply_page_rule_settings_override`が行う)。
+    /// What is returned here is the initial value: a `@page` declaration in the CSS wins
+    /// per property (`engine::apply_page_rule_settings_override` does the merging).
     ///
-    /// `--page-width`/`--page-height`は`--page-size`より優先し、
-    /// `--orientation Landscape`は最後に幅と高さを入れ替える。
+    /// `--page-width`/`--page-height` win over `--page-size`, and
+    /// `--orientation Landscape` swaps width and height last.
     pub fn page_settings(&self) -> Result<PageSettings, String> {
         let defaults = PageSettings::default();
 
@@ -523,7 +522,7 @@ impl ConvertArgs {
             size = size.landscape();
         }
         if size.width <= 0.0 || size.height <= 0.0 {
-            return Err("用紙の幅と高さには正の値を指定してください".to_string());
+            return Err("the paper width and height must be positive".to_string());
         }
 
         let mut margin = defaults.margin;
@@ -538,8 +537,8 @@ impl ConvertArgs {
             }
         }
 
-        // `--header-spacing`/`--footer-spacing`はヘッダー/フッターと本文の
-        // 間隔で、その分だけ上下マージンを増やす。
+        // `--header-spacing`/`--footer-spacing` are the gaps between the header/footer and
+        // the body, and they grow the top and bottom margins by that much.
         const MM_TO_PX: f32 = 96.0 / 25.4;
         if let Some(mm) = self.header_spacing {
             margin.top += mm * MM_TO_PX;
@@ -550,17 +549,21 @@ impl ConvertArgs {
 
         let settings = PageSettings { size, margin };
         if settings.content_width() <= 0.0 {
-            return Err("左右マージンの合計が用紙の幅以上です".to_string());
+            return Err(
+                "the left and right margins add up to at least the paper width".to_string(),
+            );
         }
         if settings.content_height() <= 0.0 {
-            return Err("上下マージンの合計が用紙の高さ以上です".to_string());
+            return Err(
+                "the top and bottom margins add up to at least the paper height".to_string(),
+            );
         }
         Ok(settings)
     }
 
-    /// PDF書き出しオプションへまとめる。
+    /// Collect the PDF output options.
     ///
-    /// `--title`が未指定の場合の`<title>`フォールバックはエンジン側で行う。
+    /// Falling back to `<title>` when `--title` is unset is done by the engine.
     pub fn pdf_output_options(&self) -> PdfOutputOptions {
         PdfOutputOptions {
             metadata: DocumentMetadata {
@@ -577,13 +580,13 @@ impl ConvertArgs {
         }
     }
 
-    /// 描画内容のオプション([`ContentOptions`])へまとめる。
-    /// `--user-style-sheet`のファイル読み込みもここで行う。
+    /// Collect the drawing options ([`ContentOptions`]).
+    /// Reading the `--user-style-sheet` files also happens here.
     pub fn content_options(&self) -> Result<ContentOptions, String> {
         let mut user_stylesheets = Vec::with_capacity(self.user_style_sheet.len());
         for path in &self.user_style_sheet {
             let css = std::fs::read_to_string(path)
-                .map_err(|e| format!("{}の読み込みに失敗しました: {e}", path.display()))?;
+                .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
             user_stylesheets.push(css);
         }
 
@@ -599,23 +602,23 @@ impl ConvertArgs {
         })
     }
 
-    /// `--replace name=value`をパースする。
+    /// Parse `--replace name=value`.
     pub fn replacements(&self) -> Result<Vec<(String, String)>, String> {
         self.replace
             .iter()
             .map(|item| {
                 item.split_once('=')
                     .map(|(name, value)| (name.to_string(), value.to_string()))
-                    .ok_or_else(|| format!("--replaceはname=valueの形で指定してください: {item}"))
+                    .ok_or_else(|| format!("--replace must be given as name=value: {item}"))
             })
             .collect()
     }
 
-    /// ヘッダー/フッターの簡易オプションをまとめる。
+    /// Collect the simple header/footer options.
     pub fn simple_header_footer(&self) -> SimpleHeaderFooter {
         let mut boxes = Vec::new();
         if self.default_header {
-            // wkhtmltopdfの`--default-header`相当(タイトルとページ番号)。
+            // The equivalent of wkhtmltopdf's `--default-header` (title and page number).
             boxes.push(MarginBoxText {
                 area: "top-left",
                 text: "[title]".to_string(),
@@ -634,7 +637,7 @@ impl ConvertArgs {
             ("bottom-right", &self.footer_right),
         ] {
             if let Some(text) = text {
-                // 明示指定は`--default-header`より後に置いて上書きする。
+                // Explicit settings come after `--default-header` so they override it.
                 boxes.retain(|b: &MarginBoxText| b.area != area);
                 boxes.push(MarginBoxText {
                     area,
@@ -643,7 +646,7 @@ impl ConvertArgs {
             }
         }
 
-        // 同じ側にHTMLが指定されていれば、そちらが優先(二重描画を避ける)。
+        // If HTML was given for the same side, it wins (to avoid drawing twice).
         if self.header_html.is_some() {
             boxes.retain(|b| !b.area.starts_with("top"));
         }
@@ -660,7 +663,7 @@ impl ConvertArgs {
         }
     }
 
-    /// 目次の見た目のオプション(wkhtmltopdf互換)。
+    /// Options for the look of the table of contents (wkhtmltopdf compatible).
     pub fn toc_options(&self) -> TocOptions {
         TocOptions {
             header_text: self.toc_header_text.clone(),
@@ -671,24 +674,24 @@ impl ConvertArgs {
         }
     }
 
-    /// ローカルファイル参照の許可設定。
+    /// Permission settings for local file references.
     ///
-    /// `--allow`のディレクトリはここで実パスへ解決しておく。参照のたびに
-    /// 解決すると、解決に失敗したときに生のパスでの比較へ落ちてしまい、
-    /// `..`を含んだままの判定になる。解決できないディレクトリは黙って
-    /// 無視せず、起動時にエラーにする。
+    /// The `--allow` directories are resolved to real paths here. Resolving them on every
+    /// reference would mean falling back to comparing raw paths whenever resolution fails,
+    /// leaving `..` in the comparison. A directory that cannot be resolved is an error at
+    /// startup rather than being silently ignored.
     pub fn local_access(&self) -> Result<LocalAccess, String> {
         let mut allowed_dirs = Vec::with_capacity(self.allow.len());
         for dir in &self.allow {
             let canonical = dir.canonicalize().map_err(|e| {
                 format!(
-                    "--allowに指定したディレクトリを解決できません: {} ({e})",
+                    "cannot resolve the directory given to --allow: {} ({e})",
                     dir.display()
                 )
             })?;
             if !canonical.is_dir() {
                 return Err(format!(
-                    "--allowにはディレクトリを指定してください: {}",
+                    "--allow must be given a directory: {}",
                     dir.display()
                 ));
             }
@@ -700,7 +703,7 @@ impl ConvertArgs {
         })
     }
 
-    /// 処理モード(`--streaming`)。
+    /// Processing mode (`--streaming`).
     pub fn mode(&self) -> Mode {
         if self.streaming {
             Mode::Streaming
@@ -709,23 +712,23 @@ impl ConvertArgs {
         }
     }
 
-    /// `--dpi`/`--zoom`の値の妥当性(正の有限値であること)。
+    /// Validity of the `--dpi`/`--zoom` values (they must be positive and finite).
     pub fn validate_scaling(&self) -> Result<(), String> {
         if !(self.dpi.is_finite() && self.dpi > 0.0) {
-            return Err(format!("--dpiには正の値を指定してください: {}", self.dpi));
+            return Err(format!("--dpi must be positive: {}", self.dpi));
         }
         if !(self.zoom.is_finite() && self.zoom > 0.0) {
-            return Err(format!("--zoomには正の値を指定してください: {}", self.zoom));
+            return Err(format!("--zoom must be positive: {}", self.zoom));
         }
         Ok(())
     }
 
-    /// `--font`と`--font-index`をコマンドラインでの出現順に基づいて
-    /// 組にする。
+    /// Pair up `--font` and `--font-index` based on the order they appear on the
+    /// command line.
     ///
-    /// `--font-index`は「直前の`--font`に対する指定」という位置依存の意味を
-    /// 持つ(手書きパーサ時代からの互換)。clapは値をオプションごとにまとめて
-    /// しまうため、`ArgMatches::indices_of`で元の位置を取り直して対応付ける。
+    /// `--font-index` has the position-dependent meaning "applies to the preceding
+    /// `--font`" (kept from the hand-written parser). clap groups values per option, so
+    /// we recover the original positions with `ArgMatches::indices_of` to pair them up.
     pub fn font_specs(&self, matches: &ArgMatches) -> Result<Vec<FontArg>, String> {
         let font_positions: Vec<usize> = matches
             .indices_of("font")
@@ -746,21 +749,19 @@ impl ConvertArgs {
             .collect();
 
         for (nth, position) in index_positions.iter().enumerate() {
-            // その`--font-index`より手前にある`--font`のうち最後のもの。
+            // The last `--font` appearing before that `--font-index`.
             let target = font_positions.iter().rposition(|p| p < position);
             match target {
                 Some(i) => specs[i].index = self.font_index[nth],
-                None => {
-                    return Err("--font-indexは直前の--fontに対して指定してください".to_string())
-                }
+                None => return Err("--font-index must follow the --font it applies to".to_string()),
             }
         }
 
         Ok(specs)
     }
 
-    /// 汎用family名(`sans-serif`/`serif`/`monospace`)へ明示指定された
-    /// フォントの組。指定が無い汎用名は含めない(システムフォントで解決する)。
+    /// Fonts explicitly assigned to the generic family names (`sans-serif`/`serif`/
+    /// `monospace`). Generic names with no setting are omitted (system fonts resolve them).
     pub fn generic_font_specs(&self) -> Vec<(GenericFamily, FontArg)> {
         [
             (
@@ -794,13 +795,13 @@ impl ConvertArgs {
         .collect()
     }
 
-    /// 入力が標準入力か。
+    /// Whether the input is standard input.
     pub fn reads_stdin(&self) -> bool {
         self.input.as_deref() == Some(STD_STREAM)
     }
 
-    /// 出力先。`-o`省略時は入力の拡張子を`.pdf`に置き換える。
-    /// 標準出力の場合は`None`を返す。
+    /// The output target. With no `-o`, the input path's extension is replaced with `.pdf`.
+    /// Returns `None` for standard output.
     pub fn output_path(&self) -> Result<Option<PathBuf>, String> {
         match self.output.as_deref() {
             Some(STD_STREAM) => Ok(None),
@@ -808,7 +809,7 @@ impl ConvertArgs {
             None => {
                 if self.reads_stdin() {
                     return Err(
-                        "標準入力から読む場合は-o/--outputで出力先を指定してください(標準出力は`-o -`)"
+                        "when reading from standard input, name the output with -o/--output (`-o -` for standard output)"
                             .to_string(),
                     );
                 }
@@ -919,7 +920,7 @@ mod tests {
     #[cfg(feature = "server")]
     #[test]
     fn server_subcommand_does_not_require_convert_args() {
-        // `server`は`--font`が必須(リクエストからは変えられないため)。
+        // `server` requires `--font` (it cannot be changed per request).
         let (cli, _) = parse(&[
             "sghtmltopdf",
             "server",
@@ -999,7 +1000,7 @@ mod tests {
         let settings = cli.convert.page_settings().unwrap();
         assert!((settings.margin.top - 96.0).abs() < 0.01);
         assert_eq!(settings.margin.left, 0.0);
-        // 指定しなかった辺は既定のまま。
+        // Sides that were not given keep their defaults.
         assert_eq!(settings.margin.right, 96.0);
     }
 
@@ -1038,7 +1039,7 @@ mod tests {
         Cli::command().debug_assert();
     }
 
-    /// `--allow`のディレクトリは起動時に実パスへ解決される。
+    /// `--allow` directories are resolved to real paths at startup.
     #[test]
     fn allow_dirs_are_resolved_to_real_paths() {
         let dir = std::env::temp_dir().join(format!(
@@ -1047,7 +1048,7 @@ mod tests {
         ));
         std::fs::create_dir_all(dir.join("assets")).unwrap();
 
-        // `<dir>/assets/..` を渡しても `<dir>` に畳まれる。
+        // Passing `<dir>/assets/..` collapses to `<dir>`.
         let dotted = dir.join("assets").join("..");
         let (cli, _) = parse(&[
             "sghtmltopdf",
@@ -1057,14 +1058,17 @@ mod tests {
             "--allow",
             dotted.to_str().unwrap(),
         ]);
-        let access = cli.convert.local_access().expect("実在するので解決できる");
+        let access = cli
+            .convert
+            .local_access()
+            .expect("it exists, so it resolves");
         assert_eq!(access.allowed_dirs, vec![dir.canonicalize().unwrap()]);
 
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 解決できない`--allow`は黙って無視せずエラーにする
-    /// (無視すると許可範囲が意図せず変わる)。
+    /// An `--allow` that cannot be resolved is an error rather than silently ignored
+    /// (ignoring it would change the permitted set unintentionally).
     #[test]
     fn an_allow_dir_that_does_not_exist_is_an_error() {
         let (cli, _) = parse(&[
@@ -1079,7 +1083,7 @@ mod tests {
         assert!(err.contains("--allow"), "got: {err}");
     }
 
-    /// ファイルを`--allow`に渡した場合もエラーにする。
+    /// Passing a file to `--allow` is an error too.
     #[test]
     fn an_allow_path_that_is_not_a_directory_is_an_error() {
         let dir = std::env::temp_dir().join(format!(
@@ -1099,7 +1103,7 @@ mod tests {
             file.to_str().unwrap(),
         ]);
         let err = cli.convert.local_access().unwrap_err();
-        assert!(err.contains("ディレクトリ"), "got: {err}");
+        assert!(err.contains("directory"), "got: {err}");
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

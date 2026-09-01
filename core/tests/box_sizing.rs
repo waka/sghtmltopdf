@@ -1,7 +1,7 @@
-//! `box-sizing`のE2Eテスト。
+//! E2E tests for `box-sizing`.
 //!
-//! `box_model.rs`/`typography.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `box_model.rs`/`typography.rs`: catch regressions by going through
+//! the real pipeline (HTML parse, style cascade, pagination, PDF encode).
 
 use std::collections::HashMap;
 
@@ -98,9 +98,9 @@ fn border_box_and_content_box_siblings_end_up_with_the_same_border_box_width() {
     let content_box = find_laid_out(&laid, divs[0]).unwrap();
     let border_box = find_laid_out(&laid, divs[1]).unwrap();
 
-    // content-boxのdivは指定した100pxがcontentの幅になるため、border-boxの
-    // 外寸は100+2*10+2*5=130pxに膨らむ。border-boxのdivは100pxそのものが
-    // border-boxの外寸になるので、content幅は100-2*10-2*5=70pxに縮む。
+    // On a content-box div the given 100px is the content width, so the border box swells to
+    // 100+2*10+2*5=130px. On a border-box div the 100px is the border box itself, so the
+    // content width shrinks to 100-2*10-2*5=70px.
     assert_eq!(content_box.layout.content.width, 100.0);
     assert_eq!(content_box.layout.border_box().width, 130.0);
 
@@ -123,8 +123,8 @@ fn box_sizing_border_box_is_not_inherited_by_children() {
 
     // outer(border-box): content = 200 - 2*10 - 2*5 = 170
     assert_eq!(outer.layout.content.width, 170.0);
-    // inner(box-sizing未指定 = content-box、親から継承しない): 指定した100pxが
-    // そのままcontent幅になる。
+    // inner (no box-sizing set, so content-box; it is not inherited from the parent): the
+    // given 100px is the content width outright.
     assert_eq!(inner.layout.content.width, 100.0);
 }
 

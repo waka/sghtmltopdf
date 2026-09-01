@@ -1,7 +1,7 @@
-//! `server`サブコマンド(HTTPサーバモード)。
+//! The `server` subcommand (HTTP server mode).
 //!
-//! * `POST /pdf?<CLIと同名のオプション>` + ボディは生HTML
-//! * クエリで指定できるのは[`ALLOWED_QUERY_KEYS`]に載っているものだけ
+//! * `POST /pdf?<the same option names as the CLI>` with raw HTML as the body
+//! * Only the keys listed in [`ALLOWED_QUERY_KEYS`] may appear in the query
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -16,9 +16,9 @@ use crate::sink::{MemorySink, Sink};
 use super::options::{Cli, ConvertArgs, ServerArgs};
 use super::CliError;
 
-/// クエリで許可するオプション。
+/// Options allowed in the query string.
 const ALLOWED_QUERY_KEYS: &[&str] = &[
-    // ページの体裁
+    // Page setup
     "page-size",
     "page-width",
     "page-height",
@@ -31,17 +31,17 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "dpi",
     "page-offset",
     "minimum-font-size",
-    // 出力の見た目
+    // Output appearance
     "grayscale",
     "no-background",
     "no-images",
     "no-pdf-compression",
-    // PDFメタデータ
+    // PDF metadata
     "title",
     "author",
     "subject",
     "keywords",
-    // ヘッダー/フッター(文字列とその体裁のみ。HTMLファイルの指定は不可)
+    // Header/footer (text and its styling only; HTML files cannot be specified)
     "default-header",
     "header-left",
     "header-center",
@@ -58,7 +58,7 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "footer-spacing",
     "footer-line",
     "replace",
-    // 目次
+    // Table of contents
     "toc",
     "toc-header-text",
     "toc-level-indentation",
@@ -66,18 +66,18 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "disable-dotted-lines",
     "disable-toc-links",
     "enable-toc-back-links",
-    // リンク
+    // Links
     "disable-external-links",
     "disable-internal-links",
     "keep-relative-links",
-    // 入力の解釈・失敗時の扱い
+    // How input is interpreted, and what to do on failure
     "encoding",
     "load-error-handling",
     "load-media-error-handling",
     "streaming",
 ];
 
-/// サーバ起動時にだけ決められるオプション。
+/// Options that can only be set when the server starts.
 const SERVER_ONLY_KEYS: &[&str] = &[
     "font",
     "font-index",
@@ -109,7 +109,7 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
     let max_queue = args.max_queue.unwrap_or(workers * 4).max(1);
 
     let server = Server::http(&args.listen)
-        .map_err(|e| CliError::Input(format!("{}で待ち受けられません: {e}", args.listen)))?;
+        .map_err(|e| CliError::Input(format!("cannot listen on {}: {e}", args.listen)))?;
     let addr = server
         .server_addr()
         .to_ip()
@@ -123,7 +123,7 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
         max_body_size: args.max_body_size,
     });
 
-    // キュー溢れの判定用に、受理待ち件数をチャネルの長さで数える。
+    // Count pending requests as the channel length, to decide when the queue overflows.
     let (tx, rx) = mpsc::sync_channel::<(Request, Instant)>(max_queue);
     let rx = Arc::new(std::sync::Mutex::new(rx));
 
@@ -132,28 +132,32 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
         let rx = Arc::clone(&rx);
         let shared = Arc::clone(&shared);
         let timeout = Duration::from_secs(args.timeout);
-        // 既定の2MiBではレイアウト・描画の再帰に足りないため明示的に確保する
-        // (`crate::render_stack::STACK_SIZE`のdoc参照)。
+        // The default 2MiB is not enough for the recursion in layout and drawing, so allocate
+        // explicitly (see the docs on `crate::render_stack::STACK_SIZE`).
         let worker = std::thread::Builder::new()
             .name(format!("render-{index}"))
             .stack_size(crate::render_stack::STACK_SIZE);
         let handle = worker.spawn(move || loop {
             let next = {
-                let guard = rx.lock().expect("受信キューのロックに失敗しました");
+                let guard = rx.lock().expect("failed to lock the receive queue");
                 guard.recv()
             };
             let Ok((request, queued_at)) = next else {
-                break; // 送信側が閉じた = 終了
+                break; // the sending side closed: shut down
             };
             if queued_at.elapsed() > timeout {
-                let _ = respond_text(request, 504, "キューでの待ち時間が--timeoutを超えました");
+                let _ = respond_text(
+                    request,
+                    504,
+                    "waited in the queue for longer than --timeout",
+                );
                 continue;
             }
-            // 残り時間をレンダリングの期限にする
+            // Whatever time is left becomes the rendering deadline
             handle_request(request, &shared, queued_at + timeout);
         });
         handles.push(
-            handle.map_err(|e| CliError::Input(format!("ワーカースレッドを作れません: {e}")))?,
+            handle.map_err(|e| CliError::Input(format!("cannot create a worker thread: {e}")))?,
         );
     }
 
@@ -161,7 +165,7 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
         match tx.try_send((request, Instant::now())) {
             Ok(()) => {}
             Err(mpsc::TrySendError::Full((request, _))) => {
-                let _ = respond_text(request, 503, "混雑しています(--max-queueを超えました)");
+                let _ = respond_text(request, 503, "busy (--max-queue exceeded)");
             }
             Err(mpsc::TrySendError::Disconnected(_)) => break,
         }
@@ -200,13 +204,13 @@ fn handle_request(mut request: Request, ctx: &ServerContext, deadline: Instant) 
         }
         ("POST", "/pdf") if wants_chunked(&query) => {
             if let Err((status, message)) = respond_chunked(request, &query, ctx, deadline) {
-                eprintln!("エラー: {status} {message}");
+                eprintln!("error: {status} {message}");
             }
         }
         ("POST", "/pdf") => match render_request(&mut request, &query, ctx, deadline) {
             Ok(pdf) => {
                 let header = Header::from_bytes(&b"Content-Type"[..], &b"application/pdf"[..])
-                    .expect("固定のヘッダー値なので必ず作れる");
+                    .expect("a fixed header value always builds");
                 let response = Response::from_data(pdf).with_header(header);
                 let _ = request.respond(response);
             }
@@ -215,7 +219,7 @@ fn handle_request(mut request: Request, ctx: &ServerContext, deadline: Instant) 
             }
         },
         (_, "/pdf") | (_, "/healthz") | (_, "/version") => {
-            let _ = respond_text(request, 405, "このパスでは使えないメソッドです");
+            let _ = respond_text(request, 405, "method not allowed on this path");
         }
         _ => {
             let _ = respond_text(request, 404, "not found");
@@ -223,7 +227,7 @@ fn handle_request(mut request: Request, ctx: &ServerContext, deadline: Instant) 
     }
 }
 
-/// `?stream=1`(chunkedでのストリーミング返却)が要求されているか。
+/// Whether `?stream=1` (streaming the response with chunked encoding) was requested.
 fn wants_chunked(query: &str) -> bool {
     parse_query(query)
         .map(|pairs| {
@@ -234,7 +238,7 @@ fn wants_chunked(query: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// `std::io::PipeWriter`へ書き出すSink。レンダリング側(push)とHTTPレスポンス側(pull)をつなぐ。
+/// A Sink writing into a `std::io::PipeWriter`, joining the rendering side (push) to the HTTP response side (pull).
 struct PipeSink(std::io::PipeWriter);
 
 impl Sink for PipeSink {
@@ -250,7 +254,7 @@ impl Sink for PipeSink {
     }
 }
 
-/// `?stream=1`のときの応答。ページが確定したそばからchunkedで流す。
+/// The response for `?stream=1`: stream each page out with chunked encoding as soon as it is final.
 fn respond_chunked(
     mut request: Request,
     query: &str,
@@ -260,7 +264,7 @@ fn respond_chunked(
     let too_large = || {
         (
             413,
-            format!("ボディが上限({}バイト)を超えています", ctx.max_body_size),
+            format!("the body exceeds the limit of {} bytes", ctx.max_body_size),
         )
     };
     if let Some(len) = request.body_length() {
@@ -294,16 +298,12 @@ fn respond_chunked(
             return Ok(());
         }
         Ok(_) if html.is_empty() => {
-            let _ = respond_text(request, 400, "ボディにHTMLを入れてください");
+            let _ = respond_text(request, 400, "put the HTML in the request body");
             return Ok(());
         }
         Ok(_) => {}
         Err(e) => {
-            let _ = respond_text(
-                request,
-                400,
-                &format!("ボディの読み込みに失敗しました: {e}"),
-            );
+            let _ = respond_text(request, 400, &format!("failed to read the body: {e}"));
             return Ok(());
         }
     }
@@ -311,14 +311,14 @@ fn respond_chunked(
     let (pipe_reader, pipe_writer) = match std::io::pipe() {
         Ok(pair) => pair,
         Err(e) => {
-            let _ = respond_text(request, 500, &format!("パイプを作れませんでした: {e}"));
+            let _ = respond_text(request, 500, &format!("failed to create a pipe: {e}"));
             return Ok(());
         }
     };
 
-    // レンダリングは別スレッドで走らせ、書き出したそばからパイプへ流す。
-    // このスレッドはパイプの読み出し側をレスポンスとして返す。
-    // ワーカーと同様、再帰に耐えるスタックを明示的に確保する。
+    // Rendering runs on its own thread and writes into the pipe as it goes.
+    // This thread returns the read end of the pipe as the response body.
+    // As with the workers, allocate a stack explicitly so the recursion fits.
     let spawned = std::thread::Builder::new()
         .name("render-stream".to_string())
         .stack_size(crate::render_stack::STACK_SIZE)
@@ -329,28 +329,28 @@ fn respond_chunked(
                 std::io::Cursor::new(html),
                 PipeSink(pipe_writer),
             ) {
-                // ヘッダは送信済みなので、ここではログに残すことしかできない。
-                eprintln!("エラー: ストリーミング返却の途中で失敗しました: {e}");
+                // The headers have already been sent, so all we can do here is log.
+                eprintln!("error: the streamed response failed part-way through: {e}");
             }
         });
     if let Err(e) = spawned {
         let _ = respond_text(
             request,
             500,
-            &format!("レンダリングスレッドを作れませんでした: {e}"),
+            &format!("failed to create the rendering thread: {e}"),
         );
         return Ok(());
     }
 
     let header = Header::from_bytes(&b"Content-Type"[..], &b"application/pdf"[..])
-        .expect("固定のヘッダー値なので必ず作れる");
-    // `data_length`を`None`にするとchunked transfer encodingになる。
+        .expect("a fixed header value always builds");
+    // Setting `data_length` to `None` selects chunked transfer encoding.
     let response = Response::new(StatusCode(200), vec![header], pipe_reader, None, None);
     let _ = request.respond(response);
     Ok(())
 }
 
-/// `stream`キーだけを取り除いたクエリ文字列(オプション解釈へは渡さない)。
+/// The query string with only the `stream` key removed (it is not passed on to option parsing).
 fn strip_stream_key(query: &str) -> String {
     query
         .split('&')
@@ -362,10 +362,10 @@ fn strip_stream_key(query: &str) -> String {
         .join("&")
 }
 
-/// ボディを読みながらサイズ上限を数える`Read`ラッパー。
+/// A `Read` wrapper that counts the body against a size limit as it is read.
 ///
-/// 上限を超えた時点でエラーを返し、`exceeded`を立てる。呼び出し側は
-/// この印を見て413を返す(エンジンから返るエラーの文言に依存しない)。
+/// It returns an error the moment the limit is passed and sets `exceeded`. The caller
+/// checks that flag to return 413 (rather than depending on the engine's error text).
 struct LimitedReader<R> {
     inner: R,
     remaining: usize,
@@ -376,7 +376,7 @@ struct LimitedReader<R> {
 impl<R: Read> Read for LimitedReader<R> {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         if self.remaining == 0 {
-            // 1バイトでも余分に読めたら超過。
+            // Reading even one more byte means the limit was exceeded.
             let mut probe = [0u8; 1];
             if self.inner.read(&mut probe)? > 0 {
                 self.exceeded = true;
@@ -394,9 +394,9 @@ impl<R: Read> Read for LimitedReader<R> {
     }
 }
 
-/// 1リクエスト分の変換。エラーは(ステータス, メッセージ)で返す。
+/// Conversion of a single request. Errors come back as (status, message).
 ///
-/// ボディは読み切らずに`Engine::feed`へ流す。
+/// The body is streamed into `Engine::feed` rather than read to the end.
 fn render_request(
     request: &mut Request,
     query: &str,
@@ -406,18 +406,18 @@ fn render_request(
     let too_large = || {
         (
             413,
-            format!("ボディが上限({}バイト)を超えています", ctx.max_body_size),
+            format!("the body exceeds the limit of {} bytes", ctx.max_body_size),
         )
     };
 
-    // ボディ長が分かる場合は読む前に弾く。
+    // If the body length is known, reject before reading anything.
     if let Some(len) = request.body_length() {
         if len > ctx.max_body_size {
             return Err(too_large());
         }
     }
 
-    // クエリのパースはボディを読む前に済ませる(不正なら読まずに400)。
+    // Parse the query before reading the body (a bad query is a 400 with nothing read).
     let mut args = build_convert_args(query, &ctx.args).map_err(|e| (400, e))?;
     args.deadline = Some(deadline);
     let fonts = ctx.args.font_specs();
@@ -436,7 +436,7 @@ fn render_request(
         return Err(too_large());
     }
     if !reader.read_any {
-        return Err((400, "ボディにHTMLを入れてください".to_string()));
+        return Err((400, "put the HTML in the request body".to_string()));
     }
 
     result.map_err(|e| match e {
@@ -447,15 +447,15 @@ fn render_request(
     })
 }
 
-/// クエリ文字列をCLIの引数列へ変換し、同じclapパーサへ通す。
+/// Turn the query string into a CLI argument list and run it through the same clap parser.
 fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, String> {
     let mut argv: Vec<String> = vec!["sghtmltopdf".to_string()];
-    // 入力はボディなので、位置引数にはstdinを表す`-`を置く(実際には読まない)。
+    // The input is the body, so the positional argument is `-` for stdin (never actually read).
     argv.push("-".to_string());
     argv.push("--output".to_string());
     argv.push("-".to_string());
 
-    // サーバ起動時に固定するもの(リクエストからは変えられない)。
+    // Values fixed at server startup (a request cannot change these).
     for path in &server.font {
         argv.push("--font".to_string());
         argv.push(path.display().to_string());
@@ -483,28 +483,28 @@ fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, S
     argv.push("--quiet".to_string());
 
     for (key, value) in parse_query(query)? {
-        // 非対応オプションはCLIと同じ理由を返す。
+        // Unsupported options come back with the same reason as in the CLI.
         if let Some(reason) = super::unsupported::unsupported_reason(&format!("--{key}")) {
-            return Err(format!("{key}は対応していません。{reason}"));
+            return Err(format!("{key} is not supported. {reason}"));
         }
         if SERVER_ONLY_KEYS.contains(&key.as_str()) {
             return Err(format!(
-                "{key}はリクエストからは指定できません(サーバ起動時のオプションで設定してください)"
+                "{key} cannot be set per request (set it with a server startup option)"
             ));
         }
         if !ALLOWED_QUERY_KEYS.contains(&key.as_str()) {
-            return Err(format!("{key}はリクエストでは指定できません"));
+            return Err(format!("{key} cannot be set in a request"));
         }
         match value {
-            // 値なし / 真を表す値はフラグとして渡す。
+            // No value, or a value meaning true, is passed as a flag.
             None => argv.push(format!("--{key}")),
             Some(v) if is_true(&v) => argv.push(format!("--{key}")),
-            // 偽を表す値は「指定なし」と同じ。
+            // A value meaning false is the same as not specifying the option.
             Some(v) if is_false(&v) => {}
-            // 値は必ず`--key=value`の1トークンに畳む。`--key`と値を別々の
-            // トークンとして積むと、値に`--allow-remote-assets`のような
-            // フラグを書かれたときclapがそれを独立したフラグとして解釈し、
-            // DENIED_QUERY_KEYS(キーだけを見る)を迂回できてしまう。
+            // A value is always folded into a single `--key=value` token. Pushing `--key`
+            // and the value as separate tokens would let a value such as
+            // `--allow-remote-assets` be read by clap as an independent flag, slipping
+            // past DENIED_QUERY_KEYS (which only inspects the key).
             Some(v) => argv.push(format!("--{key}={v}")),
         }
     }
@@ -524,7 +524,7 @@ fn is_false(value: &str) -> bool {
     matches!(value, "0" | "false" | "no" | "off")
 }
 
-/// `a=1&b&c=%E6%97%A5` をキーと値へ分解する(パーセントデコード込み)。
+/// Split `a=1&b&c=%E6%97%A5` into keys and values (percent-decoding included).
 fn parse_query(query: &str) -> Result<Vec<(String, Option<String>)>, String> {
     let mut out = Vec::new();
     for pair in query.split('&').filter(|p| !p.is_empty()) {
@@ -545,7 +545,7 @@ fn parse_query(query: &str) -> Result<Vec<(String, Option<String>)>, String> {
     Ok(out)
 }
 
-/// `%XX`と`+`をdecodeする。
+/// Decode `%XX` and `+`.
 fn percent_decode(text: &str) -> Result<String, String> {
     let bytes = text.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -559,11 +559,11 @@ fn percent_decode(text: &str) -> Result<String, String> {
             b'%' => {
                 let hex = bytes
                     .get(i + 1..i + 3)
-                    .ok_or_else(|| format!("URLエンコードが壊れています: {text}"))?;
-                let hex = std::str::from_utf8(hex)
-                    .map_err(|_| format!("URLエンコードが壊れています: {text}"))?;
+                    .ok_or_else(|| format!("broken URL encoding: {text}"))?;
+                let hex =
+                    std::str::from_utf8(hex).map_err(|_| format!("broken URL encoding: {text}"))?;
                 let byte = u8::from_str_radix(hex, 16)
-                    .map_err(|_| format!("URLエンコードが壊れています: {text}"))?;
+                    .map_err(|_| format!("broken URL encoding: {text}"))?;
                 out.push(byte);
                 i += 3;
             }
@@ -573,12 +573,12 @@ fn percent_decode(text: &str) -> Result<String, String> {
             }
         }
     }
-    String::from_utf8(out).map_err(|_| format!("UTF-8として解釈できません: {text}"))
+    String::from_utf8(out).map_err(|_| format!("cannot be read as UTF-8: {text}"))
 }
 
 fn respond_text(request: Request, status: u16, message: &str) -> std::io::Result<()> {
     let header = Header::from_bytes(&b"Content-Type"[..], &b"text/plain; charset=utf-8"[..])
-        .expect("固定のヘッダー値なので必ず作れる");
+        .expect("a fixed header value always builds");
     let response = Response::from_string(message)
         .with_status_code(StatusCode(status))
         .with_header(header);
@@ -669,7 +669,7 @@ mod tests {
             "output=/tmp/x.pdf",
         ] {
             let err = build_convert_args(key, &server_args()).unwrap_err();
-            assert!(err.contains("指定できません"), "got: {err}");
+            assert!(err.contains("cannot be set"), "got: {err}");
         }
     }
 
@@ -678,29 +678,29 @@ mod tests {
         assert!(build_convert_args("no-such-option=1", &server_args()).is_err());
     }
 
-    /// すべてのオプションが「クエリで指定してよい」か「サーバ起動時のみ」の
-    /// どちらかに分類されていること。
+    /// Every option must be classified either as "allowed in the query" or
+    /// "server startup only".
     #[test]
     fn every_option_is_classified_as_allowed_or_server_only() {
         let command = Cli::command();
         let unclassified: Vec<&str> = command
             .get_arguments()
             .filter_map(|arg| arg.get_long())
-            // clapが自動で足すものは分類の対象外。
+            // Options clap adds automatically are outside the classification.
             .filter(|long| !matches!(*long, "help" | "version"))
             .filter(|long| !ALLOWED_QUERY_KEYS.contains(long) && !SERVER_ONLY_KEYS.contains(long))
             .collect();
 
         assert!(
             unclassified.is_empty(),
-            "分類されていないオプションがあります: {unclassified:?}\n\
-             ALLOWED_QUERY_KEYS(リクエストごとに変えてよい)か\n\
-             SERVER_ONLY_KEYS(サーバ起動時のみ)のどちらかへ追加してください"
+            "these options are unclassified: {unclassified:?}\n\
+             add each to either ALLOWED_QUERY_KEYS (changeable per request)\n\
+             or SERVER_ONLY_KEYS (server startup only)"
         );
     }
 
-    /// 分類リストに実在しないオプション名が残っていないこと
-    /// (オプションの改名・削除に追随できているかの確認)。
+    /// The classification lists must not name options that no longer exist
+    /// (this catches renamed or removed options).
     #[test]
     fn the_classification_lists_only_name_real_options() {
         let command = Cli::command();
@@ -717,48 +717,48 @@ mod tests {
 
         assert!(
             stale.is_empty(),
-            "存在しないオプション名が残っています: {stale:?}"
+            "these option names no longer exist: {stale:?}"
         );
     }
 
-    /// 2つのリストは互いに素であること(両方に載っていると意図が読めない)。
+    /// The two lists must be disjoint (appearing in both makes the intent unreadable).
     #[test]
     fn the_two_classification_lists_do_not_overlap() {
         let both: Vec<&&str> = ALLOWED_QUERY_KEYS
             .iter()
             .filter(|key| SERVER_ONLY_KEYS.contains(key))
             .collect();
-        assert!(both.is_empty(), "両方のリストに載っています: {both:?}");
+        assert!(both.is_empty(), "listed in both lists: {both:?}");
     }
 
-    /// 許可リストに無いオプションは、たとえ安全そうでも拒否されること。
+    /// An option outside the allowlist is refused, however harmless it looks.
     #[test]
     fn an_option_outside_the_allowlist_is_refused() {
-        // `--base-url`はSERVER_ONLY_KEYS側なので専用の理由が返る。
+        // `--base-url` is in SERVER_ONLY_KEYS, so it gets its own reason.
         let err = build_convert_args("base-url=/etc", &server_args()).unwrap_err();
-        assert!(err.contains("サーバ起動時"), "got: {err}");
+        assert!(err.contains("server startup"), "got: {err}");
     }
 
-    /// オプションの値に別のフラグを書いても、それが独立した引数として
-    /// 解釈されないこと。以前は`--toc`と`--allow-remote-assets`の2トークンに
-    /// 分かれて積まれ、キーだけを見るDENIED_QUERY_KEYSを素通りしていた。
+    /// Writing another flag into an option's value must not make it a separate argument.
+    /// This used to be pushed as the two tokens `--toc` and `--allow-remote-assets`,
+    /// which slipped past DENIED_QUERY_KEYS because that only inspects the key.
     #[test]
     fn a_flag_smuggled_through_a_value_does_not_reach_the_parser_as_a_flag() {
         let args = build_convert_args("toc=--allow-remote-assets", &server_args());
         match args {
-            // `--toc=...`は値を取らないフラグなのでclapが弾くのが正しい。
+            // `--toc=...` is a flag that takes no value, so clap is right to reject it.
             Err(message) => assert!(
                 !message.contains("unexpected argument"),
-                "値がフラグとして解釈されてはならない: {message}"
+                "a value must not be read as a flag: {message}"
             ),
             Ok(args) => assert!(
                 !args.allow_remote_assets,
-                "クエリ値経由でリモート取得を有効化できてはならない"
+                "remote fetching must not be enabled through a query value"
             ),
         }
     }
 
-    /// 値経由の注入でローカルファイルアクセスも有効化できないこと。
+    /// Injection through a value must not enable local file access either.
     #[test]
     fn local_file_access_cannot_be_smuggled_through_a_value_either() {
         for query in [
@@ -769,13 +769,13 @@ mod tests {
                 Err(_) => {}
                 Ok(args) => assert!(
                     args.disable_local_file_access,
-                    "{query}でローカルファイルアクセスが有効になってはならない"
+                    "{query} must not enable local file access"
                 ),
             }
         }
     }
 
-    /// 値に`=`や空白が含まれる正当なケースが、1トークン化しても壊れないこと。
+    /// A legitimate value containing `=` or whitespace must survive being folded into one token.
     #[test]
     fn a_value_containing_an_equals_sign_still_reaches_the_option_intact() {
         let args = build_convert_args("title=a%3Db+c", &server_args()).unwrap();

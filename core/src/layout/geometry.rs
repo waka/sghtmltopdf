@@ -1,4 +1,4 @@
-//! レイアウト結果の座標・矩形の型。
+//! Coordinate and rectangle types for layout results.
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Rect {
@@ -16,30 +16,29 @@ pub struct EdgeSizes {
     pub left: f32,
 }
 
-/// ページ分割によって、元のボックスが複数ページにまたがる断片
-/// (フラグメント)に分けられているかどうか。
+/// Whether pagination has split the original box into fragments spanning several pages.
 ///
-/// `border-radius`は要素の計算スタイル(`border_top_left_radius`等)から
-/// 都度引くため、ページをまたいで分割されたボックスの「継続中」の断片
-/// (先頭でも末尾でもない`Middle`、あるいは先頭のみの`First`の下端・
-/// 末尾のみの`Last`の上端)では、本来枠線が無い辺の角に丸みを適用しては
-/// ならない。この情報がないと[`crate::pdf::document`]の描画側で
-/// 区別がつかないため、[`Layout`]に持たせる。
+/// `border-radius` is looked up from the element's computed style
+/// (`border_top_left_radius` and friends) each time, so on a "continuing" fragment of a
+/// box split across pages (a `Middle`, which is neither first nor last; the bottom of a
+/// `First`; the top of a `Last`) the corners of an edge that has no border must not be
+/// rounded. The drawing side ([`crate::pdf::document`]) cannot tell the difference without
+/// this, so it is carried on [`Layout`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum FragmentPosition {
-    /// 分割されていない(通常の)ボックス。全角に`border-radius`を適用してよい。
+    /// An ordinary, unsplit box. `border-radius` applies to every corner.
     #[default]
     Whole,
-    /// 分割された断片のうち最初のもの。上端の角のみ`border-radius`を適用してよい。
+    /// The first of the fragments. Only the top corners get `border-radius`.
     First,
-    /// 分割された断片のうち最初でも最後でもないもの。どの角にも適用しない。
+    /// A fragment that is neither first nor last. No corner is rounded.
     Middle,
-    /// 分割された断片のうち最後のもの。下端の角のみ`border-radius`を適用してよい。
+    /// The last of the fragments. Only the bottom corners get `border-radius`.
     Last,
 }
 
-/// ボックスモデルの各領域。`content`のみ絶対座標(ページ内)を持ち、
-/// 他の辺はその太さのみを保持する。
+/// The areas of the box model. Only `content` carries absolute coordinates (within the
+/// page); the other edges hold only their thickness.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Layout {
     pub content: Rect,
@@ -50,7 +49,7 @@ pub struct Layout {
 }
 
 impl Layout {
-    /// 次の兄弟ボックスまでの垂直方向の占有量(マージンボックスの高さ)。
+    /// Vertical space occupied up to the next sibling box (the margin box height).
     pub fn margin_box_height(&self) -> f32 {
         self.margin.top
             + self.border.top
@@ -61,7 +60,7 @@ impl Layout {
             + self.margin.bottom
     }
 
-    /// 背景・枠線の描画に使うボーダーボックス。
+    /// The border box, used for drawing backgrounds and borders.
     pub fn border_box(&self) -> Rect {
         Rect {
             x: self.content.x - self.padding.left - self.border.left,
@@ -79,8 +78,8 @@ impl Layout {
         }
     }
 
-    /// `overflow`のクリップ境界に使うパディングボックス(content+padding、
-    /// border線の内側)。
+    /// The padding box (content plus padding, inside the border line), used as the clipping
+    /// boundary for `overflow`.
     pub fn padding_box(&self) -> Rect {
         Rect {
             x: self.content.x - self.padding.left,

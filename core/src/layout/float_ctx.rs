@@ -1,15 +1,15 @@
-//! `float`の配置を追跡する簡易コンテキスト(CSS2.1 9.5.1のshelf-packing簡略版)。
+//! A simple context tracking `float` placement (a simplified shelf-packing of CSS2.1 9.5.1).
 //!
-//! `layout_document`/`layout_document_from`1回の呼び出し全体で1つの
-//! [`FloatContext`]を共有する(このリポジトリは`float`以外にBlock Formatting
-//! Contextを確立するプロパティを実装していないため)。`float`自身の内容・
-//! `display: table`のセルの内容には新しい空のコンテキストを渡す
-//! (この2つは新BFCを確立するため)。
+//! One [`FloatContext`] is shared across an entire call to
+//! `layout_document`/`layout_document_from` (this repository implements no property other
+//! than `float` that establishes a Block Formatting Context). A fresh, empty context is
+//! passed for the contents of a `float` itself and for the contents of a `display: table`
+//! cell (both of which establish a new BFC).
 
 use crate::style::{Clear, Float};
 
-/// 絶対(ページ内)座標で表した1つのfloatの矩形。`inner_edge_x`は回り込み判定に
-/// 必要な内側境界のみ(左floatなら右端、右floatなら左端)を保持する。
+/// One float's rectangle in absolute (within-page) coordinates. `inner_edge_x` holds only
+/// the inner boundary needed for flow-around (the right edge for a left float, the left edge for a right float).
 #[derive(Debug, Clone, Copy)]
 struct FloatEntry {
     top: f32,
@@ -28,12 +28,12 @@ impl FloatContext {
         Self::default()
     }
 
-    /// `side`方向にfloatを配置する絶対座標(margin boxの左上)を求める。
-    /// `preferred_top`(=floatがDOMの流れに出現した時点のcursor_y)から探索を
-    /// 開始し、そのY地点での同方向floatの占有幅+新規floatの幅が
-    /// `containing_right - containing_left`を超えない最初のYを採用する。
-    /// 超える場合は、そのY時点で重なっている同方向floatのうち最も浅い最下端まで
-    /// Yを進めて再試行する(shelf-packing)。
+    /// Find the absolute coordinates (the top left of the margin box) at which to place a
+    /// float on the `side` side. The search starts at `preferred_top` (the cursor_y where
+    /// the float appeared in the DOM flow) and takes the first Y at which the width
+    /// occupied by same-side floats plus the new float's width does not exceed
+    /// `containing_right - containing_left`. Where it does, Y advances to the shallowest
+    /// bottom edge among the same-side floats overlapping that Y, and it tries again (shelf-packing).
     pub fn place(
         &self,
         side: Float,
@@ -91,8 +91,8 @@ impl FloatContext {
                 continue;
             }
 
-            // 進める先がない(containing widthよりmargin_box_width自体が大きい等):
-            // 無限ループを避け、best-effortでオーバーフローを許容してそのまま確定する。
+            // Nowhere left to advance to (margin_box_width itself exceeds the containing width, say):
+            // avoid an infinite loop and settle here as a best effort, allowing the overflow.
             let x = if side == Float::Left {
                 available_left
             } else {
@@ -102,7 +102,7 @@ impl FloatContext {
         }
     }
 
-    /// 配置確定後にfloatを登録する。
+    /// Register the float once its placement is settled.
     pub fn register(
         &mut self,
         side: Float,
@@ -127,8 +127,8 @@ impl FloatContext {
         }
     }
 
-    /// `y`〜`y+height`の帯で、floatに占有されていない`(available_left,
-    /// available_width)`を返す(`inline.rs`が行ごとの折り返し判定に使う)。
+    /// Return the `(available_left, available_width)` not occupied by floats in the band
+    /// from `y` to `y+height` (used by `inline.rs` to decide line wrapping).
     pub fn available_band(
         &self,
         y: f32,
@@ -154,7 +154,7 @@ impl FloatContext {
         (left_edge, (right_edge - left_edge).max(0.0))
     }
 
-    /// `clear`方向のfloat最下端まで押し下げた後のY(対象floatが無ければ`current_y`)。
+    /// The Y after pushing down past the lowest float on the `clear` side (or `current_y` if there is none).
     pub fn clearance(&self, clear: Clear, current_y: f32) -> f32 {
         let max_bottom =
             |entries: &[FloatEntry]| entries.iter().map(|e| e.bottom).fold(current_y, f32::max);
@@ -194,13 +194,13 @@ mod tests {
     #[test]
     fn third_float_wraps_to_next_shelf_when_it_does_not_fit() {
         let mut ctx = FloatContext::new();
-        // 短いが幅の広いfloat(y:0-30でx:100-300を占有)。
+        // A short but wide float (occupying x:100-300 over y:0-30).
         ctx.register(Float::Left, 100.0, 0.0, 200.0, 30.0);
-        // 高さはあるが幅の狭いfloat(y:0-200でx:0-50を占有)。
+        // A tall but narrow float (occupying x:0-50 over y:0-200).
         ctx.register(Float::Left, 0.0, 0.0, 50.0, 200.0);
 
-        // 幅400のfloatはy=0時点では収まらない(占有幅300、空き200)。1番目のfloatが
-        // 抜けるy=30まで進めば、残る占有は50のみとなり幅450の空きが生まれ収まる。
+        // A float of width 400 does not fit at y=0 (300 occupied, 200 free). Advancing to
+        // y=30, where the first float ends, leaves only 50 occupied, freeing 450, so it fits.
         assert_eq!(ctx.place(Float::Left, 0.0, 0.0, 500.0, 400.0), (50.0, 30.0));
     }
 

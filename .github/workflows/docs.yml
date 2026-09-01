@@ -1,9 +1,9 @@
 name: Docs
 
-# ドキュメントサイト(docs/, mdbook)をビルドし、mainならGitHub Pagesへ出す
-# 日本語版が `/`、英語版が `/en/`
+# Build the documentation site (docs/, mdbook) and publish it to GitHub Pages from main.
+# The Japanese edition is served at `/` and the English one at `/en/`.
 #
-# 事前にリポジトリ設定で Settings > Pages > Source を "GitHub Actions" にしておくこと
+# Set Settings > Pages > Source to "GitHub Actions" in the repository settings first.
 
 on:
   push:
@@ -20,7 +20,7 @@ on:
 permissions:
   contents: read
 
-# デプロイは同時に1つだけ。実行中のものは走り切らせる
+# Only one deployment at a time; let an in-flight run finish.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -54,7 +54,7 @@ jobs:
             mdbook-mermaid@${MDBOOK_MERMAID_VERSION} \
             mdbook-i18n-helpers@${MDBOOK_I18N_HELPERS_VERSION}
 
-      # 日本語版(原文) → 英語版の順。book/en は book/ の下に置くので、逆順だと日本語版のビルドが英語版を消してしまう
+      # Japanese (the source) first, then English. book/en sits under book/, so the reverse order would have the Japanese build wipe out the English one.
       - name: Build (ja)
         working-directory: docs
         run: mdbook build -d book

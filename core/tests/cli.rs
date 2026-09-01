@@ -1,13 +1,12 @@
-//! CLI結合・E2Eテスト。
+//! CLI integration and E2E tests.
 //!
-//! 実際にコンパイル済みバイナリを起動し、サンプルHTML(見出し+段落+
-//! ページ分割が発生するだけの長さの繰り返しコンテンツ)を一括変換して、
-//! 有効なPDFが生成されることを確認する。
+//! They really start the compiled binary and convert a sample HTML (a heading plus
+//! paragraphs, with enough repeated content to force pagination) in one go, confirming that
+//! a valid PDF is produced.
 //!
-//! バイト単位のゴールデンPDF比較ではなく構造的なチェック(ページ数・
-//! フォント埋め込みマーカーの有無)にとどめる。改ページパターン
-//! (break-before/after/inside・orphans/widows)ごとの回帰検出は
-//! `fragmentation.rs`が担当する。
+//! Rather than a byte-for-byte golden PDF comparison, the checks are structural (the page
+//! count, the presence of the font embedding markers). Regressions in the page-break
+//! patterns (break-before/after/inside, orphans/widows) are `fragmentation.rs`'s job.
 
 use std::path::Path;
 use std::process::Command;
@@ -17,7 +16,7 @@ const CJK_FONT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fonts/NotoSansCJK-Regular.ttc"
 );
-/// ビットマップのみ(CBDT/CBLC)で、グリフの輪郭を一切持たないフォント。
+/// A bitmap-only font (CBDT/CBLC) with no glyph outlines at all.
 const COLOR_EMOJI_FONT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fonts/NotoColorEmoji.ttf"
@@ -32,8 +31,8 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// `/MediaBox`の期待値をCSS pxで書けるようにするヘルパ。PDFへはpt(既定で
-/// 0.75倍)で書かれるため、ここで換算する。
+/// A helper letting the expected `/MediaBox` be written in CSS px. It is written to the PDF
+/// in pt (0.75x by default), so the conversion happens here.
 fn media_box(width_px: f32, height_px: f32) -> String {
     format!(
         "/MediaBox [0 0 {} {}]",
@@ -80,7 +79,7 @@ fn converts_sample_html_into_a_multi_page_pdf() {
 
 #[test]
 fn defaults_output_path_to_input_with_pdf_extension() {
-    // 一時ディレクトリへ入力HTMLをコピーし、-oを省略して既定の出力先を確認する。
+    // Copy the input HTML into a temporary directory and check the default output with -o omitted.
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-default-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let input = dir.join("input.html");
@@ -105,11 +104,11 @@ fn defaults_output_path_to_input_with_pdf_extension() {
 
 #[test]
 fn font_face_src_url_is_resolved_relative_to_the_html_file_and_embedded() {
-    // HTMLファイルと同じディレクトリに置いたフォントファイルを、
-    // `@font-face { src: url(...); }`の相対パスとして解決できることを確認する。
-    // `--font`ではDejaVu Sans(CJKグリフを持たない)のみを渡し、CJKテキストは
-    // `@font-face`経由で読み込んだフォントでのみ描画できるようにすることで、
-    // 単に`--font`だけで埋め込まれたのではないことを検証する。
+    // Confirm that a font file placed in the same directory as the HTML file resolves as a
+    // relative path in `@font-face { src: url(...); }`.
+    // Only DejaVu Sans (which has no CJK glyphs) is passed with `--font`, so the CJK text can
+    // only be drawn by the font loaded through `@font-face`, proving it was not simply
+    // embedded by `--font`.
     let dir =
         std::env::temp_dir().join(format!("sghtmltopdf-e2e-font-face-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -148,8 +147,8 @@ fn font_face_src_url_is_resolved_relative_to_the_html_file_and_embedded() {
 
 #[test]
 fn works_without_font_by_falling_back_to_a_system_font() {
-    // `--font`は任意。省略した場合はシステムの`sans-serif`候補を既定
-    // フォントとして使う(見つからなければエラー)。
+    // `--font` is optional. When omitted, the system's `sans-serif` candidate is used as the
+    // default font (an error if none is found).
     let output = temp_output_path("no-font");
 
     let status = Command::new(BIN)
@@ -192,7 +191,7 @@ fn fails_with_nonzero_exit_when_input_file_does_not_exist() {
 }
 
 // ---------------------------------------------------------------------------
-// ===== clap移行・stdin/stdout・exit code =====
+// ===== clap migration, stdin/stdout, exit codes =====
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -241,9 +240,9 @@ fn writes_the_pdf_to_stdout_when_the_output_is_a_dash() {
         "PDF bytes should go to stdout"
     );
     assert!(count_occurrences(&out.stdout, b"%%EOF") > 0);
-    // 進捗メッセージはstdoutを汚さない(必ずstderrへ)。
+    // The progress message must not pollute stdout (it always goes to stderr).
     assert!(
-        String::from_utf8_lossy(&out.stderr).contains("標準出力"),
+        String::from_utf8_lossy(&out.stderr).contains("standard output"),
         "progress message should be written to stderr"
     );
 }
@@ -261,7 +260,7 @@ fn stdin_input_without_an_explicit_output_is_a_usage_error() {
 
 #[test]
 fn exit_codes_follow_the_documented_mapping() {
-    // 1 = 使用法エラー(必須の位置引数が無い)
+    // 1 = a usage error (a required positional argument is missing)
     let usage = Command::new(BIN)
         .output()
         .expect("failed to run sghtmltopdf binary");
@@ -271,7 +270,7 @@ fn exit_codes_follow_the_documented_mapping() {
         "missing input is a usage error"
     );
 
-    // 1 = 使用法エラー(未知のオプション)
+    // 1 = a usage error (an unknown option)
     let unknown = Command::new(BIN)
         .arg(SAMPLE_HTML)
         .arg("--font")
@@ -281,7 +280,7 @@ fn exit_codes_follow_the_documented_mapping() {
         .expect("failed to run sghtmltopdf binary");
     assert_eq!(unknown.status.code(), Some(1));
 
-    // 2 = 入力/リソースエラー(入力HTMLが存在しない)
+    // 2 = an input or resource error (the input HTML does not exist)
     let input = Command::new(BIN)
         .arg(Path::new("/nonexistent/does-not-exist.html"))
         .arg("--font")
@@ -307,9 +306,9 @@ fn version_and_help_exit_successfully() {
 
 #[test]
 fn a_failing_run_leaves_no_output_file_behind() {
-    // --fontにフォントではないファイル(HTML自身)を渡して失敗させる。
-    // FileSinkは一時ファイルへ書いてからrenameするため、失敗しても
-    // 出力先には何も残らない。
+    // Make it fail by passing a non-font file (the HTML itself) to --font.
+    // FileSink writes to a temporary file and renames, so nothing is left at the output on failure.
+
     let output = temp_output_path("no-leftover");
     let out = Command::new(BIN)
         .arg(SAMPLE_HTML)
@@ -326,7 +325,7 @@ fn a_failing_run_leaves_no_output_file_behind() {
         "no partial PDF should be left at the output path"
     );
 
-    // 一時ファイル(<output>.tmp-<pid>)も残っていないこと。
+    // The temporary file (<output>.tmp-<pid>) must not be left either.
     let dir = output.parent().unwrap();
     let stem = output.file_name().unwrap().to_string_lossy().to_string();
     let leftovers: Vec<_> = std::fs::read_dir(dir)
@@ -370,7 +369,7 @@ fn base_url_directory_resolves_relative_assets_for_stdin_input() {
     use std::io::Write;
     use std::process::Stdio;
 
-    // 標準入力から読むと相対解決の基準が無くなるため、--base-urlで与える。
+    // Reading from standard input leaves no base for relative resolution, so --base-url supplies one.
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-base-url-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::copy(CJK_FONT_PATH, dir.join("cjk.ttc")).unwrap();
@@ -427,26 +426,26 @@ fn a_bad_base_url_is_reported_as_an_input_error() {
     assert_eq!(out.status.code(), Some(2));
 }
 
-// `server`サブコマンドは`server` feature(既定ON)でのみ存在する。
+// The `server` subcommand only exists with the `server` feature (on by default).
 #[cfg(feature = "server")]
 #[test]
 fn the_server_subcommand_reports_a_bad_listen_address() {
-    // サーバ本体のE2Eは`core/tests/server.rs`が担当する。ここでは
-    // 「起動に失敗したらexit 2で終わる」ことだけを見る(待ち受けに成功すると
-    // 戻ってこないので、必ず失敗するアドレスを渡す)。
+    // The server's own E2E tests are `core/tests/server.rs`'s job. Here we only check that
+    // "a failed start exits with 2" (a successful listen never returns, so an address
+    // guaranteed to fail is passed).
     let out = Command::new(BIN)
         .args(["server", "--listen", "256.256.256.256:1"])
         .output()
         .expect("failed to run sghtmltopdf binary");
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("待ち受け"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot listen"));
 }
 
 // ---------------------------------------------------------------------------
-// ===== ページ設定オプションと`@page`との合成 =====
+// ===== The page setting options and their composition with `@page` =====
 // ---------------------------------------------------------------------------
 
-/// HTMLを一時ディレクトリへ書き、指定した引数でCLIを走らせてPDFバイト列を返す。
+/// Write the HTML to a temporary directory, run the CLI with the given arguments and return the PDF bytes.
 fn run_cli_with(html: &str, extra_args: &[&str], name: &str) -> Vec<u8> {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -475,7 +474,7 @@ const PLAIN_HTML: &str = "<html><body><p>hello</p></body></html>";
 
 #[test]
 fn page_size_option_changes_the_media_box() {
-    // MediaBoxの値はレイアウト内部単位(CSS px)がそのまま入る。
+    // The MediaBox value carries layout's internal unit (CSS px) directly.
     let bytes = run_cli_with(PLAIN_HTML, &["--page-size", "A5"], "page-size");
     assert_eq!(
         count_occurrences(&bytes, media_box(559.4, 793.7).as_bytes()),
@@ -519,7 +518,7 @@ fn explicit_page_width_and_height_override_the_page_size() {
 
 #[test]
 fn margin_options_change_how_much_content_fits_on_a_page() {
-    // 同じHTMLでも上下マージンを増やすとページ数が増える。
+    // The same HTML with larger top and bottom margins gives more pages.
     let html = format!(
         "<html><body>{}</body></html>",
         "<p style=\"margin:0\">line</p>".repeat(40)
@@ -545,7 +544,7 @@ fn margin_options_change_how_much_content_fits_on_a_page() {
 
 #[test]
 fn an_author_at_page_size_wins_over_the_cli_option() {
-    // CLIは初期値で、著者CSSの`@page`宣言が優先される。
+    // The CLI supplies the initial values, and the author CSS's `@page` declaration wins.
     let html = r#"<html><head><style>@page { size: 300px 400px; }</style></head>
                   <body><p>hello</p></body></html>"#;
     let bytes = run_cli_with(html, &["--page-size", "A4"], "at-page-wins");
@@ -561,7 +560,7 @@ fn an_author_at_page_size_wins_over_the_cli_option() {
 
 #[test]
 fn cli_and_at_page_are_merged_per_property() {
-    // `@page`がmarginだけを宣言している場合、sizeはCLI指定が残る。
+    // Where `@page` declares only a margin, the CLI's size setting remains.
     let html = r#"<html><head><style>@page { margin: 0; }</style></head>
                   <body><p>hello</p></body></html>"#;
     let bytes = run_cli_with(
@@ -578,7 +577,7 @@ fn cli_and_at_page_are_merged_per_property() {
 
 #[test]
 fn an_impossible_page_geometry_is_a_usage_error() {
-    // 左右マージンの合計が用紙幅以上。
+    // The left and right margins add up to at least the paper width.
     let out = Command::new(BIN)
         .arg(SAMPLE_HTML)
         .arg("--font")
@@ -590,11 +589,11 @@ fn an_impossible_page_geometry_is_a_usage_error() {
         .output()
         .expect("failed to run sghtmltopdf binary");
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("マージン"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("margins"));
 }
 
 // ---------------------------------------------------------------------------
-// ===== PDFメタデータ・圧縮・スケール・グレースケール =====
+// ===== PDF metadata, compression, scale and grayscale =====
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -613,8 +612,8 @@ fn the_info_dictionary_always_carries_a_producer() {
 
 #[test]
 fn the_trailer_carries_a_file_identifier() {
-    // PDF/Aはファイル識別子(`/ID`)を要求する。バッチ・ストリーミングの
-    // どちらの書き出しでも、同じ作り方で16バイトを2つ書く。
+    // PDF/A requires a file identifier (`/ID`). Both the batch and streaming writers write
+    // two 16-byte values the same way.
     for (args, name) in [
         (&[][..], "file-id-batch"),
         (&["--streaming"][..], "file-id-streaming"),
@@ -699,7 +698,7 @@ fn grayscale_maps_fill_colors_to_their_luminance() {
 
 #[test]
 fn the_default_output_uses_real_paper_dimensions_in_points() {
-    // A4 = 793.7 × 1122.5 CSS px → 595.275 × 841.875 pt(= 210 × 297mm)。
+    // A4 = 793.7 x 1122.5 CSS px -> 595.275 x 841.875 pt (= 210 x 297mm).
     let bytes = run_cli_with(PLAIN_HTML, &[], "a4-pt");
     assert_eq!(
         count_occurrences(&bytes, media_box(793.7, 1122.5).as_bytes()),
@@ -713,7 +712,7 @@ fn the_default_output_uses_real_paper_dimensions_in_points() {
 
 #[test]
 fn dpi_72_keeps_one_css_px_as_one_pt() {
-    // px→pt変換を行わない(1px=1pt)挙動に戻す逃げ道。
+    // The escape hatch back to no px-to-pt conversion (1px = 1pt).
     let bytes = run_cli_with(PLAIN_HTML, &["--dpi", "72"], "dpi72");
     assert!(count_occurrences(&bytes, b"/MediaBox [0 0 793.7 1122.5]") > 0);
 }
@@ -741,13 +740,13 @@ fn a_non_positive_dpi_or_zoom_is_a_usage_error() {
 }
 
 // ---------------------------------------------------------------------------
-// ===== コンテンツ挙動オプション =====
+// ===== The content behaviour options =====
 // ---------------------------------------------------------------------------
 
 #[test]
 fn mono_and_serif_fonts_resolve_the_matching_generic_family() {
-    // `--font`はDejaVu(CJKグリフ無し)だけにし、CJKは汎用family経由の
-    // フォントでしか描けないようにする。
+    // `--font` gets only DejaVu (no CJK glyphs), so CJK can only be drawn by a font reached
+    // through a generic family.
     let html = r#"<html><body><p style="font-family: monospace">日本語</p></body></html>"#;
     let bytes = run_cli_with(html, &["--mono-font", CJK_FONT_PATH], "mono-font");
     assert_eq!(
@@ -778,7 +777,7 @@ fn a_user_style_sheet_applies_below_the_author_css() {
     let css = dir.join("user.css");
     std::fs::write(&css, "p { color: #00ff00 }").unwrap();
 
-    // ユーザーCSSだけが色を決めるケース。
+    // The case where only the user CSS decides the colour.
     let bytes = run_cli_with(
         "<html><body><p>x</p></body></html>",
         &[
@@ -793,7 +792,7 @@ fn a_user_style_sheet_applies_below_the_author_css() {
         "user CSS should apply"
     );
 
-    // 著者CSSが指定していればそちらが勝つ。
+    // Where the author CSS specifies it, that wins.
     let bytes = run_cli_with(
         r#"<html><head><style>p { color: #0000ff }</style></head><body><p>x</p></body></html>"#,
         &[
@@ -821,14 +820,14 @@ fn minimum_font_size_clamps_small_text() {
         &["--no-pdf-compression", "--minimum-font-size", "20"],
         "clamped",
     );
-    // フォントサイズはTf演算子に出る。
+    // The font size appears in the Tf operator.
     assert!(count_occurrences(&small, b" 4 Tf") > 0);
     assert!(count_occurrences(&clamped, b" 20 Tf") > 0);
 }
 
 #[test]
 fn link_annotations_can_be_disabled_by_kind() {
-    // 内部アンカー(`"#here"`)を含むため、raw stringは`r##`で囲む。
+    // It contains an internal anchor (`"#here"`), so the raw string needs `r##` delimiters.
     let html = r##"<html><body>
         <p><a href="https://example.com">external</a></p>
         <p><a href="#here">internal</a></p>
@@ -858,7 +857,7 @@ fn shift_jis_is_decoded_from_the_meta_charset() {
     std::fs::create_dir_all(&dir).unwrap();
     let input = dir.join("input.html");
     let mut bytes = b"<html><head><meta charset=\"shift_jis\"></head><body><p>".to_vec();
-    bytes.extend_from_slice(b"\x93\xfa\x96\x7b\x8c\xea"); // 「日本語」
+    bytes.extend_from_slice(b"\x93\xfa\x96\x7b\x8c\xea"); // the Japanese for "Japanese"
     bytes.extend_from_slice(b"</p></body></html>");
     std::fs::write(&input, &bytes).unwrap();
     let output = dir.join("out.pdf");
@@ -874,12 +873,12 @@ fn shift_jis_is_decoded_from_the_meta_charset() {
         .expect("failed to run sghtmltopdf binary");
     assert!(status.success());
 
-    // 文字化けしていれば.notdefになりグリフが埋まらない。ToUnicodeに
-    // 「日」(U+65E5)が現れることで、正しくデコードされたと確認する。
+    // Mojibake would give .notdef and embed no glyph. The first kanji (U+65E5) appearing in
+    // ToUnicode confirms it was decoded correctly.
     let pdf = std::fs::read(&output).unwrap();
     assert!(count_occurrences(&pdf, b"/Subtype /CIDFontType2") > 0);
 
-    // --encodingの明示指定でも同じ結果になる。
+    // An explicit --encoding gives the same result.
     let output2 = dir.join("out2.pdf");
     let status = Command::new(BIN)
         .arg(&input)
@@ -913,11 +912,11 @@ fn an_unknown_encoding_is_a_usage_error() {
 fn load_media_error_handling_abort_stops_on_a_missing_image() {
     let html = r#"<html><body><img src="does-not-exist.png"><p>x</p></body></html>"#;
 
-    // 既定(ignore)は成功する。
+    // The default (ignore) succeeds.
     let bytes = run_cli_with(html, &[], "media-ignore");
     assert!(bytes.starts_with(b"%PDF-"));
 
-    // abortでは入力/リソースエラー(exit 2)。
+    // With abort it is an input or resource error (exit 2).
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-abort-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let input = dir.join("input.html");
@@ -949,7 +948,7 @@ fn the_streaming_mode_can_be_selected() {
 
 #[test]
 fn allow_limits_local_reads_to_the_listed_directories() {
-    // --allowで許可していないディレクトリのフォントは読めない。
+    // A font in a directory not permitted by --allow cannot be read.
     let dir =
         std::env::temp_dir().join(format!("sghtmltopdf-e2e-{}-allow-dir", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -964,7 +963,7 @@ fn allow_limits_local_reads_to_the_listed_directories() {
         .arg("--quiet")
         .output()
         .expect("failed to run sghtmltopdf binary");
-    // sample.htmlは外部リソースを参照しないため、--allowで絞っても成功する。
+    // sample.html references no external resource, so narrowing with --allow still succeeds.
     assert!(out.status.success());
 
     std::fs::remove_dir_all(&dir).ok();
@@ -972,8 +971,8 @@ fn allow_limits_local_reads_to_the_listed_directories() {
 
 #[test]
 fn an_allow_directory_that_cannot_be_resolved_is_rejected_at_startup() {
-    // 解決できない--allowを黙って受け入れると、許可範囲の判定が生のパスでの
-    // 比較に落ちる。意図しない範囲で動き続けないよう起動時に止める。
+    // Silently accepting an unresolvable --allow would drop the permitted-range check to
+    // comparing raw paths. It stops at startup rather than carrying on with an unintended range.
     let out = Command::new(BIN)
         .arg(SAMPLE_HTML)
         .arg("--font")
@@ -990,16 +989,16 @@ fn an_allow_directory_that_cannot_be_resolved_is_rejected_at_startup() {
 }
 
 // ---------------------------------------------------------------------------
-// ===== ヘッダー/フッター =====
+// ===== Headers and footers =====
 // ---------------------------------------------------------------------------
 
-/// 2ページになるだけの内容を持つHTML。
+/// HTML with just enough content to make two pages.
 const TWO_PAGE_HTML: &str =
     r#"<html><body><p>first</p><p style="break-before: page">second</p></body></html>"#;
 
 #[test]
 fn simple_header_and_footer_options_render_as_margin_boxes() {
-    // テキスト描画演算子を数えるのでcontent streamは非圧縮にする。
+    // The text drawing operators are counted, so the content stream is left uncompressed.
     let plain = run_cli_with(TWO_PAGE_HTML, &["--no-pdf-compression"], "hf-plain");
     let with_hf = run_cli_with(
         TWO_PAGE_HTML,
@@ -1012,7 +1011,7 @@ fn simple_header_and_footer_options_render_as_margin_boxes() {
         ],
         "hf-simple",
     );
-    // 本文だけのときよりテキスト描画が増える(各ページにヘッダ・フッタ)。
+    // More text drawing than with the body alone (a header and footer on every page).
     let plain_text_ops = count_occurrences(&plain, b"Tj") + count_occurrences(&plain, b"TJ");
     let hf_text_ops = count_occurrences(&with_hf, b"Tj") + count_occurrences(&with_hf, b"TJ");
     assert!(
@@ -1023,9 +1022,9 @@ fn simple_header_and_footer_options_render_as_margin_boxes() {
 
 #[test]
 fn page_placeholders_become_page_counters() {
-    // `[page]`/`[topage]`が`counter(page)`/`counter(pages)`になっていれば、
-    // 2ページ目のフッターに「2」「2」が出る。ToUnicodeで数字が使われる
-    // ことを確認する(数字U+0032 = <0032>)。
+    // If `[page]`/`[topage]` became `counter(page)`/`counter(pages)`, the second page's
+    // footer shows "2" and "2". This confirms the digit is used in ToUnicode
+    // (the digit U+0032 = <0032>).
     let bytes = run_cli_with(
         TWO_PAGE_HTML,
         &["--footer-center", "Page [page] of [topage]"],
@@ -1037,14 +1036,14 @@ fn page_placeholders_become_page_counters() {
 
 #[test]
 fn an_author_at_page_margin_box_wins_over_the_cli_option() {
-    // CLI由来のルールは著者ルールより前に置かれる。
+    // The CLI-derived rules are placed before the author's.
     let html = r#"<html><head><style>
             @page { @top-center { content: "FROM CSS"; } }
         </style></head><body><p>x</p></body></html>"#;
     let bytes = run_cli_with(html, &["--header-center", "FROM CLI"], "hf-priority");
     let text = String::from_utf8_lossy(&bytes);
-    // 圧縮されているので直接は読めないが、生成に成功していれば十分
-    // (優先順位そのものはユニットテストとmargin box解決でカバー)。
+    // It is compressed and cannot be read directly, but a successful generation is enough
+    // (the precedence itself is covered by the unit tests and margin box resolution).
     assert!(text.starts_with("%PDF-"));
 }
 
@@ -1056,7 +1055,7 @@ fn header_and_footer_lines_are_drawn() {
         &["--no-pdf-compression", "--header-line", "--footer-line"],
         "with-lines",
     );
-    // 罫線はstroke(S)で描かれる。
+    // The rule is drawn with a stroke (S).
     assert!(
         count_occurrences(&with, b"\nS\n") > count_occurrences(&without, b"\nS\n"),
         "header/footer lines should emit stroke operators"
@@ -1065,9 +1064,9 @@ fn header_and_footer_lines_are_drawn() {
 
 #[test]
 fn header_spacing_increases_the_top_margin() {
-    // 1ページの残り高さの差がページ数の差として現れるだけの分量と余白を使う
-    // (行送りはフォントのメトリクス由来なので、境界ぎりぎりの分量にすると
-    // フォントを変えただけでページ数が並んでしまう)。
+    // Use an amount and margins where the difference in the height left on a page shows up
+    // purely as a difference in the page count (line spacing comes from the font metrics, so
+    // an amount right at the boundary would make the page counts tie on a mere font change).
     let html = format!(
         "<html><body>{}</body></html>",
         "<p style=\"margin:0\">line</p>".repeat(90)
@@ -1105,12 +1104,12 @@ fn header_html_is_composed_onto_every_page() {
     );
 
     assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
-    // ヘッダーHTMLの赤文字が両ページに出る。
+    // The header HTML's red text appears on both pages.
     assert!(
         count_occurrences(&bytes, b"1 0 0 rg") >= 2,
         "the header sub-document should be drawn on every page"
     );
-    // 余白からのはみ出しを切るクリップが入る。
+    // A clip trimming the overflow out of the margin is inserted.
     assert!(
         count_occurrences(&bytes, b"W\n") >= 2,
         "overlay must be clipped"
@@ -1130,7 +1129,7 @@ fn header_html_takes_precedence_over_the_simple_option() {
     )
     .unwrap();
 
-    // 同じ「上側」に両方指定した場合、HTMLだけが描かれる。
+    // With both set on the same (top) side, only the HTML is drawn.
     let bytes = run_cli_with(
         PLAIN_HTML,
         &[
@@ -1149,7 +1148,7 @@ fn header_html_takes_precedence_over_the_simple_option() {
 
 #[test]
 fn topage_is_rejected_in_streaming_mode() {
-    // 総ページ数はストリーミングでは決まらない。
+    // The total page count cannot be known in streaming.
     let out = Command::new(BIN)
         .arg(SAMPLE_HTML)
         .arg("--font")
@@ -1192,10 +1191,10 @@ fn a_malformed_replace_is_a_usage_error() {
 }
 
 // ---------------------------------------------------------------------------
-// ===== cover と TOC =====
+// ===== The cover and the TOC =====
 // ---------------------------------------------------------------------------
 
-/// 見出しを持ち、本文が2ページになるHTML。
+/// HTML with headings and a body of two pages.
 const TOC_DOC_HTML: &str = r#"<html><body>
     <h1 id="intro">Introduction</h1><p>text</p>
     <h2>Background</h2><p>text</p>
@@ -1203,7 +1202,7 @@ const TOC_DOC_HTML: &str = r#"<html><body>
 </body></html>"#;
 
 const COVER_HTML: &str = r#"<html><body><h1>COVER PAGE</h1></body></html>"#;
-/// テキストを持たない表紙(ヘッダー/フッターの有無を数えるため)。
+/// A cover with no text (so the presence of a header/footer can be counted).
 const BLANK_COVER_HTML: &str = r#"<html><body><div style="height:10px"></div></body></html>"#;
 
 fn write_temp_html(dir: &std::path::Path, name: &str, html: &str) -> std::path::PathBuf {
@@ -1228,9 +1227,9 @@ fn toc_adds_pages_and_links_to_every_heading() {
         3,
         "the TOC should add one page in front"
     );
-    // 見出し3つ分のリンク注釈が目次に張られる。
+    // Link annotations for all three headings are placed in the table of contents.
     assert_eq!(count_occurrences(&with, b"/Subtype /Link"), 3);
-    // 名前付き宛先も作られる(id無しの見出しには自動命名)。
+    // Named destinations are created too (a heading with no id gets an automatic name).
     assert!(count_occurrences(&with, b"/Dests") > 0);
 }
 
@@ -1250,7 +1249,7 @@ fn a_cover_page_is_not_counted_and_has_no_header_or_footer() {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-cover-{}", std::process::id()));
     let blank = write_temp_html(&dir, "cover.html", BLANK_COVER_HTML);
 
-    // フッターに総ページ数を出す。coverを足してもその値は変わらないはず。
+    // The footer shows the total page count. Adding a cover should not change that value.
     let base_args = ["--no-pdf-compression", "--footer-center", "[topage]"];
     let without = run_cli_with(TOC_DOC_HTML, &base_args, "cover-without");
     let with = run_cli_with(
@@ -1272,8 +1271,8 @@ fn a_cover_page_is_not_counted_and_has_no_header_or_footer() {
         "the cover adds a physical page"
     );
 
-    // テキストを持たない表紙なので、描画されたテキストの数が増えていなければ
-    // 「表紙にフッターが描かれていない」ことになる。
+    // The cover carries no text, so if the number of drawn texts has not grown, no footer was drawn on the cover.
+
     let text_ops = |pdf: &[u8]| count_occurrences(pdf, b"Tj") + count_occurrences(pdf, b"TJ");
     assert_eq!(
         text_ops(&with),
@@ -1281,7 +1280,7 @@ fn a_cover_page_is_not_counted_and_has_no_header_or_footer() {
         "the cover must not get a header/footer"
     );
 
-    // 総ページ数(counter(pages))は表紙を含めず2のまま。
+    // The total page count (counter(pages)) stays 2, excluding the cover.
     assert!(
         count_occurrences(&with, b"<0032>") > 0,
         "total pages should be 2"
@@ -1318,7 +1317,7 @@ fn a_cover_renders_its_own_content() {
 
 #[test]
 fn page_offset_shifts_the_numbering() {
-    // `--page-offset 10`にすると最初の本文ページが11になる。
+    // With `--page-offset 10` the first body page becomes 11.
     let bytes = run_cli_with(
         TOC_DOC_HTML,
         &[
@@ -1330,7 +1329,7 @@ fn page_offset_shifts_the_numbering() {
         ],
         "page-offset",
     );
-    // 「11」「12」に含まれる数字1(U+0031)がToUnicodeに現れる。
+    // The digit 1 (U+0031) in "11" and "12" appears in ToUnicode.
     assert!(count_occurrences(&bytes, b"<0031>") > 0);
 }
 
@@ -1383,14 +1382,14 @@ fn toc_appearance_options_are_accepted() {
 
 #[test]
 fn unsupported_wkhtmltopdf_options_explain_why() {
-    // 黙って無視せず、理由と代替手段を示してexit 1。
+    // Rather than being ignored silently, it exits 1 with a reason and an alternative.
     for (option, expected) in [
         ("--enable-javascript", "JavaScript"),
         ("--outline", "--toc"),
         ("--xsl-style-sheet", "--user-style-sheet"),
-        ("--image-quality", "画像"),
-        ("--proxy", "プロキシ"),
-        ("--enable-forms", "フォーム"),
+        ("--image-quality", "images"),
+        ("--proxy", "proxy"),
+        ("--enable-forms", "forms"),
     ] {
         let out = Command::new(BIN)
             .arg(SAMPLE_HTML)
@@ -1402,7 +1401,7 @@ fn unsupported_wkhtmltopdf_options_explain_why() {
         assert_eq!(out.status.code(), Some(1), "{option} should exit with 1");
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(
-            stderr.contains(option) && stderr.contains("対応していません"),
+            stderr.contains(option) && stderr.contains("is not supported"),
             "{option}: message should name the option, got: {stderr}"
         );
         assert!(
@@ -1414,16 +1413,16 @@ fn unsupported_wkhtmltopdf_options_explain_why() {
 
 #[test]
 fn a_supported_option_is_not_mistaken_for_an_unsupported_one() {
-    // `--toc`は対応済み。非対応リストの誤爆がないことを確認する。
+    // `--toc` is supported. This confirms the unsupported list does not catch it by mistake.
     let bytes = run_cli_with(PLAIN_HTML, &["--toc"], "not-unsupported");
     assert!(bytes.starts_with(b"%PDF-"));
 }
 
 // ---------------------------------------------------------------------------
-// ストリーミングモードで「黙って結果が変わる」箇所の警告
+// Warnings about where streaming mode silently changes the result
 // ---------------------------------------------------------------------------
 
-/// 警告を確認するため、stderrを取れる形でCLIを走らせる。
+/// Run the CLI in a form that captures stderr, so the warning can be checked.
 fn run_capturing_stderr(html: &str, extra_args: &[&str], name: &str) -> String {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -1451,45 +1450,45 @@ fn run_capturing_stderr(html: &str, extra_args: &[&str], name: &str) -> String {
 
 #[test]
 fn streaming_warns_when_a_font_family_cannot_be_resolved() {
-    // ストリーミングではフォントを処理開始時に固定するため、`font-family`名
-    // からのシステムフォント探索ができない。黙って既定フォントで描かれるので
-    // 警告を出す。
+    // Streaming settles the fonts before processing begins, so a system font cannot be looked
+    // up from a `font-family` name. It would silently be drawn in the default font, so a
+    // warning is emitted.
     let html = r#"<html><body><p style="font-family: monospace">mono</p></body></html>"#;
 
     let streaming = run_capturing_stderr(html, &["--streaming"], "warn-font-streaming");
     assert!(
-        streaming.contains("警告") && streaming.contains("monospace"),
+        streaming.contains("warning:") && streaming.contains("monospace"),
         "streaming should warn about the unresolved family, got: {streaming}"
     );
 
-    // バッチモードは実際に解決できるので警告しない。
+    // Batch mode really can resolve it, so it does not warn.
     let batch = run_capturing_stderr(html, &[], "warn-font-batch");
     assert!(
-        !batch.contains("警告"),
+        !batch.contains("warning:"),
         "batch mode resolves it and must stay quiet, got: {batch}"
     );
 }
 
 #[test]
 fn streaming_warns_about_selectors_that_need_later_siblings() {
-    // 「この先に同じ型の要素が続くか」が要るセレクタは、<body>直下の要素に
-    // ついてバッチと結果が変わる。
+    // A selector needing "whether more elements of the same type follow" gives a different
+    // result from batch for an element directly under <body>.
     let html = r#"<html><head><style>
             p:nth-last-child(2) { color: blue }
             div:has(~ h1) { color: green }
         </style></head><body><p>x</p></body></html>"#;
 
     let streaming = run_capturing_stderr(html, &["--streaming"], "warn-selector-streaming");
-    assert!(streaming.contains("警告"), "got: {streaming}");
+    assert!(streaming.contains("warning:"), "got: {streaming}");
     assert!(streaming.contains(":nth-last-child"), "got: {streaming}");
     assert!(streaming.contains(":has(~"), "got: {streaming}");
 
     let batch = run_capturing_stderr(html, &[], "warn-selector-batch");
-    assert!(!batch.contains("警告"), "got: {batch}");
+    assert!(!batch.contains("warning:"), "got: {batch}");
 }
 
-/// ストリーミングでもバッチと同じ結果になるセレクタは警告しない。
-/// 過剰に警告すると、外す必要のない利用者にまで`--streaming`を諦めさせる。
+/// A selector giving the same result in streaming as in batch is not warned about.
+/// Warning too eagerly would make users give up on `--streaming` when they need not.
 #[test]
 fn streaming_stays_quiet_for_selectors_that_keep_working() {
     let html = r#"<html><head><style>
@@ -1501,7 +1500,7 @@ fn streaming_stays_quiet_for_selectors_that_keep_working() {
         </style></head><body><p>x</p></body></html>"#;
 
     let streaming = run_capturing_stderr(html, &["--streaming"], "warn-selector-safe");
-    assert!(!streaming.contains("警告"), "got: {streaming}");
+    assert!(!streaming.contains("warning:"), "got: {streaming}");
 }
 
 #[test]
@@ -1511,12 +1510,12 @@ fn streaming_stays_quiet_when_everything_is_resolvable() {
     assert!(stderr.is_empty(), "no warning expected, got: {stderr}");
 }
 
-/// 実在のカラー絵文字フォントを明示指定しても採用しないこと。
+/// A real colour emoji font must not be adopted even when named explicitly.
 ///
-/// このフォントは`cmap`を持つので「絵文字を描画できる」ように見えるが、
-/// 輪郭を一切持たないため実際には何も描けない。採用してしまうと、文字が
-/// 豆腐にすらならず消えたうえ、サブセット化が効かず10MB超のフォントが
-/// ほぼ素通しでPDFへ入る。
+/// This font has a `cmap`, so it looks like it "can draw emoji", but with no outlines at all
+/// it can really draw nothing. Adopting it would make the characters disappear rather than
+/// even becoming tofu, while defeating subsetting and pouring over 10MB of font into the PDF
+/// almost untouched.
 #[test]
 fn a_colour_emoji_font_is_refused_with_a_warning() {
     let dir = std::env::temp_dir().join(format!(
@@ -1536,16 +1535,19 @@ fn a_colour_emoji_font_is_refused_with_a_warning() {
         .arg(&output)
         .output()
         .expect("failed to run sghtmltopdf binary");
-    assert!(out.status.success(), "変換自体は成功させる(1本外すだけ)");
+    assert!(
+        out.status.success(),
+        "the conversion itself still succeeds (one font is merely dropped)"
+    );
 
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     assert!(
-        stderr.contains("輪郭を持たない") && stderr.contains("NotoColorEmoji.ttf"),
-        "不採用にした理由をフォント名付きで伝えるはず: {stderr}"
+        stderr.contains("has no outlines") && stderr.contains("NotoColorEmoji.ttf"),
+        "it should state why it was not adopted, naming the font: {stderr}"
     );
     assert!(
         stderr.contains("\u{1F389}"),
-        "描画できなくなった文字を名指しする通常の警告にも乗るはず: {stderr}"
+        "the ordinary warning naming the now-undrawable character should appear too: {stderr}"
     );
 
     let bytes = std::fs::read(&output).expect("output PDF should exist");
@@ -1553,7 +1555,7 @@ fn a_colour_emoji_font_is_refused_with_a_warning() {
     let source_size = std::fs::metadata(COLOR_EMOJI_FONT_PATH).unwrap().len();
     assert!(
         (bytes.len() as u64) < source_size / 10,
-        "採用していたらフォントがほぼ素通しで入る。PDF={} 元フォント={source_size}",
+        "adopting it would pour the font in almost untouched. PDF={} original font={source_size}",
         bytes.len()
     );
 

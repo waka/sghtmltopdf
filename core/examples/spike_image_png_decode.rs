@@ -1,19 +1,19 @@
-//! スパイク: `png`クレートでPNG(パレット/インターレース/透過を含みうる)を
-//! 生ピクセルへデコードし、色本体とアルファチャンネルを分離してPDFへ埋め込むPoC。
+//! Spike: a PoC decoding a PNG (possibly palettised, interlaced or with transparency) to
+//! raw pixels with the `png` crate, splitting the colour data from the alpha channel and embedding both in a PDF.
 //!
-//! JPEGと違い、PNGは一般にDCTDecodeのような生バイト列パススルーができない
-//! (インターレース・パレット・任意ビット深度をPDF側のPredictorだけでは
-//! 再現しきれないため)。そのため`png`クレートでの完全デコード
-//! (インターレース解除・パレット展開・8bit正規化まで含む)が必要になる。
+//! Unlike a JPEG, a PNG generally cannot be passed through as raw bytes the way DCTDecode
+//! allows (interlacing, palettes and arbitrary bit depths cannot be reproduced by PDF's
+//! Predictor alone). So a full decode with the `png` crate is needed (de-interlacing,
+//! palette expansion and normalisation to 8 bits included).
 //!
-//! 検証したいこと:
-//! - `png::Transformations::normalize_to_color8()`で、パレット/低ビット深度/
-//!   インターレースを問わず8bit RGB(A)へ正規化してデコードできるか
-//! - デコード結果からアルファチャンネルを分離し、本体はDeviceRGB+FlateDecode、
-//!   アルファは別XObjectのDeviceGray+FlateDecodeとして`/SMask`で紐付けられるか
+//! What we want to check:
+//! - Whether `png::Transformations::normalize_to_color8()` decodes to 8-bit RGB(A)
+//!   regardless of palette, low bit depth or interlacing
+//! - Whether the alpha channel can be split from the decode result, with the colour data as
+//!   DeviceRGB + FlateDecode and the alpha as a separate XObject in DeviceGray + FlateDecode, tied together by `/SMask`
 //!
-//! 実行: `cargo run --example spike_image_png_decode`
-//! (`tests/fixtures/images/spike_gradient_alpha.png`を使用。右半分が半透明)
+//! Run with: `cargo run --example spike_image_png_decode`
+//! (it uses `tests/fixtures/images/spike_gradient_alpha.png`, whose right half is semi-transparent)
 
 use png::{ColorType, Transformations};
 
@@ -26,25 +26,30 @@ const PNG_PATH: &str = concat!(
 
 fn main() {
     let file = std::io::BufReader::new(
-        std::fs::File::open(PNG_PATH).expect("テスト用PNGフィクスチャの読み込みに失敗"),
+        std::fs::File::open(PNG_PATH).expect("failed to read the PNG test fixture"),
     );
     let mut decoder = png::Decoder::new(file);
-    // パレット展開・低ビット深度の8bit化・tRNSのアルファ化をまとめて有効にする。
+    // Enable palette expansion, 8-bit conversion of low bit depths and tRNS-to-alpha together.
     decoder.set_transformations(Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().expect("PNGヘッダの読み込みに失敗");
+    let mut reader = decoder.read_info().expect("failed to read the PNG header");
 
-    let mut buf = vec![0u8; reader.output_buffer_size().expect("frame countが不明")];
+    let mut buf = vec![
+        0u8;
+        reader
+            .output_buffer_size()
+            .expect("the frame count is unknown")
+    ];
     let info = reader
         .next_frame(&mut buf)
-        .expect("フレームのデコードに失敗");
+        .expect("failed to decode the frame");
     let (width, height) = (info.width, info.height);
     eprintln!(
         "PNG: {width}x{height}, color_type={:?}, bit_depth={:?}",
         info.color_type, info.bit_depth
     );
 
-    // 正規化後はGrayscale/GrayscaleAlpha/Rgb/Rgbaのいずれかになる(パレットは
-    // normalize_to_color8()でRGB(A)へ展開済みのため、ここでIndexedは出てこない)。
+    // After normalisation it is one of Grayscale, GrayscaleAlpha, Rgb or Rgba (a palette is
+    // already expanded to RGB(A) by normalize_to_color8(), so Indexed never appears here).
     let (rgb, alpha): (Vec<u8>, Option<Vec<u8>>) = match info.color_type {
         ColorType::Rgb => (buf, None),
         ColorType::Rgba => {
@@ -71,7 +76,9 @@ fn main() {
             }
             (rgb, Some(alpha))
         }
-        ColorType::Indexed => unreachable!("normalize_to_color8()によりIndexedはRGB(A)へ展開済み"),
+        ColorType::Indexed => {
+            unreachable!("normalize_to_color8() has already expanded Indexed to RGB(A)")
+        }
     };
 
     let mut ids = 0..;
@@ -102,8 +109,8 @@ fn main() {
     content.restore_state();
     pdf.stream(content_id, &content.finish());
 
-    // アルファチャンネルがあれば先に独立したDeviceGray SMaskとして書き出す
-    // (本体側から/SMaskで参照する)。ここもFlateDecode(zlib圧縮)で圧縮する。
+    // If there is an alpha channel, write it out first as an independent DeviceGray SMask
+    // (referenced from the colour data by /SMask). It is FlateDecode (zlib) compressed too.
     if let Some(alpha) = &alpha {
         let compressed = deflate(alpha);
         let mut smask = pdf.image_xobject(smask_id, &compressed);

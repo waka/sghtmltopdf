@@ -1,8 +1,7 @@
-//! `<colgroup>`/`<col>`(列幅指定)のE2Eテスト。
+//! E2E tests for `<colgroup>`/`<col>` (column width settings).
 //!
-//! `table_rowspan.rs`/`table_caption.rs`と同じ方針: 実際のパイプライン
-//! (HTMLパース→スタイルカスケード→レイアウト→PDFエンコード)を通して回帰を
-//! 検知する。
+//! The same approach as `table_rowspan.rs`/`table_caption.rs`: catch regressions by going
+//! through the real pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -22,7 +21,7 @@ fn test_fonts() -> FontCollection {
     ])
 }
 
-/// 最初のテーブルの1行目のセル幅(border-box)を返す。
+/// Return the cell widths (border box) of the first table's first row.
 fn first_row_cell_widths(html_src: &str, css: &str) -> Vec<f32> {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -62,7 +61,7 @@ fn first_row_cell_widths(html_src: &str, css: &str) -> Vec<f32> {
 
 #[test]
 fn col_widths_shape_an_invoice_like_table() {
-    // 請求書によくある「品目は広く、数量・単価・金額は狭く」というレイアウト。
+    // The layout common in an invoice: a wide item column with narrow quantity, unit price and amount columns.
     let widths = first_row_cell_widths(
         r#"<table>
              <colgroup>

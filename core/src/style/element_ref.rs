@@ -1,4 +1,4 @@
-//! [`Dom`]のノードに対する`selectors::Element`実装。
+//! The `selectors::Element` implementation for [`Dom`] nodes.
 
 use html5ever::Namespace;
 use selectors::attr::{AttrSelectorOperation, CaseSensitivity, NamespaceConstraint};
@@ -40,7 +40,7 @@ impl std::fmt::Debug for ElementRef<'_> {
     }
 }
 
-/// 要素の直前/直後にある、要素ノードだけを辿るイテレータ。
+/// Iterator over the element nodes immediately before or after an element.
 fn sibling_elements(dom: &Dom, mut next: Option<NodeId>, forward: bool) -> Option<NodeId> {
     while let Some(id) = next {
         if ElementRef::is_element(id, dom) {
@@ -131,11 +131,11 @@ impl<'a> Element for ElementRef<'a> {
         })
     }
 
-    /// 対話状態(`:hover`/`:focus`等)・訪問履歴(`:visited`)・フォーム状態
-    /// (`:checked`等)はJS非対応の印刷出力では意味を持たないため常に非マッチ。
-    /// `:link`/`:any-link`のみ、`href`を持つ`<a>`(=[`Self::is_link`])として
-    /// 静的に判定できるためマッチさせる(`:visited`は「未訪問」を意味する
-    /// `:link`と排他だが、訪問履歴が存在しない以上すべてのリンクは未訪問)。
+    /// Interaction states (`:hover`/`:focus` and friends), visit history (`:visited`) and
+    /// form states (`:checked` and friends) are meaningless in print output with no JS, so
+    /// they never match. Only `:link`/`:any-link` match, since they can be decided
+    /// statically as "an `<a>` with an `href`" ([`Self::is_link`]). `:visited` is the
+    /// complement of `:link`, but with no visit history every link is unvisited.
     fn match_non_ts_pseudo_class(
         &self,
         pc: &NonTSPseudoClass,
@@ -237,12 +237,11 @@ mod tests {
         dom.children(id).find_map(|child| find(dom, child, tag))
     }
 
-    /// [`Dom::release_subtree`](crate::html::Dom::release_subtree)で解放済み
-    /// のノードは、`NodeData::Released`が既存のいずれの`match`パターンにも
-    /// 積極的にマッチしないため、要素として振る舞わなくなる(タグ名・属性・
-    /// クラス等の照会がすべて非マッチになる)ことを確認する。ストリーミング
-    /// 処理が前提とする「解放済みノードは以後のセレクタマッチングで安全に
-    /// 無視される」
+    /// Check that a node freed by [`Dom::release_subtree`](crate::html::Dom::release_subtree)
+    /// stops behaving as an element: `NodeData::Released` matches none of the existing
+    /// `match` patterns positively, so every query about its tag name, attributes, classes
+    /// and so on fails to match. This is the assumption streaming relies on: a freed node
+    /// is safely ignored by all later selector matching.
     #[test]
     fn released_node_no_longer_behaves_like_an_element() {
         let mut dom = parse(br#"<div id="x" class="c"><p>text</p></div>"#);
@@ -261,9 +260,9 @@ mod tests {
         ));
     }
 
-    /// `:link`/`:any-link`は`href`を持つ`<a>`にだけマッチする(UAスタイル
-    /// シートのリンク色・下線がこれに依存する)。他の状態系擬似クラスは
-    /// 印刷出力では意味を持たないため常に非マッチ。
+    /// `:link`/`:any-link` match only an `<a>` with an `href` (the UA stylesheet's link
+    /// colour and underline depend on it). The other state pseudo-classes are meaningless
+    /// in print output, so they never match.
     #[test]
     fn link_pseudo_classes_match_only_anchors_with_an_href() {
         use crate::style::selector_impl::NonTSPseudoClass;

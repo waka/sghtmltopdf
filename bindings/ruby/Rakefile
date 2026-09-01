@@ -25,17 +25,17 @@ rescue LoadError
   task default: :compile
 end
 
-# `bundler/gem_tasks`の`release`は
-# 「ソースgemを1つbuild → gitタグを作る → push」という処理になっているが、
-# CIでのクロスビルドでは
-# 「ソースgemを1つbuild → gitタグを作る → push → precompiled gemを5つbuild → push」という流れにしたいので、
-# `release`タスクを差し替える。
+# The `release` task from `bundler/gem_tasks` does:
+#   build one source gem -> create a git tag -> push
+# but cross-building in CI needs:
+#   build one source gem -> create a git tag -> push -> build five precompiled gems -> push
+# so we replace the `release` task.
 Rake::Task["release"].clear
 
-desc "pkg/配下のgemをすべてrubygems.orgへpushする(CIから使う)"
+desc "Push every gem under pkg/ to rubygems.org (used from CI)"
 task :release do
   gems = Dir["pkg/*.gem"].sort
-  raise "pkg/にgemがありません。先にクロスビルドと`rake build`を済ませてください" if gems.empty?
+  raise "no gems in pkg/. Run the cross build and `rake build` first" if gems.empty?
 
   gems.each do |path|
     puts "pushing #{path}"

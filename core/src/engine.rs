@@ -1,22 +1,22 @@
-//! `Engine`: HTMLチャンク投入からPDFバイト列書き出しまでを1つのAPIとして
-//! 統合するコアのエントリポイント。
+//! `Engine`: the core entry point unifying everything from feeding HTML chunks to writing
+//! the PDF bytes into a single API.
 //!
-//! Sinkベースの`new`/`feed`/`finish`という粗粒度APIを実装する。Ruby側のFFI
-//! 境界(`Engine.new(options)` / `feed(html_chunk)`
-//! /`each_pdf_chunk { |bytes| ... }` / `finish`)にほぼ1:1で対応する。
+//! It implements the coarse-grained Sink-based `new`/`feed`/`finish` API, corresponding
+//! almost one to one with the Ruby FFI boundary (`Engine.new(options)`, `feed(html_chunk)`,
+//! `each_pdf_chunk { |bytes| ... }`, `finish`).
 //!
-//! ## `Mode::Batch`と`Mode::Streaming`でパイプラインが異なる
+//! ## The pipeline differs between `Mode::Batch` and `Mode::Streaming`
 //!
-//! `Mode::Batch`は、`finish`が呼ばれた時点でDOM全体を一括して
+//! `Mode::Batch` is a thin wrapper over the batch API, processing the whole DOM at once when
 //! (`compute_styles`/`build_box_tree`/`layout_document`/
-//! `paginate_document_streaming`で)処理する、一括APIの薄いラッパー。
+//! `paginate_document_streaming`).
 //!
-//! `Mode::Streaming`は、`<body>`直下のトップレベルブロック要素が確定する
-//! たびに、そのサブツリーだけをスタイル計算・レイアウト・ページ分割・
-//! PDF書き出し・DOM解放まで処理する「真のストリーミング処理」を行う。
-//! `<html>`/`<body>`自身のスタイルは、最初のトップレベル要素が確定する
-//! までに一度だけ計算し、以後の各トップレベル要素のスタイル計算の起点
-//! (継承元)として使う。
+//! `Mode::Streaming` performs genuine streaming: each time a top-level block element
+//! directly under `<body>` becomes final, that subtree alone goes through style computation,
+//! layout, pagination, PDF writing and DOM release.
+//! The styles of `<html>`/`<body>` themselves are computed once, before the first top-level
+//! element is final, and used as the starting point (the inherited source) for computing
+//! each later top-level element's styles.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -51,7 +51,7 @@ use crate::style::{
 };
 use crate::style::{FontStyle, FontWeight};
 
-/// 一括処理かストリーミング処理かを選択する。
+/// Selects batch or streaming processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
     #[default]
@@ -59,8 +59,8 @@ pub enum Mode {
     Streaming,
 }
 
-/// CSSの汎用family名のうち、実体を
-/// 明示指定できるもの。`cursive`/`fantasy`は対象外。
+/// The CSS generic family names whose concrete font can be given explicitly.
+/// `cursive`/`fantasy` are not covered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenericFamily {
     SansSerif,
@@ -69,7 +69,7 @@ pub enum GenericFamily {
 }
 
 impl GenericFamily {
-    /// CSSで書かれる名前。この名前でフォントコレクションへ登録する。
+    /// The name as written in CSS. The font is registered in the collection under this name.
     pub fn css_name(self) -> &'static str {
         match self {
             Self::SansSerif => "sans-serif",
@@ -79,37 +79,37 @@ impl GenericFamily {
     }
 }
 
-/// `--font`相当の明示的なフォント指定。
+/// An explicit font specification, the equivalent of `--font`.
 pub struct FontSpec {
     pub path: PathBuf,
-    /// TrueType Collection(`.ttc`)等、複数フェイスを含むファイルのフェイス番号。
+    /// The face index in a file containing several faces, such as a TrueType Collection (`.ttc`).
     pub index: u32,
 }
 
-/// レンダリング内容の挙動を変えるオプション
+/// Options changing the behaviour of what is rendered.
 ///
-/// PDFの書き出し方だけを変える[`crate::pdf::PdfOutputOptions`]と対になる、
-/// 「何を描くか」側の設定。
+/// The "what is drawn" counterpart of [`crate::pdf::PdfOutputOptions`], which changes only
+/// how the PDF is written.
 #[derive(Debug, Clone)]
 pub struct ContentOptions {
-    /// `<img>`とCSS`background-image`を読み込むか(`--no-images`でfalse)。
+    /// Whether to load `<img>` and CSS `background-image` (false with `--no-images`).
     pub load_images: bool,
-    /// 要素の背景(色・画像)を描くか(`--no-background`でfalse)。
+    /// Whether to paint element backgrounds (colours and images) (false with `--no-background`).
     pub draw_backgrounds: bool,
-    /// ユーザーオリジンのCSS(`--user-style-sheet`)。UAスタイルシートの
-    /// 後ろへ連結する(UAより強く、著者CSSより弱い位置)。
+    /// User-origin CSS (`--user-style-sheet`). Concatenated after the UA stylesheet
+    /// (stronger than the UA, weaker than author CSS).
     pub user_stylesheets: Vec<String>,
-    /// 算出`font-size`の下限(`--minimum-font-size`)。
+    /// The lower bound on the computed `font-size` (`--minimum-font-size`).
     pub minimum_font_size: Option<f32>,
-    /// 外部リンクの注釈を出すか(`--disable-external-links`でfalse)。
+    /// Whether to emit annotations for external links (false with `--disable-external-links`).
     pub external_links: bool,
-    /// 内部リンク(`#id`)の注釈を出すか(`--disable-internal-links`でfalse)。
+    /// Whether to emit annotations for internal links (`#id`) (false with `--disable-internal-links`).
     pub internal_links: bool,
-    /// 相対URLの外部リンクを`<base href>`で絶対化せずそのまま書くか
-    /// (`--keep-relative-links`でtrue)。
+    /// Whether to write a relative external link URL as-is rather than making it absolute
+    /// with `<base href>` (true with `--keep-relative-links`).
     pub keep_relative_links: bool,
-    /// 画像・CSS・フォントの取得に失敗したら中断するか
-    /// (`--load-media-error-handling abort`)。
+    /// Whether to abort when fetching an image, stylesheet or font fails
+    /// (`--load-media-error-handling abort`).
     pub abort_on_media_error: bool,
 }
 
@@ -128,70 +128,69 @@ impl Default for ContentOptions {
     }
 }
 
-/// `Engine`の初期化オプション。
+/// The initialisation options for `Engine`.
 #[derive(Default)]
 pub struct EngineOptions {
     pub mode: Mode,
     pub settings: PageSettings,
-    /// `--font`相当の明示的なフォント指定(複数指定可)。
+    /// Explicit font specifications, the equivalent of `--font` (repeatable).
     pub fonts: Vec<FontSpec>,
-    /// CSSの汎用family名(`sans-serif`/`serif`/`monospace`)の実体を明示指定する
-    /// (`--gothic-font`/`--serif-font`/`--mono-font`相当)。指定した汎用名は
-    /// そのフォントで最優先に解決され、未指定の汎用名はシステムフォントの
-    /// 候補リスト([`crate::fonts`])で解決する。既定`font-family`(未指定)は
-    /// これに関わらず`--font`のフォントへフォールバックする。
+    /// Give the concrete font for a CSS generic family name (`sans-serif`/`serif`/`monospace`)
+    /// explicitly (the equivalent of `--gothic-font`/`--serif-font`/`--mono-font`). A generic
+    /// name given here resolves to that font first, and one left unset resolves through the
+    /// system font candidate list ([`crate::fonts`]). The default `font-family` (unset) falls
+    /// back to the `--font` font regardless.
     pub generic_fonts: Vec<(GenericFamily, FontSpec)>,
-    /// `@font-face`の`src: url(...)`を相対解決する基準ディレクトリ。
-    /// 入力がファイルに対応しない場合(Rackボディ等)は`None`でよく、
-    /// その場合はカレントディレクトリを基準にする。`<img src>`のローカル
-    /// 相対パス解決にも同じ基準ディレクトリを使う。
+    /// The base directory for resolving `src: url(...)` in `@font-face` relatively.
+    /// Where the input corresponds to no file (a Rack body, say) it may be `None`, and the
+    /// current directory is then the base. The same base directory is used for resolving
+    /// local relative paths in `<img src>` too.
     pub base_dir: Option<PathBuf>,
-    /// 相対参照の解決基準URL(`--base-url`相当)。HTMLに`<base href>`が
-    /// あればそちらが優先される(この値はその既定を外から与えるもの)。
-    /// http(s)のURLを想定し、ローカルディレクトリを基準にしたい場合は
-    /// `base_dir`を使う。
+    /// The base URL for resolving relative references (the equivalent of `--base-url`).
+    /// A `<base href>` in the HTML wins (this value only supplies the default from outside).
+    /// An http(s) URL is expected; to use a local directory as the base, use `base_dir`
+    /// instead.
     pub base_href: Option<String>,
-    /// `<img src>`・`<link rel=stylesheet href>`のhttp(s)絶対URLフェッチを
-    /// 許可するか。既定`false`(「既定無効・明示オプトイン」方針。画像・外部
-    /// スタイルシート双方をこの1つのフラグで統括する)。ローカル相対パス・
-    /// `data:`URIはこの値に関わらず常に許可する。
+    /// Whether to allow http(s) absolute URL fetches for `<img src>` and
+    /// `<link rel=stylesheet href>`. `false` by default (the "disabled by default, explicit
+    /// opt-in" rule; this one flag governs both images and external stylesheets). Local
+    /// relative paths and `data:` URIs are always allowed regardless.
     pub allow_remote_assets: bool,
-    /// PDF書き出しオプション(メタデータ・圧縮・スケール・グレースケール)。
+    /// The PDF output options (metadata, compression, scale and grayscale).
     pub output: PdfOutputOptions,
-    /// 描画内容の挙動([`ContentOptions`])。
+    /// The behaviour of what is drawn ([`ContentOptions`]).
     pub content: ContentOptions,
-    /// ローカルファイル参照の可否と許可ディレクトリ
-    /// (`--enable/disable-local-file-access`・`--allow`)。
-    /// 既定はCLIの従来挙動どおり「許可・ディレクトリ制限なし」。
+    /// Whether local file references are allowed, and which directories are permitted
+    /// (`--enable/disable-local-file-access` and `--allow`).
+    /// The default is the CLI's traditional behaviour: allowed, with no directory restriction.
     pub local_access: LocalAccess,
-    /// `--header-html`/`--footer-html`のテンプレート。
+    /// The `--header-html`/`--footer-html` templates.
     pub header_footer_html: HeaderFooterHtml,
-    /// `--cover`のHTML(プレースホルダ展開済み)。
+    /// The `--cover` HTML (with placeholders already expanded).
     pub cover_html: Option<String>,
-    /// 目次の設定。
+    /// The table-of-contents settings.
     pub toc: TocSettings,
-    /// `--page-offset`。TOC・本文のページ番号の起点をずらす。
+    /// `--page-offset`. Shifts the starting page number of the TOC and the body.
     pub page_offset: usize,
-    /// CLIのヘッダー/フッター簡易オプションから合成した`@page`ルール。著者
-    /// CSSのページルールより前に置かれるため、同じmargin boxを著者が
-    /// 宣言していればそちらが勝つ。
+    /// The `@page` rules composed from the CLI's simple header/footer options. They are
+    /// placed before the author CSS's page rules, so an author declaration of the same margin
+    /// box wins.
     pub extra_page_rules: Vec<PageRule>,
-    /// 変換を打ち切る時刻。`None`なら無制限(CLIの既定)。
+    /// The time at which the conversion is abandoned. `None` means unlimited (the CLI default).
     ///
-    /// HTTPサーバモードが`--timeout`から与える。1リクエストが際限なく
-    /// ワーカーを占有するのを防ぐためのもの。
+    /// HTTP server mode supplies it from `--timeout`, to stop one request occupying a worker
+    /// indefinitely.
     ///
-    /// 判定はチャンク投入ごと・トップレベル要素ごと・ページ書き出しごとに
-    /// 行う。レイアウトの1回の呼び出しの内側までは見ないので、超過に
-    /// 気づくのは最大でその1区間ぶん遅れる。
+    /// It is checked per chunk fed, per top-level element and per page written. It never
+    /// looks inside a single layout call, so an overrun is noticed at worst one such interval late.
     pub deadline: Option<std::time::Instant>,
 }
 
-/// ローカルファイル参照の許可設定。
+/// The permission settings for local file references.
 #[derive(Debug, Clone)]
 pub struct LocalAccess {
     pub allow: bool,
-    /// 空でなければ、この配下のファイルだけを読める。
+    /// If non-empty, only files under these directories may be read.
     pub allowed_dirs: Vec<PathBuf>,
 }
 
@@ -204,26 +203,26 @@ impl Default for LocalAccess {
     }
 }
 
-/// `--header-html`/`--footer-html`のテンプレート。
+/// The `--header-html`/`--footer-html` templates.
 ///
-/// 中身はプレースホルダ展開前のHTMLテキスト。ページ番号を含む場合は
-/// ページごとに展開してレイアウトし直す。
+/// The contents are the HTML text before placeholder expansion. Where it contains a page
+/// number, it is expanded and laid out again per page.
 #[derive(Debug, Clone, Default)]
 pub struct HeaderFooterHtml {
     pub header: Option<String>,
     pub footer: Option<String>,
-    /// ページごとに値が変わるプレースホルダ(`[page]`/`[topage]`)の展開値を
-    /// 埋めるための、文書単位で決まる値。
+    /// The document-level values used to fill in the placeholders whose value changes per
+    /// page (`[page]`/`[topage]`).
     pub placeholders: HeaderFooterPlaceholders,
 }
 
-/// プレースホルダの展開値(CLI層の`PlaceholderValues`から詰め替えたもの)。
-/// コアがCLI層に依存しないよう、必要な値だけを持つ素朴な型にしている。
+/// The placeholder expansion values (transferred from the CLI layer's `PlaceholderValues`).
+/// It is a plain type holding only what is needed, so the core does not depend on the CLI layer.
 #[derive(Debug, Clone, Default)]
 pub struct HeaderFooterPlaceholders {
-    /// `[page]`/`[topage]`以外を展開済みにしたテキストを作る関数の代わりに、
-    /// 展開済みのテンプレートをそのまま受け取る運用にする。
-    /// ここにはページ番号だけを差し込むための素材を持つ。
+    /// Rather than a function producing text with everything but `[page]`/`[topage]` already
+    /// expanded, the already-expanded template is received as-is.
+    /// This holds only the material needed to substitute the page numbers.
     pub page_token: String,
     pub total_pages_token: String,
 }
@@ -233,8 +232,8 @@ impl HeaderFooterHtml {
         self.header.is_none() && self.footer.is_none()
     }
 
-    /// ページ番号のプレースホルダを含むか(含まなければレイアウト結果を
-    /// ページ間で使い回せる)。
+    /// Whether it contains a page number placeholder (if not, the layout result can be reused
+    /// across pages).
     pub fn depends_on_page(&self) -> bool {
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
@@ -245,8 +244,8 @@ impl HeaderFooterHtml {
             })
     }
 
-    /// `[topage]`(総ページ数)を使っているか。`Mode::Streaming`では値が
-    /// 定まらないためエラーにする。
+    /// Whether it uses `[topage]` (the total page count). It cannot be determined under
+    /// `Mode::Streaming`, so it is an error there.
     pub fn uses_total_pages(&self) -> bool {
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
@@ -262,8 +261,8 @@ impl HeaderFooterHtml {
     }
 }
 
-/// ヘッダー(`top = true`)またはフッター用に、余白領域を基準とした
-/// `PageSettings`とクリップ矩形を作る。
+/// Build the `PageSettings` and clip rectangle relative to the margin area, for the header
+/// (`top = true`) or the footer.
 fn overlay_area(settings: &PageSettings, top: bool) -> (PageSettings, Rect) {
     let size = settings.size;
     let (margin, clip) = if top {
@@ -300,12 +299,12 @@ fn overlay_area(settings: &PageSettings, top: bool) -> (PageSettings, Rect) {
     (PageSettings { size, margin }, clip)
 }
 
-/// ヘッダー/フッターHTMLを1つ、余白領域向けにレイアウトして
-/// [`PageOverlay`]にする。
+/// Lay one header/footer HTML out against the margin area and turn it into a [`PageOverlay`].
 ///
-/// 画像は非対応(`ImageAssetCache`を渡していないため
-/// `<img>`は空のボックスになる)。テキスト・枠線・背景色は本文と同じ
-/// パイプラインで描かれる。
+///
+/// Images are not supported (no `ImageAssetCache` is passed, so an `<img>` becomes an empty
+/// box). Text, borders and background colours are drawn through the same pipeline as the
+/// body.
 fn layout_overlay(
     html: &str,
     fonts: &FontCollection,
@@ -337,13 +336,13 @@ fn layout_overlay(
     })
 }
 
-/// ヘッダー/フッターHTML用のフェッチャ。外部リソースは取得しない
-/// (インラインの`<style>`とテキストだけを対象にする。既知の限界)。
+/// The fetcher for the header/footer HTML. It fetches no external resources
+/// (only an inline `<style>` and text are covered; a known limitation).
 fn overlay_fetcher() -> ImageFetcher {
     ImageFetcher::new(PathBuf::from("."), false).with_local_access(false, Vec::new())
 }
 
-/// このページに重ねるヘッダー/フッターのオーバーレイを作る。
+/// Build the header/footer overlays to composite onto this page.
 #[allow(clippy::too_many_arguments)]
 fn build_page_overlays(
     html: &HeaderFooterHtml,
@@ -355,7 +354,7 @@ fn build_page_overlays(
     cache: &DocumentImageCache,
     cached: &mut Option<Vec<PageOverlay>>,
 ) -> Vec<PageOverlay> {
-    // ページ番号を含まないなら初回のレイアウトを使い回す。
+    // Where no page number is involved, the first layout is reused.
     if !html.depends_on_page() {
         if let Some(overlays) = cached.as_ref() {
             return overlays.clone();
@@ -376,20 +375,20 @@ fn build_page_overlays(
     overlays
 }
 
-/// 見出しの一覧から目次のHTMLを組み立てる関数(CLI層(`cli::toc`)が
-/// 実装して渡す)。
+/// The function building the table-of-contents HTML from the list of headings (implemented
+/// and supplied by the CLI layer, `cli::toc`).
 pub type TocHtmlBuilder = Rc<dyn Fn(&[TocHeading]) -> String>;
 
-/// 目次(`--toc`)の設定。
+/// The table-of-contents (`--toc`) settings.
 ///
-/// 見た目に関わる値はCLI層(`cli::toc::TocOptions`)が組み立てたCSS/HTMLへ
-/// 反映されるため、コア側は「有効かどうか」と「HTML組み立て関数」だけを持つ。
+/// Everything affecting its appearance is reflected in the CSS/HTML the CLI layer
+/// (`cli::toc::TocOptions`) builds, so the core holds only "is it enabled" and the HTML builder function.
 #[derive(Clone)]
 pub struct TocSettings {
     pub enabled: bool,
-    /// 見出しの一覧からTOCのHTMLを組み立てる関数。CLI層が実装したものを渡す。
+    /// The function building the TOC's HTML from the list of headings. The CLI layer's implementation is passed in.
     pub build_html: TocHtmlBuilder,
-    /// 見出しから目次へ戻るリンクを張るか(`--enable-toc-back-links`)。
+    /// Whether to link headings back to the table of contents (`--enable-toc-back-links`).
     pub back_links: bool,
 }
 
@@ -412,23 +411,23 @@ impl std::fmt::Debug for TocSettings {
     }
 }
 
-/// 目次に載せる見出し1件。
+/// One heading listed in the table of contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TocHeading {
-    /// `h1`=1 … `h6`=6。
+    /// `h1` = 1 ... `h6` = 6.
     pub level: u8,
     pub title: String,
-    /// 本文内での0始まりのページ番号。表示番号は
-    /// `body_page + 1 + TOCページ数 + page_offset`。
+    /// The 0-based page number within the body. The displayed number is
+    /// `body_page + 1 + the TOC page count + page_offset`.
     pub body_page: usize,
-    /// リンク先の名前付き宛先。
+    /// The named destination to link to.
     pub anchor: String,
 }
 
-/// 本文のページ列から`h1`〜`h6`を拾い、そのページ番号とアンカー名を集める。
+/// Pick out the `h1` to `h6` from the body's pages and collect their page numbers and anchor names.
 ///
-/// `id`を持たない見出しには`__sgtoc_<連番>`を
-/// 自動で振り、`anchor_names`へ追加する。
+/// A heading with no `id` is given an automatic `__sgtoc_<serial>`, which is added to
+/// `anchor_names`.
 fn collect_headings(
     dom: &Dom,
     pages: &[crate::layout::Page],
@@ -476,7 +475,7 @@ fn collect_headings(
                 }
             }
         }
-        // 子の辿り方は`pdf::document::collect_link_areas`と同じ構造。
+        // The children are walked with the same structure as `pdf::document::collect_link_areas`.
         match &b.content {
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
                 for child in children {
@@ -524,7 +523,7 @@ fn collect_headings(
             let anchor = match anchor_names.get(&node) {
                 Some(existing) => existing.clone(),
                 None => {
-                    // `id`が無い見出しには自動で宛先名を振る。
+                    // A heading with no `id` is given an automatic destination name.
                     let name = anchor_destination_name(&format!("__sgtoc_{i}"));
                     anchor_names.insert(node, name.clone());
                     name
@@ -542,8 +541,8 @@ fn collect_headings(
         .collect()
 }
 
-/// 独立したHTMLドキュメント(cover/TOC)をレイアウトしてページ列にする。
-/// 外部リソースは取得しない(ヘッダー/フッターと同じ制約)。
+/// Lay out an independent HTML document (a cover or TOC) into a list of pages.
+/// It fetches no external resources (the same constraint as the header/footer).
 fn render_standalone_document(
     html: &str,
     fonts: &FontCollection,
@@ -556,10 +555,10 @@ fn render_standalone_document(
     paginate_document(&dom, &styles, fonts, settings)
 }
 
-/// 目次のページ列を、ページ数が収束するまで組み立て直す。
+/// Rebuild the table of contents' pages until the page count converges.
 ///
-/// 戻り値は(TOCのページ列, TOCドキュメントのスタイル)。TOCは独立ドキュメント
-/// なので、描画にはそのスタイルマップが要る。
+/// It returns (the TOC's pages, the TOC document's styles). The TOC is an independent
+/// document, so drawing it needs its own style map.
 fn build_toc_pages(
     headings: &[TocHeading],
     toc: &TocSettings,
@@ -597,22 +596,22 @@ fn build_toc_pages(
         }
         if round + 1 == MAX_ROUNDS {
             eprintln!(
-                "警告: 目次のページ数が収束しませんでした(最後の結果を使います)。\n  \
-                 目次のページ番号が1ページ分ずれる可能性があります"
+                "warning: the table of contents' page count did not converge (using the last result).\n  \
+                 The page numbers in the table of contents may be off by one page"
             );
         }
     }
     result
 }
 
-/// `--font`で明示されたフォントを読む。
+/// Load the fonts named explicitly with `--font`.
 fn load_explicit_fonts<E>(specs: &[FontSpec]) -> Result<Vec<Font>, EngineError<E>> {
     let mut loaded = Vec::with_capacity(specs.len());
     for spec in specs {
         let font = Font::load_indexed(&spec.path, spec.index)
-            .map_err(|e| EngineError::Font(format!("フォントの読み込みに失敗しました: {e}")))?;
-        // 明示指定でも、輪郭を持たないフォントは採らない。埋め込んでも
-        // 何も描かれないうえ、サブセット化が効かずPDFだけが膨らむため。
+            .map_err(|e| EngineError::Font(format!("failed to load the font: {e}")))?;
+        // Even when named explicitly, a font with no outlines is not taken. Embedding it would
+        // draw nothing while defeating subsetting and bloating the PDF.
         if !font.has_outlines() {
             warn_font_without_outlines(&spec.path.display().to_string());
             continue;
@@ -622,16 +621,16 @@ fn load_explicit_fonts<E>(specs: &[FontSpec]) -> Result<Vec<Font>, EngineError<E
     Ok(loaded)
 }
 
-/// `--font`・`@font-face`・システムフォント探索をすべて終えてもフォントが
-/// 1つも無い場合に、システムの`sans-serif`候補を既定フォントとして補う。
+/// Where no font at all remains after `--font`, `@font-face` and system font discovery, fill
+/// in the system's `sans-serif` candidate as the default font.
 ///
-/// フォントが1つも無いと、`font-family`未指定のテキスト(既定`font-family`は
-/// 空)の描画先が無くなる。`--font`を必須にせずシステムフォントで埋める
-/// ことで、wkhtmltopdfと同じ使い心地にしている(その代わり、何も
-/// 指定しなかった場合の出力は実行環境に依存する)。
+/// With no font at all there is nowhere to draw text with no `font-family` (the default
+/// `font-family` being empty). Filling it in from the system fonts rather than requiring
+/// `--font` gives the same feel as wkhtmltopdf (at the cost of the output depending on the
+/// environment when nothing is specified).
 ///
-/// `@font-face`でフォントが供給されている場合は何もしない。ここで
-/// 足してしまうとフェイスの並び順が変わってしまうため。
+/// It does nothing when `@font-face` supplied a font, because adding one here would change
+/// the order of the faces.
 fn ensure_default_font<E>(
     fonts: &mut FontCollection,
     system: &SystemFonts,
@@ -645,19 +644,19 @@ fn ensure_default_font<E>(
             Ok(())
         }
         None => Err(EngineError::Font(
-            "使用できるフォントがありません(システムフォントが見つかりませんでした)。\n  \
-             --fontでフォントファイルを指定してください"
+            "no usable font (no system font was found).\n  \
+             Specify a font file with --font"
                 .to_string(),
         )),
     }
 }
 
-/// `Mode::Streaming`で`font-family`が解決できなかった場合に警告する。
+/// Warn when a `font-family` could not be resolved under `Mode::Streaming`.
 ///
-/// ストリーミング処理では[`crate::pdf::StreamingPdfWriter`]が`new`の時点で
-/// フォント数を固定するため、後から`font-family`名でシステムフォントを
-/// 探して足すことができない(`load_missing_system_fonts`を呼べない)。
-/// 該当する指定は黙って既定フォントで描画されるので、一度だけ警告する。
+/// In streaming, [`crate::pdf::StreamingPdfWriter`] fixes the font count at `new`, so a
+/// system font cannot be looked up by `font-family` name and added later
+/// (`load_missing_system_fonts` cannot be called).
+/// Such a setting would silently be drawn in the default font, so it is warned about once.
 fn warn_unresolved_font_families(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     fonts: &FontCollection,
@@ -673,27 +672,27 @@ fn warn_unresolved_font_families(
             }
             warned.push(family.clone());
             eprintln!(
-                "警告: font-family \"{family}\" はストリーミングモードでは解決できません\n  \
-                 (フォントは処理開始時に確定させる必要があるため)。既定のフォントで描画します。\n  \
-                 --font/--gothic-font/--serif-font/--mono-font か @font-face で明示してください"
+                "warning: font-family \"{family}\" cannot be resolved in streaming mode\n  \
+                 (the fonts have to be settled before processing begins). It will be drawn in the default font.\n  \
+                 Name it explicitly with --font/--gothic-font/--serif-font/--mono-font or @font-face"
             );
         }
     }
 }
 
-/// CLI由来の`@page`ルールを著者ルールの前に並べたものを返す。
+/// Return the CLI-derived `@page` rules placed before the author's rules.
 fn page_rules_with_cli(extra: &[PageRule], author: &[PageRule]) -> Vec<PageRule> {
     let mut rules = extra.to_vec();
     rules.extend_from_slice(author);
     rules
 }
 
-/// ユーザーオリジンのCSSをUAスタイルシートの後ろへ連結する。
+/// Concatenate the user-origin CSS after the UA stylesheet.
 ///
-/// CSSのカスケードではユーザーオリジンは「UAより強く著者CSSより弱い」。
-/// UAシートの末尾に置けば同オリジン内のソース順で後勝ちになり、著者CSSには
-/// 負けるため、この近似で意図した強さになる(`!important`は未対応のため
-/// 逆転の問題も起きない)。
+/// In the CSS cascade the user origin is "stronger than the UA, weaker than author CSS".
+/// Placing it at the end of the UA sheet makes it win on source order within that origin
+/// while still losing to author CSS, so this approximation gives the intended strength
+/// (`!important` is unsupported, so there is no inversion to worry about either).
 fn append_user_stylesheets(ua: &mut Stylesheet, user_css: &[String]) {
     for css in user_css {
         let sheet = crate::style::parse_stylesheet(css);
@@ -701,13 +700,13 @@ fn append_user_stylesheets(ua: &mut Stylesheet, user_css: &[String]) {
     }
 }
 
-/// スタイル計算後の一括後処理(`--no-background`・`--minimum-font-size`)。
+/// The bulk post-processing after style computation (`--no-background` and `--minimum-font-size`).
 fn apply_content_options(
     styles: &mut HashMap<NodeId, Rc<ComputedStyle>>,
     content: &ContentOptions,
 ) {
     for shared in styles.values_mut() {
-        // 共有されているスタイルを書き換えるので、必要なときだけ複製する。
+        // It rewrites a shared style, so it is cloned only when it has to be.
         if !content.draw_backgrounds {
             let style = Rc::make_mut(shared);
             style.background_color = RgbaColor::TRANSPARENT;
@@ -721,33 +720,33 @@ fn apply_content_options(
     }
 }
 
-/// `Engine`が返すエラー。`Sink`からのエラー(`Io`)、コア自身が判定する
-/// 構造エラー(`UnsupportedInStreamingMode`)、フォント読み込みエラー
-/// (`Font`)を区別する。
+/// The errors `Engine` returns. It distinguishes an error from the `Sink` (`Io`), a
+/// structural error the core decides itself (`UnsupportedInStreamingMode`), and a font
+/// loading error (`Font`).
 #[derive(Debug)]
 pub enum EngineError<E> {
     Io(E),
     UnsupportedInStreamingMode(&'static str),
     Font(String),
-    /// DOMのネストが[`crate::html::MAX_ELEMENT_DEPTH`]を超えた。
+    /// The DOM nesting exceeded [`crate::html::MAX_ELEMENT_DEPTH`].
     ///
-    /// 以降のスタイル計算・レイアウト・描画はいずれも深さぶん再帰するため、
-    /// ここで止めないとスタックオーバーフローでプロセスごと落ちる。
+    /// Style computation, layout and drawing all recurse as deep as that, so without stopping
+    /// here a stack overflow would take the whole process down.
     DepthLimitExceeded {
         depth: u32,
         limit: u32,
     },
-    /// 保持しているノード数が[`crate::html::MAX_NODES`]を超えた。
+    /// The number of nodes held exceeded [`crate::html::MAX_NODES`].
     ///
-    /// スタイル・ボックスツリー・レイアウト結果がノード数に比例して積み上がる
-    /// ため、ここで止めないとメモリを食い潰す。
+    /// Styles, the box tree and the layout result all pile up in proportion to the node
+    /// count, so without stopping here memory would be exhausted.
     NodeLimitExceeded {
         nodes: usize,
         limit: usize,
     },
-    /// [`EngineOptions::deadline`]を過ぎたため打ち切った。
+    /// Abandoned because [`EngineOptions::deadline`] passed.
     TimedOut,
-    /// `--load-media-error-handling abort`のときに、画像・外部CSS等の取得に失敗した。
+    /// Fetching an image, external CSS or the like failed under `--load-media-error-handling abort`.
     MediaLoad(String),
 }
 
@@ -765,26 +764,26 @@ impl<E: std::fmt::Display> std::fmt::Display for EngineError<E> {
             Self::Font(msg) => write!(f, "{msg}"),
             Self::DepthLimitExceeded { depth, limit } => write!(
                 f,
-                "HTMLのネストが深すぎます(深さ{depth}、上限{limit})。\n  \
-                 入れ子を浅くするか、閉じタグの抜けがないか確認してください"
+                "the HTML is nested too deeply (depth {depth}, limit {limit}).\n  \
+                 Reduce the nesting, or check for a missing closing tag"
             ),
             Self::NodeLimitExceeded { nodes, limit } => write!(
                 f,
-                "HTMLの要素数が多すぎます(ノード数{nodes}、上限{limit})。\n  \
-                 文書を分割するか、--streamingで逐次処理してください"
+                "the HTML has too many elements ({nodes} nodes, limit {limit}).\n  \
+                 Split the document, or process it incrementally with --streaming"
             ),
-            Self::TimedOut => write!(f, "変換が制限時間を超えました"),
-            Self::MediaLoad(msg) => write!(f, "リソースの取得に失敗しました: {msg}"),
+            Self::TimedOut => write!(f, "the conversion exceeded the time limit"),
+            Self::MediaLoad(msg) => write!(f, "failed to fetch a resource: {msg}"),
         }
     }
 }
 
 impl<E: std::fmt::Debug + std::fmt::Display> std::error::Error for EngineError<E> {}
 
-/// 深さとノード数の上限をまとめて確認する。
+/// Check the depth and node count limits together.
 ///
-/// `Engine`のメソッドからも、`self`を持てない`finish_batch`の途中からも
-/// 呼べるように独立した関数にしてある。
+/// It is a free function so it can be called both from `Engine`'s methods and from part-way
+/// through `finish_batch`, which has no `self`.
 fn check_document_limits<E>(depth: u32, nodes: usize) -> Result<(), EngineError<E>> {
     if depth > crate::html::MAX_ELEMENT_DEPTH {
         return Err(EngineError::DepthLimitExceeded {
@@ -801,7 +800,7 @@ fn check_document_limits<E>(depth: u32, nodes: usize) -> Result<(), EngineError<
     Ok(())
 }
 
-/// `deadline`を過ぎていれば[`EngineError::TimedOut`]を返す。
+/// Return [`EngineError::TimedOut`] if `deadline` has passed.
 fn check_deadline<E>(deadline: Option<std::time::Instant>) -> Result<(), EngineError<E>> {
     match deadline {
         Some(deadline) if std::time::Instant::now() >= deadline => Err(EngineError::TimedOut),
@@ -809,66 +808,65 @@ fn check_deadline<E>(deadline: Option<std::time::Instant>) -> Result<(), EngineE
     }
 }
 
-/// `Mode::Streaming`でのトップレベル要素処理に必要な、`<head>`閉じ時点
-/// (`<body>`検出時点)で一度だけ確定する状態。
+/// The state needed to process top-level elements under `Mode::Streaming`, settled once when
+/// `<head>` closes (that is, when `<body>` is detected).
 struct StreamingState<S: Sink> {
     ua: Stylesheet,
     author: Stylesheet,
     fonts: FontCollection,
-    /// 処理済みの全トップレベル要素のスタイルを蓄積する、永続的なマップ。
-    /// 1ページに複数のトップレベル要素のボックスが混在しうるため、
-    /// `StreamingPdfWriter::write_page`はこの全体を必要とする。
+    /// The persistent map accumulating the styles of every top-level element processed.
+    /// One page can hold boxes from several top-level elements, so
+    /// `StreamingPdfWriter::write_page` needs all of it.
     styles: HashMap<NodeId, Rc<ComputedStyle>>,
-    /// `background-image`を持つ要素の、デコード済み画像を`NodeId`キーで
-    /// 引けるようにする側マップ。`styles`と同じく処理済みトップレベル要素
-    /// ぶんを蓄積する。
+    /// The side map letting the decoded image of an element with a `background-image` be
+    /// looked up by `NodeId`. Like `styles`, it accumulates the top-level elements processed
+    /// so far.
     background_images: HashMap<NodeId, Rc<PreparedImage>>,
     root_font_size: f32,
-    /// CSSカウンタの状態。ドキュメント順に依存するため、トップレベル
-    /// 要素をまたいで永続させる必要があり
-    /// `root_font_size`と同じ位置づけで持つ。
+    /// The CSS counter state. It depends on document order, so it has to persist across
+    /// top-level elements and is held here alongside `root_font_size`.
     counters: HashMap<String, Vec<i32>>,
-    /// `quotes`のネスト深度(木構造とは無関係な単一のカウンタ)。
+    /// The nesting depth of `quotes` (a single counter unrelated to the tree structure).
     quote_depth: i32,
-    /// `<body>`要素自身の計算スタイル。各トップレベル要素のスタイル計算の
-    /// 親スタイルとして使う。
+    /// The computed style of the `<body>` element itself. Used as the parent style when
+    /// computing each top-level element's styles.
     body_style: ComputedStyle,
-    /// `<body>`の`padding`/`border`/`margin`を反映した、トップレベル要素の
-    /// containing width。
+    /// The containing width for a top-level element, reflecting `<body>`'s `padding`,
+    /// `border` and `margin`.
     content_width: f32,
-    /// `<body>`の`margin-left`+`border-left`+`padding-left`。
+    /// `<body>`'s `margin-left` + `border-left` + `padding-left`.
     start_x: f32,
-    /// 次に配置するトップレベル要素の開始Y座標(前の要素までの累積高さ)。
+    /// The starting Y coordinate of the next top-level element (the accumulated height so far).
     cursor_y: f32,
-    /// ページのジオメトリ(オーバーレイの領域計算に使う)。
+    /// The page geometry (used to compute the overlay areas).
     page_settings: PageSettings,
-    /// ページ番号に依存しないヘッダー/フッターHTMLのレイアウト結果。
+    /// The layout result of a header/footer HTML that does not depend on the page number.
     overlay_cache: Option<Vec<PageOverlay>>,
-    /// 解決できない`font-family`について警告済みの名前(同じ警告を
-    /// 何度も出さないため)。
+    /// The `font-family` names already warned about as unresolvable (so the same warning is
+    /// not repeated).
     warned_font_families: Vec<String>,
-    /// どのフォントでも描画できず警告済みの文字。ストリーミングでは
-    /// トップレベル要素ごとに判定するため、
-    /// 既に警告した文字を持ち回って重複を防ぐ。
+    /// The characters already warned about as undrawable by any font. Streaming decides this
+    /// per top-level element, so the characters already warned about are carried along to
+    /// prevent duplicates.
     warned_uncovered_chars: HashSet<char>,
-    /// インラインの`<svg>`について既に警告したか(1文書につき1回だけ出す)。
+    /// Whether inline `<svg>` has already been warned about (emitted once per document).
     warned_inline_svg: bool,
-    /// 処理済みトップレベル要素を、サブツリーごと解放してよいか。
+    /// Whether a processed top-level element may be freed along with its subtree.
     ///
-    /// `+`/`~`や`:first-child`のように直前の兄弟が要るセレクタを使う文書では、
-    /// 解放を子孫だけに絞って要素そのものは残す。残さないと、後続の要素から
-    /// 見て「自分が最初の子」になってしまう。
+    /// In a document using selectors that need the preceding sibling, such as `+`/`~` or
+    /// `:first-child`, the freeing is limited to the descendants and the element itself is
+    /// kept. Without it, a later element would see itself as "the first child".
     release_whole_subtree: bool,
     paginator: StreamingPaginator,
     writer: StreamingPdfWriter<S>,
-    /// `<img>`のフェッチ・デコード結果を文書内でメモ化するキャッシュ。
+    /// The cache memoising `<img>` fetch and decode results within the document.
     image_cache: ImageAssetCache,
 }
 
-/// 処理済みのトップレベル要素を解放する。
+/// Free a processed top-level element.
 ///
-/// `whole`が`false`のときは子孫だけを解放し、要素そのものは残す。残した要素は
-/// タグ名・クラス・idを保つので、後続の兄弟から「直前の兄弟」として見え続ける。
+/// With `whole` as `false`, only the descendants are freed and the element itself is kept.
+/// A kept element retains its tag name, classes and id, so a later sibling still sees it as "the preceding sibling".
 fn release_processed(mut dom: std::cell::RefMut<'_, Dom>, node: NodeId, whole: bool) {
     if whole {
         dom.release_subtree(node);
@@ -877,14 +875,12 @@ fn release_processed(mut dom: std::cell::RefMut<'_, Dom>, node: NodeId, whole: b
     }
 }
 
-/// HTMLチャンク投入からPDFバイト列書き出しまでを1つのAPIとして統合するコアの
-/// エントリポイント。`--gothic-font`を`font-family: sans-serif`の実体として
-/// 登録する。`push_font_face`で宣言family名`"sans-serif"`として追加するので、
-/// `select_for_char`の通常のfamily一致でそのまま拾える。
-/// `has_matching_face("sans-serif", ...)`が真になるため、後段の
-/// `load_missing_system_fonts`はシステムのゴシック探索をスキップする。CSSの
-/// 汎用family名として明示指定されたフォントを、
-/// その汎用名で引けるように登録する。
+/// Register `--gothic-font` as the concrete font for `font-family: sans-serif`.
+/// It is added with `push_font_face` under the declared family name `"sans-serif"`, so
+/// `select_for_char`'s ordinary family matching picks it up as-is.
+/// `has_matching_face("sans-serif", ...)` then returns true, so the later
+/// `load_missing_system_fonts` skips the system gothic search. This registers a font named
+/// explicitly for a CSS generic family so it can be looked up by that generic name.
 fn register_generic_fonts<E>(
     fonts: &mut FontCollection,
     generic_fonts: &[(GenericFamily, FontSpec)],
@@ -892,7 +888,7 @@ fn register_generic_fonts<E>(
     for (family, spec) in generic_fonts {
         let font = Font::load_indexed(&spec.path, spec.index).map_err(|e| {
             EngineError::Font(format!(
-                "{}のフォントの読み込みに失敗しました: {e}",
+                "failed to load the font for {}: {e}",
                 family.css_name()
             ))
         })?;
@@ -908,9 +904,9 @@ fn register_generic_fonts<E>(
 pub struct Engine<S: Sink> {
     options: EngineOptions,
     parser: StreamingParser,
-    /// `Mode::Batch`では`finish`まで保持し続ける。`Mode::Streaming`では
-    /// 最初のトップレベル要素処理の直前に`StreamingState::writer`へ
-    /// 移動するため`None`になる。
+    /// Under `Mode::Batch` it is kept until `finish`. Under `Mode::Streaming` it becomes
+    /// `None`, having been moved into `StreamingState::writer` just before the first
+    /// top-level element is processed.
     sink: Option<S>,
     streaming: Option<StreamingState<S>>,
 }
@@ -925,15 +921,14 @@ impl<S: Sink> Engine<S> {
         }
     }
 
-    /// パース済みの範囲のネストが上限に収まっているか確認する。
+    /// Check that the nesting of what has been parsed stays within the limit.
     ///
-    /// DOMを再帰的に辿る処理より前に必ず通す。`feed`のたびに呼ぶが、深さは
-    /// 木を組み立てながら更新済みの値を読むだけなのでコストはかからない。
-    /// [`EngineOptions::deadline`]を過ぎていないか確認する。
+    /// It is always passed before anything walks the DOM recursively. It is called on every
+    /// `feed`, but costs nothing: the depth is just a read of a value already updated while
+    /// the tree was built.
     ///
-    /// レイアウトの内側までは辿らないので、置けるのは「区切りのよい場所」
-    /// だけになる。チャンク投入ごと・トップレベル要素ごと・ページ書き出し
-    /// ごとに呼ぶ。
+    /// It does not descend into layout, so it can only sit at convenient boundaries. It is
+    /// called per chunk fed, per top-level element and per page written.
     fn check_deadline(&self) -> Result<(), EngineError<S::Error>> {
         check_deadline(self.options.deadline)
     }
@@ -943,24 +938,24 @@ impl<S: Sink> Engine<S> {
         check_document_limits(dom.max_depth(), dom.node_count())
     }
 
-    /// HTMLバイト列のチャンクを1つ投入する。何度でも呼べる。
+    /// Feed one chunk of HTML bytes. May be called any number of times.
     ///
-    /// `Mode::Streaming`では、投入後に`<body>`より後の`<style>`タグが
-    /// 検出された場合エラーを返す(モジュールdoc参照)。`Mode::Batch`では
-    /// このチェックを行わず、DOMを蓄積するのみで実際の処理は`finish`まで
-    /// 行わない。`Mode::Streaming`では、確定した`<body>`直下のトップレベル
-    /// 要素をこの中で処理する。
+    /// Under `Mode::Streaming` it returns an error if a `<style>` tag after `<body>` is
+    /// detected once fed (see the module docs). `Mode::Batch` does no such check, merely
+    /// accumulating the DOM and doing no real work until `finish`. Under `Mode::Streaming`,
+    /// the top-level elements directly under `<body>` that have become final are processed
+    /// here.
     pub fn feed(&mut self, chunk: &[u8]) -> Result<(), EngineError<S::Error>> {
         self.parser.feed(chunk);
-        // DOMを辿る処理(この後の`find_base_href`等も含めて再帰する)より前に、
-        // 積み上がった深さを確認する。パース自体はアリーナなので深くても安全。
+        // Check the accumulated depth before anything walks the DOM (including the
+        // `find_base_href` below, which recurses). Parsing itself is arena-based and safe at any depth.
         self.ensure_depth_within_limit()?;
         self.check_deadline()?;
         if self.options.mode == Mode::Streaming && self.parser.has_late_css_source() {
             return Err(EngineError::UnsupportedInStreamingMode(
-                "<body>より後の<style>/<link rel=stylesheet>はストリーミングモードでは使えません\n  \
-                 (既に書き出したページへ遡って適用できないため)。\n  \
-                 これらを使う場合は --streaming を外してください",
+                "a <style>/<link rel=stylesheet> after <body> cannot be used in streaming mode\n  \
+                 (it cannot be applied retroactively to pages already written).\n  \
+                 To use them, drop --streaming",
             ));
         }
 
@@ -978,9 +973,9 @@ impl<S: Sink> Engine<S> {
         Ok(())
     }
 
-    /// `<body>`が検出されていて、まだ`StreamingState`を作っていなければ
-    /// 作る。`sink`をここで`StreamingState::writer`へ移動する(以後
-    /// `self.sink`は`None`になる)。
+    /// Create the `StreamingState` if `<body>` has been detected and one has not been created
+    /// yet. `sink` is moved into `StreamingState::writer` here (`self.sink` is `None` from
+    /// then on).
     fn ensure_streaming_state_initialized(&mut self) -> Result<(), EngineError<S::Error>> {
         if self.streaming.is_some() {
             return Ok(());
@@ -991,15 +986,15 @@ impl<S: Sink> Engine<S> {
         let sink = self
             .sink
             .take()
-            .expect("sinkはstreaming state初期化時に一度だけ取り出される");
+            .expect("the sink is taken exactly once, when the streaming state is initialised");
         let state = self.init_streaming_state(body, sink)?;
         self.streaming = Some(state);
         Ok(())
     }
 
-    /// `<head>`閉じ時点(`<body>`検出時点)で一度だけ行う初期化:
-    /// フォント解決・`<html>`/`<body>`のスタイル計算・`<body>`の装飾
-    /// チェック・`StreamingPdfWriter`の構築。
+    /// The initialisation done once when `<head>` closes (that is, when `<body>` is
+    /// detected): resolving the fonts, computing the `<html>`/`<body>` styles, checking
+    /// `<body>`'s decoration, and building the `StreamingPdfWriter`.
     fn init_streaming_state(
         &self,
         body: NodeId,
@@ -1012,10 +1007,10 @@ impl<S: Sink> Engine<S> {
             .base_dir
             .as_deref()
             .unwrap_or_else(|| Path::new("."));
-        // 外部スタイルシート(`<link>`)取得用のフェッチャー/キャッシュ。
-        // 画像用の`ImageAssetCache`(下の`image_cache`)とは別インスタンスを
-        // 持つ。`<base href>`は`<head>`に現れるため、この時点(最初の
-        // トップレベル要素が確定した時点)で既にパース済み。
+        // The fetcher and cache for retrieving external stylesheets (`<link>`). It is a
+        // separate instance from the image `ImageAssetCache` (`image_cache` below).
+        // `<base href>` appears in `<head>`, so it is already parsed by this point (when the
+        // first top-level element becomes final).
         let base_href =
             find_base_href(&self.parser.dom()).or_else(|| self.options.base_href.clone());
         let css_fetcher =
@@ -1034,35 +1029,35 @@ impl<S: Sink> Engine<S> {
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
         if rules_use_page_count(&page_rules) {
             return Err(EngineError::UnsupportedInStreamingMode(
-                "@pageのマージンボックスの counter(pages) はストリーミングモードでは使えません\n  \
-                 (総ページ数は1パスでは決まらないため)。\n  \
-                 これを使う場合は --streaming を外してください",
+                "counter(pages) in an @page margin box cannot be used in streaming mode\n  \
+                 (the total page count cannot be known in a single pass).\n  \
+                 To use it, drop --streaming",
             ));
         }
-        // `--header-html`/`--footer-html`の`[topage]`も同じ理由で使えない。
+        // `[topage]` in `--header-html`/`--footer-html` is unusable for the same reason.
         if self.options.header_footer_html.uses_total_pages() {
             return Err(EngineError::UnsupportedInStreamingMode(
-                "--header-html/--footer-html の [topage] はストリーミングモードでは使えません\n  \
-                 (総ページ数は1パスでは決まらないため)。\n  \
-                 これを使う場合は --streaming を外してください",
+                "[topage] in --header-html/--footer-html cannot be used in streaming mode\n  \
+                 (the total page count cannot be known in a single pass).\n  \
+                 To use it, drop --streaming",
             ));
         }
-        // 目次は本文全体のページ分割が終わらないと作れない。
+        // A table of contents cannot be built until the whole body has been paginated.
         if self.options.toc.enabled {
             return Err(EngineError::UnsupportedInStreamingMode(
-                "--toc はストリーミングモードでは使えません\n  \
-                 (目次には本文のページ番号が要るため)。\n  \
-                 これを使う場合は --streaming を外してください",
+                "--toc cannot be used in streaming mode\n  \
+                 (a table of contents needs the body's page numbers).\n  \
+                 To use it, drop --streaming",
             ));
         }
-        // 後方参照セレクタは常に非マッチになる。エラーにはしないが、黙って
-        // 結果が変わるのは避けたいので警告する。
+        // A backward-referencing selector always fails to match. It is not an error, but the
+        // result changing silently is worth avoiding, so it is warned about.
         let unsafe_selectors = streaming_unsafe_selectors(&author);
         if !unsafe_selectors.is_empty() {
             eprintln!(
-                "警告: {} はストリーミングモードでは結果が変わります\n  \
-                 (<body>直下の要素は、前後の兄弟が揃う前に確定するため)。\n  \
-                 これらを使う場合は --streaming を外してください",
+                "warning: {} gives a different result in streaming mode\n  \
+                 (an element directly under <body> becomes final before its siblings either side are known).\n  \
+                 To use them, drop --streaming",
                 unsafe_selectors.join(", ")
             );
         }
@@ -1080,30 +1075,30 @@ impl<S: Sink> Engine<S> {
                 loaded.font,
             );
         }
-        // `load_missing_system_fonts`・`load_fonts_for_uncovered_chars`は
-        // 文書全体のスタイル(や文字)を必要とするが、真のストリーミング処理では
-        // 文書全体を一度に持たないため、ここでは呼ばない。
-        // 代わりに、フォントが何も与えられていない場合は
-        // 既定フォント(ラテン)に加えてCJKカバー用のフォントを先回りで足す。
-        // `--font`/`@font-face`でフォントが供給されている場合に勝手に足さない
-        // のは、フェースの並び順(`unicode-range`先勝ち)と「`--font`で渡した
-        // フォントが既定になる」原則への影響を避けるため。
+        // `load_missing_system_fonts` and `load_fonts_for_uncovered_chars` need the whole
+        // document's styles (and characters), which genuine streaming never holds at once, so
+        // they are not called here.
+        // Instead, where no font has been supplied at all, a font covering CJK is added up
+        // front alongside the default (latin) one.
+        // Nothing is added unasked when `--font`/`@font-face` has supplied a font, to avoid
+        // affecting the order of the faces (`unicode-range` being first-wins) and the
+        // principle that "the font passed with `--font` is the default".
         let had_no_fonts = fonts.is_empty();
         ensure_default_font(&mut fonts, &system_fonts)?;
         if had_no_fonts {
             ensure_cjk_fallback_font(&mut fonts, &system_fonts);
         }
 
-        // CSSカウンタ・quote深度はドキュメント順に依存する状態なので、
-        // <html>から<body>直下の各トップレベル要素まで一貫して同じ状態を引き
-        // 継ぐ(以後`StreamingState`が永続させる)。
+        // The CSS counters and quote depth are state depending on document order, so the same
+        // state is carried consistently from <html> through each top-level element directly
+        // under <body> (`StreamingState` persists it from then on).
         let mut counters = HashMap::new();
         let mut quote_depth = 0;
         let (html_style, body_style, root_font_size) = {
             let dom = self.parser.dom();
             let html_id = dom
                 .parent(body)
-                .expect("<body>には親要素(<html>)があるはず");
+                .expect("<body> should have a parent element (<html>)");
             let default_root_font_size = ComputedStyle::default().font_size.0;
             let html_style = compute_single_element_style(
                 &dom,
@@ -1133,18 +1128,18 @@ impl<S: Sink> Engine<S> {
         let body_border = resolve_border(&body_style);
         if has_visible_decoration(&body_style, &body_border) {
             return Err(EngineError::UnsupportedInStreamingMode(
-                "背景色・枠線を持つ<body>はストリーミングモードでは使えません\n  \
-                 (複数ページにまたがる装飾を再現できないため)。\n  \
-                 これらを使う場合は --streaming を外してください",
+                "a <body> with a background colour or borders cannot be used in streaming mode\n  \
+                 (decoration spanning several pages cannot be reproduced).\n  \
+                 To use them, drop --streaming",
             ));
         }
 
-        // `<a href="#id">`の宛先候補。`Mode::Streaming`ではこの時点(最初の
-        // トップレベル要素が確定した時点)までにパースできた範囲しか
-        // 見えないが、宛先は「そのページを書き出す時に見つかったボックス」
-        // から記録されるため、後からパースされる要素も対象になる(ここで
-        // 集めるのは`id`の一覧ではなく、「どの
-        // ノードがどの名前か」の対応表であるため)。
+        // The candidate destinations for `<a href="#id">`. Under `Mode::Streaming` only what
+        // has been parsed by this point (when the first top-level element became final) is
+        // visible, but a destination is recorded from "the box found when that page is
+        // written", so elements parsed later are covered too (what is collected here is not a
+        // list of `id`s but the mapping of which node has which name).
+
         let anchor_names: HashMap<NodeId, String> = collect_anchor_targets(&self.parser.dom())
             .into_iter()
             .map(|(node, id)| (node, anchor_destination_name(&id)))
@@ -1163,7 +1158,7 @@ impl<S: Sink> Engine<S> {
             + body_border.top
             + body_padding.top;
 
-        // `--title`未指定なら`<title>`をPDFの`/Title`に使う。
+        // With no `--title`, the `<title>` becomes the PDF's `/Title`.
         let mut output = self.options.output.clone();
         output
             .metadata
@@ -1192,13 +1187,13 @@ impl<S: Sink> Engine<S> {
                     self.options.local_access.allowed_dirs.clone(),
                 ),
         )
-        // SVG内の`<text>`は文書と同じフォントで描く。`fonts`はここまでで
-        // 出揃っている(以降は変更しない)ので、この時点で組める。
+        // `<text>` inside an SVG is drawn with the document's fonts. `fonts` is complete by
+        // this point (and never changes afterwards), so it can be built here.
         .with_svg_fonts(SvgFontDb::from_collection(&fonts));
 
-        // 直前の兄弟が要るセレクタを使っていない文書では、従来どおり
-        // サブツリーごと解放する(要素を残すとトップレベル要素1個につき
-        // 1ノードが積み上がるため、要らないなら残さない)。
+        // In a document not using selectors that need the preceding sibling, the whole subtree
+        // is freed as before (keeping the element would accumulate one node per top-level
+        // element, so it is not kept unless needed).
         let release_whole_subtree = !needs_preceding_siblings(&author);
 
         Ok(StreamingState {
@@ -1226,10 +1221,10 @@ impl<S: Sink> Engine<S> {
         })
     }
 
-    /// 確定した1つのトップレベル要素(`<body>`直下の子)を、スタイル計算・
-    /// レイアウト・ページ分割・PDF書き出し・DOM解放まで処理する。
+    /// Take one settled top-level element (a child directly under `<body>`) all the way
+    /// through style computation, layout, pagination, PDF writing and DOM release.
     fn process_top_level_element(&mut self, node: NodeId) -> Result<(), EngineError<S::Error>> {
-        // 1要素ぶんのレイアウトと書き出しに入る前に確認する。
+        // Checked before entering the layout and writing for this one element.
         self.check_deadline()?;
         let Engine {
             parser,
@@ -1238,9 +1233,9 @@ impl<S: Sink> Engine<S> {
             ..
         } = self;
         let options_content = &options.content;
-        let state = streaming
-            .as_mut()
-            .expect("process_top_level_elementはstreaming state初期化後にのみ呼ばれる");
+        let state = streaming.as_mut().expect(
+            "process_top_level_element is only called after the streaming state is initialised",
+        );
 
         let (sub_styles, item_box) = {
             let dom = parser.dom();
@@ -1261,16 +1256,16 @@ impl<S: Sink> Engine<S> {
                 &state.fonts,
                 &mut state.warned_font_families,
             );
-            // ストリーミングでは文字ベースのフォント補完ができないので、
-            // 描画できない文字が出たら都度警告する。
+            // Streaming cannot top up fonts from the characters, so an undrawable character
+            // is warned about each time one appears.
             warn_uncovered_chars(
                 &state.fonts,
                 &dom,
                 &sub_styles,
                 &mut state.warned_uncovered_chars,
             );
-            // このトップレベル要素の中だけを見る(文書全体を毎回走査すると
-            // 要素数の2乗になる)。
+            // Only the inside of this top-level element is inspected (scanning the whole
+            // document each time would be quadratic in the element count).
             warn_about_inline_svg(&dom, node, &mut state.warned_inline_svg);
             let mut item_box = build_box_for_element(&dom, &sub_styles, node);
             if let (Some(item_box), true) = (&mut item_box, options_content.load_images) {
@@ -1286,7 +1281,7 @@ impl<S: Sink> Engine<S> {
         state.styles.extend(sub_styles);
 
         let Some(item_box) = item_box else {
-            // `display: none`などでボックスを生成しない要素。
+            // An element generating no box, through `display: none` and the like.
             release_processed(parser.dom_mut(), node, state.release_whole_subtree);
             return Ok(());
         };
@@ -1301,20 +1296,20 @@ impl<S: Sink> Engine<S> {
         );
         state.cursor_y += laid_out.layout.margin_box_height();
 
-        // レイアウトはすでに完了しており、これ以降このDOMサブツリー
-        // (テキスト内容・属性等)が再度読まれることはないため、ページの
-        // flushを待たずに即座に解放してよい(`ComputedStyle`は`state.styles`
-        // に別途保持済み)。
+        // Layout is already complete and this DOM subtree (its text content, attributes and
+        // so on) is never read again, so it can be freed immediately without waiting for the
+        // page to flush (the `ComputedStyle`s are held separately in `state.styles`).
+
         release_processed(parser.dom_mut(), node, state.release_whole_subtree);
 
-        // このトップレベル要素自体が装飾(背景・枠線・background-image。
-        // `has_visible_decoration`はbackground-imageも見る)を持たない場合、
-        // `place_split`は装飾フラグメントを生成しないため、このノード自体が
-        // `page.boxes`に現れることはない。つまり`node`自身の`ComputedStyle`/
-        // 背景画像はこの後`write_page`から一切参照されないため、ここで即座に
-        // 削除してよい(装飾を持つ場合は、装飾フラグメントが実際に配置された
-        // ページのflush時に、下の
-        // `collect_completed_subtree_roots`経由で削除される)。
+        // Where this top-level element itself carries no decoration (a background, borders or
+        // a background-image; `has_visible_decoration` covers background-image too),
+        // `place_split` generates no decoration fragment and this node never appears in
+        // `page.boxes`. That is, `node`'s own `ComputedStyle` and background image are never
+        // referenced again by `write_page`, so they can be removed right here (with
+        // decoration, they are removed via `collect_completed_subtree_roots` below when the
+        // page the decoration fragment really landed on is flushed).
+
         if !laid_out.has_visible_decoration {
             state.styles.remove(&node);
             state.background_images.remove(&node);
@@ -1325,8 +1320,8 @@ impl<S: Sink> Engine<S> {
         for page in &pages {
             if !options.header_footer_html.is_empty() {
                 let page_number = state.writer.page_count() + 1;
-                // `Mode::Streaming`では総ページ数が
-                // 不明なので`[topage]`は空になる。
+                // Under `Mode::Streaming` the total page count is unknown, so `[topage]` comes out empty.
+
                 let overlays = build_page_overlays(
                     &options.header_footer_html,
                     &state.fonts,
@@ -1341,9 +1336,9 @@ impl<S: Sink> Engine<S> {
             }
             state
                 .writer
-                // `Mode::Streaming`は総ページ数を原理的に知りえないため常に`None`
-                // (`counter(pages)`使用時は`init_streaming_state`で事前に
-                // エラーを返している)。
+                // `Mode::Streaming` cannot know the total page count in principle, so it is
+                // always `None` (a use of `counter(pages)` has already been rejected in
+                // `init_streaming_state`).
                 .write_page(
                     page,
                     &state.styles,
@@ -1354,10 +1349,10 @@ impl<S: Sink> Engine<S> {
                 .map_err(EngineError::Io)?;
         }
 
-        // 各ページに実際に配置され、これ以上分割されない
-        // (`FragmentPosition::Whole`/`Last`)子孫ノードの`ComputedStyle`/
-        // 背景画像を解放する。DOM自体は上ですでにタブストーン化済みだが、
-        // 木構造のリンクは保持されているため`Dom::children`で辿れる。
+        // Free the `ComputedStyle`s and background images of the descendant nodes really
+        // placed on each page and not split further (`FragmentPosition::Whole`/`Last`).
+        // The DOM itself is already tombstoned above, but the tree links survive, so it can
+        // still be walked with `Dom::children`.
         let dom = parser.dom();
         for page in &pages {
             for root in collect_completed_subtree_roots(page) {
@@ -1369,12 +1364,12 @@ impl<S: Sink> Engine<S> {
         Ok(())
     }
 
-    /// 残りの処理をすべて行い、`sink`へ書き出す。
+    /// Do all the remaining work and write to `sink`.
     ///
-    /// `Mode::Batch`ではDOM確定後に一括処理する。`Mode::Streaming`では、
-    /// まだ処理していない(保留中だった最後の要素を含む)トップレベル要素を
-    /// すべて処理してから、`StreamingPdfWriter::finish`でフォント埋め込み・
-    /// xref/trailerを書き出す。
+    /// Under `Mode::Batch` everything is processed at once, after the DOM is final. Under
+    /// `Mode::Streaming`, every top-level element not yet processed (including the last one,
+    /// which was being held back) is processed, and then `StreamingPdfWriter::finish` writes
+    /// the font embedding, xref and trailer.
     pub fn finish(mut self) -> Result<S::Output, EngineError<S::Error>> {
         if self.options.mode != Mode::Streaming {
             return self.finish_batch();
@@ -1428,13 +1423,13 @@ impl<S: Sink> Engine<S> {
                 writer.finish(&fonts).map_err(EngineError::Io)
             }
             None => {
-                // <body>が一度も現れなかった(空文書・不正な入力等)。
-                // 空のsink(0ページのPDFにはならないが、書き込みなしで
-                // finishする)扱いにする。
+                // `<body>` never appeared (an empty document, invalid input and so on).
+                // It is treated as an empty sink (not a zero-page PDF, but finished with
+                // nothing written).
                 let sink = self
                     .sink
                     .take()
-                    .expect("streaming未初期化ならsinkはまだ保持しているはず");
+                    .expect("with streaming uninitialised, the sink should still be held");
                 sink.finish().map_err(EngineError::Io)
             }
         }
@@ -1448,11 +1443,11 @@ impl<S: Sink> Engine<S> {
             ..
         } = self;
         let mut dom = parser.finish();
-        // `parser.finish()`は未閉のタグを閉じる過程でノードを足すことがあるため、
-        // `feed`時の確認とは別にここでも見る(この直後からDOMの再帰走査が始まる)。
+        // `parser.finish()` can add nodes while closing unclosed tags, so it is checked here
+        // as well as on `feed` (the recursive DOM walk starts right after this).
         check_deadline(options.deadline)?;
         check_document_limits(dom.max_depth(), dom.node_count())?;
-        let sink = sink.expect("Mode::Batchではsinkがfinishまでそのまま保持される");
+        let sink = sink.expect("under Mode::Batch the sink is held unchanged until finish");
 
         let system_fonts = SystemFonts::scan();
         let mut fonts = FontCollection::new(load_explicit_fonts(&options.fonts)?);
@@ -1474,7 +1469,7 @@ impl<S: Sink> Engine<S> {
         let author = extract_author_stylesheet(&dom, &css_fetcher, &css_cache);
         let mut styles = compute_styles(&dom, &ua, &author);
         apply_content_options(&mut styles, &options.content);
-        // `<a href="#id">`の宛先候補。
+        // The candidate destinations for `<a href="#id">`.
         let mut anchor_names: HashMap<NodeId, String> = collect_anchor_targets(&dom)
             .into_iter()
             .map(|(node, id)| (node, anchor_destination_name(&id)))
@@ -1493,16 +1488,16 @@ impl<S: Sink> Engine<S> {
             );
         }
         load_missing_system_fonts(&mut fonts, &styles, &system_fonts);
-        // family名では手掛かりにならない文字(`font-family`未指定の日本語など)
-        // を文字カバレッジから補う。`ensure_default_font`より先に呼ぶ
-        // 必要はないが、既定フォントを足す前に文書由来のフォントを揃えておく
-        // 方がフェースの並びが読みやすい。
+        // Top up from character coverage the characters a family name gives no clue about
+        // (Japanese with no `font-family`, say). It need not come before `ensure_default_font`,
+        // but getting the document's own fonts in place before adding the default keeps the
+        // order of the faces easier to read.
         load_fonts_for_uncovered_chars(&mut fonts, &dom, &styles, &system_fonts);
         ensure_default_font(&mut fonts, &system_fonts)?;
-        // 補ってもなお描画できない文字が残っていれば警告する。
+        // Warn if any character remains undrawable even after topping up.
         warn_uncovered_chars(&fonts, &dom, &styles, &mut HashSet::new());
-        // インラインの`<svg>`は描画しない。`<img src="*.svg">`は描けるように
-        // なったので、黙って消えると紛らわしい。
+        // Inline `<svg>` is not drawn. `<img src="*.svg">` can be, so it is confusing for one
+        // to vanish silently.
         warn_about_inline_svg(&dom, dom.document(), &mut false);
 
         let mut output = options.output.clone();
@@ -1518,26 +1513,26 @@ impl<S: Sink> Engine<S> {
                     options.local_access.allowed_dirs.clone(),
                 ),
         )
-        // SVG内の`<text>`は文書と同じフォントで描く。フォントの補完
-        // (`load_missing_system_fonts`等)はここより前に済んでいる。
+        // `<text>` inside an SVG is drawn with the document's fonts. Topping the fonts up
+        // (`load_missing_system_fonts` and friends) is already done before this point.
         .with_svg_fonts(SvgFontDb::from_collection(&fonts));
-        // `background-image`はレイアウトのサイズ計算に影響しない描画専用の
-        // 情報なので、`resolve_images`(box tree構築)とは独立に、文書全体の
-        // `styles`から一度だけ構築できる。
+        // A `background-image` is draw-time-only information that does not affect layout
+        // sizing, so it can be built once from the whole document's `styles`, independently
+        // of `resolve_images` (box tree construction).
         let background_images = if options.content.load_images {
             resolve_background_images(&styles, &image_cache)
         } else {
             HashMap::new()
         };
 
-        // `Mode::Batch`は全ページを確定させてから絶対配置をオーバーレイし、
-        // 順に書き出す。`fixed`の全ページ複製・`absolute`の祖先ページ解決が全
-        // ページ確定後でないとできないため、`paginate_document_streaming`(逐
-        // 次解放)ではなくこちらを使う。
+        // `Mode::Batch` settles every page, overlays the absolute positioning and then writes
+        // them in order. Duplicating `fixed` onto every page and resolving an `absolute`'s
+        // ancestor page both require every page to be settled, so this is used rather than
+        // `paginate_document_streaming` (which frees incrementally).
         check_deadline(options.deadline)?;
 
-        // cover/TOCのために、writerを作る前に本文のページを確定させる。
-        // 見出しへ自動で振るアンカー名を`LinkSettings`へ載せる必要があるため。
+        // For the cover and TOC, the body's pages are settled before the writer is created,
+        // because the anchor names assigned automatically to headings have to go into `LinkSettings`.
         let pages = paginate_document_with_absolutes(
             &mut dom,
             &styles,
@@ -1546,22 +1541,22 @@ impl<S: Sink> Engine<S> {
             &image_cache,
         );
 
-        // 目次用の見出し収集。`id`が無い見出しには
-        // 自動で宛先名を振り、`anchor_names`へ足す。
+        // Collecting the headings for the table of contents. A heading with no `id` is given
+        // an automatic destination name, which is added to `anchor_names`.
         let headings = if options.toc.enabled {
             collect_headings(&dom, &pages, &mut anchor_names)
         } else {
             Vec::new()
         };
 
-        // 表紙は独立したドキュメントとして先に組み立てる。
+        // The cover page is assembled first, as an independent document.
         let cover_pages = match &options.cover_html {
             Some(html) => render_standalone_document(html, &fonts, &page_settings),
             None => Vec::new(),
         };
 
-        // 目次は「自身のページ数が本文のページ番号をずらす」ため、ページ数が
-        // 収束するまで最大3回組み立て直す。
+        // The table of contents shifts the body's page numbers by its own page count, so it
+        // is rebuilt up to three times until the page count converges.
         let (toc_pages, toc_styles) = if options.toc.enabled {
             build_toc_pages(
                 &headings,
@@ -1574,7 +1569,7 @@ impl<S: Sink> Engine<S> {
             (Vec::new(), HashMap::new())
         };
 
-        // `counter(pages)`の総ページ数はcoverを除いた「TOC + 本文」。
+        // The total page count for `counter(pages)` is "TOC + body", excluding the cover.
         let total_pages = if rules_use_page_count(&page_rules) {
             Some(toc_pages.len() + pages.len())
         } else {
@@ -1597,13 +1592,13 @@ impl<S: Sink> Engine<S> {
         )
         .map_err(EngineError::Io)?;
 
-        // 書き出し順は cover → TOC → 本文。ページ番号はcoverを数えず、
-        // TOCから`1 + --page-offset`で始める。
+        // The write order is cover, then TOC, then body. Page numbers do not count the cover
+        // and start from `1 + --page-offset` at the TOC.
         let empty_styles: HashMap<NodeId, Rc<ComputedStyle>> = HashMap::new();
         let empty_images: HashMap<NodeId, Rc<PreparedImage>> = HashMap::new();
 
         for page in &cover_pages {
-            // 番号を持たないページ: margin box・ヘッダー/フッターを出さない。
+            // A page with no number: no margin boxes and no header/footer.
             writer.set_next_page_number(None);
             writer
                 .write_page(page, &empty_styles, &empty_images, &fonts, total_pages)
@@ -1652,12 +1647,11 @@ impl<S: Sink> Engine<S> {
     }
 }
 
-/// `@page`ルールの`size`/`margin`宣言(無条件`@page{}`ルールのみ)を`base`(CLI
-/// オプション/既定値)へ適用した`PageSettings`を返す。
-/// `:first`/`:left`/`:right`はmargin box(ヘッダー/フッター内容)の出し
-/// 分けにのみ使うため、ここでは無条件ルールだけを見ればよい
-/// (`is_first`/`is_left`はどちらの値でも`resolve_page_rules`が返す
-/// `size_px`/`margin_*`には影響しない)。
+/// Return the `PageSettings` with the `size`/`margin` declarations of the `@page` rules
+/// (unconditional `@page{}` rules only) applied to `base` (the CLI options or the defaults).
+/// `:first`/`:left`/`:right` are used only to vary the margin boxes (the header/footer
+/// content), so only the unconditional rules matter here (the `size_px`/`margin_*` that
+/// `resolve_page_rules` returns are unaffected by either value of `is_first`/`is_left`).
 fn apply_page_rule_settings_override(base: PageSettings, page_rules: &[PageRule]) -> PageSettings {
     let resolved = resolve_page_rules(page_rules, false, false);
     let mut settings = base;
@@ -1696,9 +1690,9 @@ fn apply_page_rule_settings_override(base: PageSettings, page_rules: &[PageRule]
     settings
 }
 
-/// `root`以下のサブツリーに属するノードの`ComputedStyle`を`styles`から
-/// 取り除く。`dom`は`root`以下がすでに[`Dom::release_subtree`]で解放済み
-/// (タブストーン化済み)でもよい(木構造のリンク自体は保持されるため)。
+/// Remove from `styles` the `ComputedStyle`s of the nodes in the subtree under `root`.
+/// `dom` may already have had everything under `root` freed by [`Dom::release_subtree`]
+/// (tombstoned), since the tree links themselves survive.
 fn remove_subtree_styles(
     dom: &Dom,
     root: NodeId,
@@ -1736,7 +1730,7 @@ mod tests {
             .count()
     }
 
-    /// `/MediaBox`の期待値をCSS pxで書けるようにするヘルパ。
+    /// A helper letting the expected `/MediaBox` be written in CSS px.
     fn media_box(width_px: f32, height_px: f32) -> String {
         format!(
             "/MediaBox [0 0 {} {}]",
@@ -1745,14 +1739,13 @@ mod tests {
         )
     }
 
-    /// PDFバイト列中の全`stream`〜`endstream`区間を展開して連結したものを
-    /// 返す。各ストリームの`/Length N`をパースし、`stream\n`直後から正確に
-    /// `N`バイトを切り出す(`core/src/pdf/document.rs`の同名ヘルパーは
-    /// `\nendstream`という文字列を素朴に探すだけで、フォント埋め込み
-    /// バイナリ中に偶然そのバイト列が出現すると誤って区切ってしまい
-    /// 後続のストリームを取りこぼす。それを踏んで`sanity check: batched
-    /// output should draw strokes`が誤って失敗することを実際に確認した
-    /// ため、ここでは`/Length`を使う正確な実装にしている)。
+    /// Return every `stream` to `endstream` region in the PDF bytes, inflated and
+    /// concatenated. Each stream's `/Length N` is parsed and exactly `N` bytes are taken from
+    /// just after `stream\n` (the identically named helper in `core/src/pdf/document.rs`
+    /// naively searches for the string `\nendstream`, so a chance occurrence of those bytes
+    /// inside an embedded font binary cuts in the wrong place and loses the streams that
+    /// follow. That really was observed making `sanity check: batched output should draw
+    /// strokes` fail spuriously, hence the exact `/Length`-based implementation here).
     fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
         fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
             haystack.windows(needle.len()).position(|w| w == needle)
@@ -1760,7 +1753,7 @@ mod tests {
 
         let mut out = Vec::new();
         let mut i = 0;
-        // 末尾の空白で`/Length1`(フォントの元サイズ)と区別する。
+        // The trailing whitespace distinguishes it from `/Length1` (the font's original size).
         while let Some(pos) = find_subslice(&pdf_bytes[i..], b"/Length ") {
             let len_start = i + pos + b"/Length ".len();
             let mut len_end = len_start;
@@ -1801,10 +1794,10 @@ mod tests {
 
     #[test]
     fn streaming_mode_releases_computed_styles_for_flushed_pages() {
-        // 装飾のない200個の<p>。全要素分の`ComputedStyle`を`finish`まで
-        // 保持し続けるなら、200要素分(400エントリ超)が`styles`に残るはず。
-        // ページがflushされるたびに解放されていれば、直近の未flushページ
-        // 分程度(数十エントリ)に収まる。
+        // 200 undecorated <p>s. Holding every element's `ComputedStyle` until `finish` would
+        // leave 200 elements' worth (over 400 entries) in `styles`. Freeing them as each page
+        // is flushed keeps it to roughly the most recent unflushed page's worth (a few dozen entries).
+
         let mut html_src = String::from("<style>.item { height: 100px; margin: 0; }</style><body>");
         for i in 0..200 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -1868,15 +1861,15 @@ mod tests {
 
     #[test]
     fn streaming_mode_matches_batch_mode_for_a_decorated_wrapper_spanning_pages() {
-        // 単一のトップレベル要素(背景色・枠線を持つwrapper)が複数ページに
-        // またがるケース。`process_top_level_element`は1回しか呼ばれない
-        // ため、`push_item`の1回の呼び出し内で複数ページがflushされる。
-        // `styles`解放ロジック(`collect_completed_subtree_roots`)が、
-        // wrapper自身の`ComputedStyle`をまだ必要な間に誤って消していないか
-        // どうかは、`render_box`が`styles.get`の失敗をサイレントに
-        // `ComputedStyle::default()`へフォールバックしてしまう
-        // (`core/src/pdf/document.rs`)ため、ページ数の一致だけでは検出
-        // できない可能性がある。出力バイト列そのものを一括APIと比較する。
+        // The case of a single top-level element (a wrapper with a background colour and
+        // borders) spanning several pages. `process_top_level_element` is called only once, so
+        // several pages are flushed within a single `push_item` call. Whether the `styles`
+        // release logic (`collect_completed_subtree_roots`) wrongly removed the wrapper's own
+        // `ComputedStyle` while it was still needed may not be detectable from the page count
+        // alone, because `render_box` silently falls back to `ComputedStyle::default()` when
+        // `styles.get` fails (`core/src/pdf/document.rs`). So the output bytes themselves are
+        // compared against the batch API.
+
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -1919,14 +1912,14 @@ mod tests {
             count_occurrences(&streamed_bytes, b"/MediaBox"),
             count_occurrences(&batched_bytes, b"/MediaBox"),
         );
-        // 描画コンテンツ(枠線描画で使われる`closepath`+`fill`の出現数)も
-        // 一致するはず。`styles`から早すぎるタイミングでwrapperの
-        // `ComputedStyle`が失われていれば、装飾(枠線)の描画コマンドが欠落
-        // しこの数が変わる。コンテンツストリームは`/FlateDecode`で圧縮
-        // されているため、圧縮後の`bytes`を直接文字列検索しても意味が
-        // なく、展開してから比較する必要がある(`solid_border_fills_a_
-        // mitered_quad_per_side`が示す通り、単色borderは`stroke`ではなく
-        // 辺ごとの塗りつぶしパスとして描画される実装のため`h\nf\n`を数える)。
+        // The drawing content (the number of `closepath` plus `fill` used for border drawing)
+        // should match too. If the wrapper's `ComputedStyle` were lost from `styles` too
+        // early, the decoration (border) drawing commands would be missing and this count
+        // would change. The content stream is `/FlateDecode` compressed, so searching the
+        // compressed `bytes` as a string is meaningless and it has to be inflated first (as
+        // `solid_border_fills_a_mitered_quad_per_side` shows, a single-colour border is drawn
+        // as a per-edge fill path rather than a stroke, hence counting `h\nf\n`).
+
         let streamed_stream = decompressed_stream_bytes(&streamed_bytes);
         let batched_stream = decompressed_stream_bytes(&batched_bytes);
         let streamed_fills = count_occurrences(&streamed_stream, b"h\nf\n");
@@ -1951,7 +1944,7 @@ mod tests {
 
         let settings = PageSettings::default();
 
-        // 既存の一括API経由。
+        // Through the existing batch API.
         let dom = crate::html::parse(html_src.as_bytes());
         let ua = user_agent_stylesheet();
         let css_fetcher = ImageFetcher::new(std::path::PathBuf::from("."), false);
@@ -1971,7 +1964,7 @@ mod tests {
         )
         .unwrap();
 
-        // Engine経由(Mode::Batch)。
+        // Through the Engine (Mode::Batch).
         let options = EngineOptions {
             fonts: vec![font_spec()],
             settings,
@@ -2143,11 +2136,11 @@ mod tests {
 
     #[test]
     fn margin_box_content_glyphs_are_embedded_in_the_font_subset_in_batch_mode() {
-        // margin boxのcontentは通常のBoxContent::Inline経路(collect_usage)を
-        // 通らない独立した経路(collect_margin_box_usage)なので、専用の収集漏れが
-        // 起きていないかを回帰確認する(リストのマーカーグリフ収集漏れと同種の
-        // バグクラス)。本文には登場しない数字を`@bottom-right`のページ番号として
-        // 表示させ、そのグリフが実際にToUnicode CMapへ埋め込まれることを確認する。
+        // A margin box's content goes through its own path (collect_margin_box_usage) rather
+        // than the ordinary BoxContent::Inline one (collect_usage), so this is a regression
+        // check that it has no collection gap of its own (the same class of bug as the missed
+        // list marker glyphs). A digit that never appears in the body is displayed as the page
+        // number in `@bottom-right`, and that glyph is confirmed to be embedded in the ToUnicode CMap.
         let options = EngineOptions {
             mode: Mode::Batch,
             fonts: vec![font_spec()],
@@ -2189,8 +2182,8 @@ mod tests {
 
     #[test]
     fn counter_page_alone_is_allowed_in_streaming_mode() {
-        // `counter(page)`単体(`counter(pages)`を伴わない)は、ページ確定時点で
-        // 値が決まるためストリーミングでも問題なく動作するはず。
+        // `counter(page)` on its own (without `counter(pages)`) has a value once a page is
+        // settled, so it should work fine in streaming too.
         let options = EngineOptions {
             mode: Mode::Streaming,
             fonts: vec![font_spec()],
@@ -2210,9 +2203,9 @@ mod tests {
 
     #[test]
     fn counter_pages_resolves_to_the_actual_total_page_count_in_batch_mode() {
-        // `@page`の`size`/`margin`を明示指定してページ数を決定論的にする:
-        // ページ内容領域の高さ=300px(margin 0)、300px高さのdivを2個並べれば
-        // ちょうど2ページに分かれるはず。
+        // Give `@page` an explicit `size`/`margin` to make the page count deterministic: with
+        // a page content height of 300px (margin 0), two 300px-tall divs should split into
+        // exactly two pages.
         let options = EngineOptions {
             mode: Mode::Batch,
             fonts: vec![font_spec()],
@@ -2254,7 +2247,7 @@ mod tests {
         }
     }
 
-    /// 深くネストしたHTMLを組み立てる。
+    /// Build deeply nested HTML.
     fn deeply_nested_html(depth: usize) -> String {
         format!(
             "<html><body>{}x{}</body></html>",
@@ -2263,9 +2256,9 @@ mod tests {
         )
     }
 
-    /// 上限を超えるネストは、DOMを再帰的に辿る処理へ進む前にエラーで拒否
-    /// されること。これが無いとスタイル計算・レイアウト・描画・`LayoutBox`の
-    /// 再帰Dropのいずれかでスタックオーバーフローし、プロセスごとabortする。
+    /// Nesting past the limit must be rejected with an error before anything walks the DOM
+    /// recursively. Without that, style computation, layout, drawing or the recursive Drop of
+    /// `LayoutBox` would overflow the stack and abort the whole process.
     #[test]
     fn html_nested_beyond_the_depth_limit_is_rejected_in_batch_mode() {
         let options = EngineOptions {
@@ -2281,14 +2274,17 @@ mod tests {
         });
         match result {
             Err(EngineError::DepthLimitExceeded { depth, limit }) => {
-                assert!(depth > limit, "深さ{depth}は上限{limit}を超えているはず");
+                assert!(
+                    depth > limit,
+                    "a depth of {depth} should exceed the limit of {limit}"
+                );
             }
             other => panic!("expected DepthLimitExceeded, got {other:?}"),
         }
     }
 
-    /// ストリーミングモードでも同じく拒否されること(こちらは`feed`の途中で
-    /// 部分木の処理が始まるため、`finish`を待たずに止める必要がある)。
+    /// It must be rejected in streaming mode too (there the subtree processing starts
+    /// part-way through `feed`, so it has to stop without waiting for `finish`).
     #[test]
     fn html_nested_beyond_the_depth_limit_is_rejected_in_streaming_mode() {
         let options = EngineOptions {
@@ -2305,15 +2301,14 @@ mod tests {
         });
         assert!(
             matches!(result, Err(EngineError::DepthLimitExceeded { .. })),
-            "ストリーミングでも深さ超過は拒否されるべき: {result:?}"
+            "exceeding the depth should be rejected in streaming too: {result:?}"
         );
     }
 
-    /// ノード数が上限を超える入力は拒否すること。
+    /// Input exceeding the node count limit must be rejected.
     ///
-    /// スタイル・ボックスツリー・レイアウト結果がノード数に比例して積み
-    /// 上がるため、ここで止めないとメモリを食い潰す(実測で1ノードあたり
-    /// 最悪1210B)。
+    /// Styles, the box tree and the layout result pile up in proportion to the node count, so
+    /// without stopping here memory would be exhausted (measured at worst 1210B per node).
     #[test]
     fn html_with_too_many_nodes_is_rejected() {
         let options = EngineOptions {
@@ -2321,7 +2316,7 @@ mod tests {
             ..EngineOptions::default()
         };
         let mut engine = Engine::new(options, MemorySink::new());
-        // `<p>a</p>`は要素+テキストで2ノード。
+        // `<p>a</p>` is 2 nodes: the element plus the text.
         let body = "<p>a</p>".repeat(crate::html::MAX_NODES);
         let html = format!("<html><body>{body}</body></html>");
 
@@ -2333,14 +2328,14 @@ mod tests {
             Err(EngineError::NodeLimitExceeded { nodes, limit }) => {
                 assert!(
                     nodes > limit,
-                    "ノード数{nodes}は上限{limit}を超えているはず"
+                    "a node count of {nodes} should exceed the limit of {limit}"
                 );
             }
             other => panic!("expected NodeLimitExceeded, got {other:?}"),
         }
     }
 
-    /// 上限内の文書はこれまでどおり通ること。
+    /// A document within the limits must still pass as before.
     #[test]
     fn html_within_the_node_limit_still_renders() {
         let options = EngineOptions {
@@ -2351,19 +2346,23 @@ mod tests {
         let body = "<p>a</p>".repeat(1000);
         let html = format!("<html><body>{body}</body></html>");
 
-        engine.feed(html.as_bytes()).expect("上限内なので通る");
-        let pdf = engine.finish().expect("上限内なので書き出せる");
+        engine
+            .feed(html.as_bytes())
+            .expect("within the limit, so it passes");
+        let pdf = engine
+            .finish()
+            .expect("within the limit, so it can be written");
         assert!(pdf.starts_with(b"%PDF-"));
     }
 
-    /// ストリーミングモードでは解放したノードが数に戻ること。
+    /// In streaming mode a freed node must count back towards the limit.
     ///
-    /// 逐次解放しながら進む限り、総ノード数が上限を超えていても変換できる
-    /// (ストリーミングの低メモリという利点を上限で潰さないため)。
+    /// As long as it frees as it goes, a document can be converted even where the total node
+    /// count exceeds the limit (so the limit does not negate streaming's low-memory benefit).
     ///
-    /// 解放はトップレベル要素の処理時に起きるので、確認にはCLIと同じく
-    /// チャンクに分けて投入する必要がある。一度に全部投入すると、解放が
-    /// 走る前にDOMが積み上がってしまい、実際にメモリも使う。
+    /// Freeing happens when a top-level element is processed, so as in the CLI the input has
+    /// to be fed in chunks to check this. Feeding it all at once would pile up the DOM before
+    /// any freeing ran, and really would use the memory.
     #[test]
     fn released_nodes_do_not_count_towards_the_node_limit() {
         let options = EngineOptions {
@@ -2372,23 +2371,25 @@ mod tests {
             ..EngineOptions::default()
         };
         let mut engine = Engine::new(options, MemorySink::new());
-        // 総ノード数は上限の2倍を超えるが、逐次解放されるので当たらない。
+        // The total node count is over twice the limit, but incremental freeing keeps it clear.
         let body = "<p>a</p>".repeat(crate::html::MAX_NODES);
         let html = format!("<html><body>{body}</body></html>");
 
-        // `cli::convert`のFEED_CHUNKと同じ64KiB刻み。
+        // The same 64KiB steps as `cli::convert`'s FEED_CHUNK.
         for chunk in html.as_bytes().chunks(64 * 1024) {
-            engine.feed(chunk).expect("解放が効くので上限に当たらない");
+            engine
+                .feed(chunk)
+                .expect("freeing works, so the limit is not hit");
         }
-        let pdf = engine.finish().expect("ストリーミングなら書き出せる");
+        let pdf = engine.finish().expect("streaming can write it out");
         assert!(pdf.starts_with(b"%PDF-"));
     }
 
-    /// 期限を過ぎていれば変換を打ち切ること(バッチ)。
+    /// A conversion past its deadline must be abandoned (batch).
     #[test]
     fn a_deadline_that_has_already_passed_stops_the_conversion() {
-        // `check_deadline`は`>=`で見るので、今の時刻をそのまま期限にすれば
-        // 判定時点では必ず過ぎている。
+        // `check_deadline` compares with `>=`, so using the current time as the deadline
+        // guarantees it has passed by the time it is checked.
         let options = EngineOptions {
             fonts: vec![font_spec()],
             deadline: Some(std::time::Instant::now()),
@@ -2404,11 +2405,11 @@ mod tests {
             });
         assert!(
             matches!(result, Err(EngineError::TimedOut)),
-            "期限切れはTimedOutで返るべき: {result:?}"
+            "an expired deadline should return TimedOut: {result:?}"
         );
     }
 
-    /// ストリーミングモードでも同じく打ち切ること。
+    /// It must be abandoned the same way in streaming mode.
     #[test]
     fn a_passed_deadline_stops_the_conversion_in_streaming_mode() {
         let options = EngineOptions {
@@ -2427,11 +2428,11 @@ mod tests {
             });
         assert!(
             matches!(result, Err(EngineError::TimedOut)),
-            "ストリーミングでも期限切れはTimedOut: {result:?}"
+            "an expired deadline returns TimedOut in streaming too: {result:?}"
         );
     }
 
-    /// 期限が先ならこれまでどおり最後まで走ること。
+    /// With the deadline in the future it must run to the end as before.
     #[test]
     fn a_deadline_in_the_future_does_not_interfere() {
         let options = EngineOptions {
@@ -2443,12 +2444,14 @@ mod tests {
 
         engine
             .feed(b"<html><body><p>x</p></body></html>")
-            .expect("期限内なので通る");
-        let pdf = engine.finish().expect("期限内なので書き出せる");
+            .expect("within the deadline, so it passes");
+        let pdf = engine
+            .finish()
+            .expect("within the deadline, so it can be written");
         assert!(pdf.starts_with(b"%PDF-"));
     }
 
-    /// 期限を指定しなければ無制限(CLIの既定)。
+    /// With no deadline given it is unlimited (the CLI default).
     #[test]
     fn no_deadline_means_no_limit() {
         let options = EngineOptions {
@@ -2458,12 +2461,12 @@ mod tests {
         assert!(options.deadline.is_none());
     }
 
-    /// 上限のすぐ内側は通ること(上限が実用的な文書を巻き込まない確認)。
+    /// Just inside the limit must pass (checking that the limit does not catch practical documents).
     ///
-    /// テストスレッドの既定スタックは2MiBで、デバッグビルドの1段あたり約11KiB
-    /// では上限ぶんの再帰に足りない。CLI・サーバと同じく
-    /// [`crate::render_stack::with_render_stack`]で確保してから走らせる
-    /// (上限とスタックが対で意味を持つことの確認でもある)。
+    /// A test thread's default stack is 2MiB, and at about 11KiB per level in a debug build
+    /// that is not enough for the limit's worth of recursion. As with the CLI and the server,
+    /// it is run after allocating with [`crate::render_stack::with_render_stack`]
+    /// (which also confirms that the limit and the stack only mean anything as a pair).
     #[test]
     fn html_just_within_the_depth_limit_still_renders() {
         let pdf = crate::render_stack::with_render_stack(|| {
@@ -2472,19 +2475,23 @@ mod tests {
                 ..EngineOptions::default()
             };
             let mut engine = Engine::new(options, MemorySink::new());
-            // <html>/<body>ぶんの数段を見込んで少し余裕を取る。
+            // A little headroom for the few levels of <html>/<body>.
             let html = deeply_nested_html(crate::html::MAX_ELEMENT_DEPTH as usize - 10);
 
-            engine.feed(html.as_bytes()).expect("上限内なら通るはず");
-            engine.finish().expect("上限内なら書き出せるはず")
+            engine
+                .feed(html.as_bytes())
+                .expect("within the limit, so it should pass");
+            engine
+                .finish()
+                .expect("within the limit, so it should be writable")
         });
         assert!(pdf.starts_with(b"%PDF-"));
     }
 
     #[test]
     fn engine_resolves_at_font_face_relative_to_base_dir() {
-        // 既存のCLI E2Eテスト(cli.rs)と同じ@font-face+base_dir解決の
-        // シナリオをEngine経由で検証する。
+        // Check the same `@font-face` plus base_dir resolution scenario as the existing CLI
+        // E2E test (cli.rs), through the Engine.
         let dir = std::env::temp_dir().join(format!(
             "sghtmltopdf-engine-test-{}-{}",
             std::process::id(),
@@ -2515,13 +2522,13 @@ mod tests {
 
     #[test]
     fn unicode_range_hard_filter_excludes_a_face_end_to_end_through_the_engine() {
-        // 1つ目の`@font-face`(index 0)はDejaVu Sansだが`unicode-range:
-        // U+0-7F`(Basic Latinのみ)を宣言する。'é'(U+00E9)はDejaVu Sans
-        // 自身が実際に描画できるグリフだが、宣言レンジ外なのでハード
-        // フィルタで除外されるはず。2つ目の`@font-face`(index 1)は同じ
-        // DejaVu Sansをrange指定なしで再登録したもので、こちらが
-        // 選ばれるはず。CSSパース→`Engine`→`FontCollection`の実際の
-        // パイプラインを通した回帰検知。
+        // The first `@font-face` (index 0) is DejaVu Sans but declares
+        // `unicode-range: U+0-7F` (Basic Latin only). 'e-acute' (U+00E9) is a glyph DejaVu
+        // Sans really can draw, but it is outside the declared range and should be excluded
+        // by the hard filter. The second `@font-face` (index 1) registers the same DejaVu
+        // Sans again with no range, and should be the one chosen. A regression check through
+        // the real CSS parse -> `Engine` -> `FontCollection` pipeline.
+
         let base_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts"));
         let html = r#"<html><head><style>
             @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); unicode-range: U+0-7F; }
@@ -2553,8 +2560,8 @@ mod tests {
 
     #[test]
     fn unicode_range_split_between_latin_and_cjk_faces_matches_in_batch_and_streaming_mode() {
-        // 典型的な「英数字用+CJK用を同一family名でunicode-range分けして併用」パターン。
-        // `Mode::Batch`/`Mode::Streaming`両方で同じ結果になることも確認する。
+        // The classic "an alphanumeric font and a CJK font used together under one family name, split by unicode-range" pattern.
+        // It also confirms that `Mode::Batch` and `Mode::Streaming` give the same result.
         let base_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts"));
         let html_src = r#"<style>
             @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); unicode-range: U+0-24F; }
@@ -2611,9 +2618,9 @@ mod tests {
 
     #[test]
     fn image_data_uri_is_embedded_as_a_dctdecode_xobject_end_to_end() {
-        // 画像埋め込みのパイプライン全体(DOM属性抽出→data:URI分類→
-        // デコード→box tree→レイアウト→PDF XObject書き出し)を、
-        // fetchを一切経由しないdata:URI経由で検証する。
+        // Check the whole image embedding pipeline (DOM attribute extraction, data: URI
+        // classification, decoding, box tree, layout, PDF XObject writing) through a data: URI,
+        // which involves no fetching at all.
         let html = format!(
             r#"<html><body><img src="{}" width="32" height="24"></body></html>"#,
             data_uri(JPEG_FIXTURE_PATH, "image/jpeg")
@@ -2628,8 +2635,8 @@ mod tests {
         let bytes = engine.finish().unwrap();
 
         assert!(bytes.starts_with(b"%PDF-"));
-        // JPEGはデコードせずそのままDCTDecodeフィルタで埋め込むため、生のJPEG
-        // バイト列そのものが出現するはず。
+        // A JPEG is embedded as-is with the DCTDecode filter rather than decoded, so the raw
+        // JPEG bytes themselves should appear.
         let jpeg_bytes = std::fs::read(JPEG_FIXTURE_PATH).unwrap();
         assert!(count_occurrences(&bytes, b"/DCTDecode") > 0);
         assert!(
@@ -2660,16 +2667,16 @@ mod tests {
             count_occurrences(&bytes, b"/SMask") > 0,
             "a PNG with an alpha channel should produce an SMask-linked XObject"
         );
-        // 内在サイズ(16x16、フィクスチャの実寸)がwidth/height属性なしで
-        // そのまま使われているはず。
+        // The intrinsic size (16x16, the fixture's real dimensions) should be used as-is,
+        // with no width/height attributes.
         assert!(count_occurrences(&bytes, b"/Width 16") > 0);
         assert!(count_occurrences(&bytes, b"/Height 16") > 0);
     }
 
-    /// `object-fit`/`object-position`のE2Eテスト。
-    /// `object_fit_rect`自体の幾何計算は`pdf/document.rs`の単体テストで
-    /// 網羅済みのため、ここでは実際のパイプライン(data:URIデコード→box tree
-    /// →レイアウト→PDFエンコード)を通した疎通・クリップ発行の確認に絞る。
+    /// An E2E test for `object-fit`/`object-position`.
+    /// The geometry of `object_fit_rect` itself is covered by the unit tests in
+    /// `pdf/document.rs`, so this narrows to confirming the real pipeline (data: URI
+    /// decoding, box tree, layout, PDF encoding) connects up and emits the clip.
     fn build_object_fit_pdf(object_fit_css: &str) -> Vec<u8> {
         let html = format!(
             r#"<html><body><img src="{}" style="width: 150px; height: 80px; {}"></body></html>"#,
@@ -2702,9 +2709,9 @@ mod tests {
 
     #[test]
     fn object_fit_always_clips_to_the_content_box_even_for_the_default_fill() {
-        // `object-fit`の値によらず常にcontent-boxへクリップする(`Fill`は
-        // 元々ぴったり収まるがno-opとして同じ経路を通る)。クリップパスの構築
-        // (`re` → `W n`)が実際に発行されていることを確認する。
+        // It always clips to the content box whatever the `object-fit` value (`Fill` fits
+        // exactly to begin with, but takes the same path as a no-op). This confirms the clip
+        // path construction (`re` then `W n`) really is emitted.
         let bytes = build_object_fit_pdf("");
         let decompressed = decompressed_stream_bytes(&bytes);
         assert_eq!(count_occurrences(&decompressed, b" re\n"), 1);
@@ -2713,10 +2720,10 @@ mod tests {
 
     #[test]
     fn object_fit_cover_and_fill_produce_different_geometry_end_to_end() {
-        // intrinsic 32x24 を 150x80 のボックスへ描画する場合、`fill`
-        // (非一様に引き伸ばす)と`cover`(アスペクト比を保って拡大・はみ出し分は
-        // クリップ)は描画される画像の変換行列(`cm`)が異なるはずなので、
-        // コンテンツストリーム全体としてもバイト列が一致しないはず。
+        // Drawing an intrinsic 32x24 into a 150x80 box, `fill` (stretching non-uniformly) and
+        // `cover` (scaling with the aspect ratio preserved and clipping the overflow) should
+        // give different transformation matrices (`cm`) for the drawn image, so the content
+        // streams as a whole should not match byte for byte either.
         let fill_bytes = decompressed_stream_bytes(&build_object_fit_pdf("object-fit: fill;"));
         let cover_bytes = decompressed_stream_bytes(&build_object_fit_pdf("object-fit: cover;"));
         assert_ne!(fill_bytes, cover_bytes);
@@ -2766,9 +2773,9 @@ mod tests {
 
     #[test]
     fn background_image_on_a_plain_div_is_embedded_as_a_dctdecode_xobject_end_to_end() {
-        // パイプライン全体(パース→カスケード→
-        // `resolve_background_images`→PDF XObject書き出し)を検証する。
-        // `<div>`は`background-color`も枠線も持たない。
+        // Check the whole pipeline (parsing, the cascade, `resolve_background_images` and PDF
+        // XObject writing). The `<div>` has neither a `background-color` nor borders.
+
         let html = format!(
             r#"<html><body><div style="background-image: url('{}'); width: 32px; height: 24px;"></div></body></html>"#,
             data_uri(JPEG_FIXTURE_PATH, "image/jpeg")
@@ -2826,8 +2833,8 @@ mod tests {
 
     #[test]
     fn a_broken_background_image_url_degrades_gracefully_instead_of_failing_the_whole_document() {
-        // 取得・デコード失敗はその要素の背景画像だけ空扱いにして、
-        // 文書生成全体は止めない。
+        // A failed fetch or decode leaves only that element's background image empty and does
+        // not stop the whole document.
         let html = r#"<html><body><p>before</p>
             <div style="background-image: url('does-not-exist-anywhere.png'); width: 50px; height: 50px;"></div>
             <p>after</p></body></html>"#;
@@ -2852,8 +2859,8 @@ mod tests {
 
     #[test]
     fn a_broken_image_src_degrades_to_an_empty_box_instead_of_failing_the_whole_document() {
-        // 取得・デコード失敗はその要素だけ空扱いにして、文書生成全体は
-        // 止めない(壊れたURLがDoSベクタにならないように)。
+        // A failed fetch or decode leaves only that element empty and does not stop the whole
+        // document (so a broken URL is not a DoS vector).
         let html = r#"<html><body><p>before</p>
             <img src="does-not-exist-anywhere.png" width="50" height="50">
             <p>after</p></body></html>"#;
@@ -2878,9 +2885,9 @@ mod tests {
 
     #[test]
     fn external_stylesheet_via_link_is_applied_end_to_end() {
-        // 外部スタイルシートのパイプライン全体(<link>検出→fetch→parse→cascade)を、
-        // 実際にfont-sizeの違いとしてPDFコンテンツストリームに現れるかで
-        // 検証する。
+        // Check the whole external stylesheet pipeline (<link> detection, fetch, parse,
+        // cascade) by whether it really shows up in the PDF content stream as a difference in
+        // font-size.
         let dir = std::env::temp_dir().join(format!(
             "sghtmltopdf-engine-test-{}-external_stylesheet",
             std::process::id()
@@ -2953,9 +2960,9 @@ mod tests {
 
     #[test]
     fn at_import_inside_an_external_stylesheet_is_applied_end_to_end() {
-        // @importのパイプライン全体(<link>のfetch→@importの検出・再帰フェッチ→
-        // 展開→parse→cascade)を、実際にfont-sizeの違いとしてPDFコンテンツ
-        // ストリームに現れるかで検証する。
+        // Check the whole @import pipeline (fetching the <link>, detecting and recursively
+        // fetching the @import, expanding, parsing, cascading) by whether it really shows up
+        // in the PDF content stream as a difference in font-size.
         let dir = std::env::temp_dir().join(format!(
             "sghtmltopdf-engine-test-{}-at_import",
             std::process::id()
@@ -3046,8 +3053,8 @@ mod tests {
 
     #[test]
     fn streaming_mode_allows_a_late_link_that_is_not_a_stylesheet() {
-        // rel="stylesheet"以外のlink(favicon等)は、<body>より後に
-        // 出現してもストリーミングモードの制約対象外のはず。
+        // A link other than rel="stylesheet" (a favicon, say) should be outside streaming
+        // mode's restriction even when it appears after <body>.
         let options = EngineOptions {
             mode: Mode::Streaming,
             fonts: vec![font_spec()],
@@ -3062,8 +3069,8 @@ mod tests {
 
     #[test]
     fn a_failed_external_stylesheet_does_not_fail_the_whole_document() {
-        // 外部スタイルシートの取得失敗はそのスタイルシートだけを無視し、
-        // 文書生成全体は止めない(画像と同じ方針)。
+        // A failed fetch of an external stylesheet ignores only that stylesheet and does not
+        // stop the whole document (the same policy as images).
         let html = r#"<html><head><link rel="stylesheet" href="does-not-exist.css"></head>
             <body><p>hello</p></body></html>"#;
         let options = EngineOptions {

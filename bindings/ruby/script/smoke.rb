@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# インストール済みのgemが実際に動くかのチェック
-# precompiled gemを`gem install`したあと、リポジトリのlibを使わずに実行すること(`bundle exec`や`-Ilib`を付けない)。
+# Checks that an installed gem actually works.
+# Run this after `gem install` of a precompiled gem, without using the repository's lib (no `bundle exec`, no `-Ilib`).
 
 require "sghtmltopdf"
 
@@ -10,15 +10,15 @@ pdf = Sghtmltopdf.render(<<~HTML, page_size: "A4", margin_top: "20mm")
   <body><h1>sghtmltopdf</h1><p>precompiled gem smoke test</p></body></html>
 HTML
 
-abort "PDFになっていません: #{pdf[0, 20].inspect}" unless pdf.start_with?("%PDF-")
-abort "PDFが終端していません" unless pdf.end_with?("%%EOF")
-abort "PDFが小さすぎます: #{pdf.bytesize}バイト" if pdf.bytesize < 500
+abort "not a PDF: #{pdf[0, 20].inspect}" unless pdf.start_with?("%PDF-")
+abort "the PDF is not terminated" unless pdf.end_with?("%%EOF")
+abort "the PDF is too small: #{pdf.bytesize} bytes" if pdf.bytesize < 500
 
 require "tmpdir"
 Dir.mktmpdir do |dir|
   path = File.join(dir, "smoke.pdf")
   Sghtmltopdf.render_to_file("<p>file</p>", path)
-  abort "ファイルへ書き出せていません" unless File.binread(path).start_with?("%PDF-")
+  abort "nothing was written to the file" unless File.binread(path).start_with?("%PDF-")
 end
 
 puts "ok: sghtmltopdf #{Sghtmltopdf::VERSION} / ruby #{RUBY_VERSION} #{RUBY_PLATFORM} / #{pdf.bytesize} bytes"

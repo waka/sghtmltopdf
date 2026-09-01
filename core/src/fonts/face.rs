@@ -1,10 +1,10 @@
-//! `@font-face`ルールから実際のフォントファイルを読み込む。
+//! Loading the actual font file named by an `@font-face` rule.
 //!
-//! `src: url(...)`は`<img>`・`<link>`・`@import`と同じ[`ImageFetcher`]で解決・
-//! 取得する。したがってローカルパス(HTMLファイル自身のディレクトリが基準)・
-//! `http(s)`・`data:`URIのいずれも扱え、`<base href>`やローカル/リモートの
-//! アクセス制御も同じ規則が適用される。`src: local(...)`はシステムフォントの
-//! フルネーム/PostScript名として[`super::system::SystemFonts`]から解決する。
+//! `src: url(...)` is resolved and fetched through the same [`ImageFetcher`] as `<img>`,
+//! `<link>` and `@import`. So it handles local paths (relative to the HTML file's own
+//! directory), `http(s)` and `data:` URIs alike, and the same rules apply for
+//! `<base href>` and for local/remote access control. `src: local(...)` is resolved from
+//! [`super::system::SystemFonts`] by full name or PostScript name.
 
 use cssparser::UnicodeRange;
 
@@ -14,7 +14,7 @@ use crate::style::{FontFaceRule, FontFaceSource, FontStyle, FontWeight};
 use super::font::{warn_font_without_outlines, Font};
 use super::system::SystemFonts;
 
-/// `@font-face`から読み込めたフォントと、CSS側で宣言されたfamily名・weight・style・unicode-range。
+/// A font loaded from `@font-face`, plus the family name, weight, style and unicode-range declared in the CSS.
 pub struct LoadedFontFace {
     pub family: String,
     pub weight: FontWeight,
@@ -23,12 +23,11 @@ pub struct LoadedFontFace {
     pub font: Font,
 }
 
-/// `font_faces`それぞれについて、`src`に列挙された`url(...)`/`local(...)`を
-/// 先頭から順に試し、最初に読み込めたものを採用する(`format()`ヒントは検証
-/// しないため、非対応フォーマット(WOFF/WOFF2等)は単にパース失敗として次の
-/// 候補に読み進める)。どの`src`も読み込めなかった`@font-face`ルールは標準
-/// エラー出力に警告を出して無視する(1つのフォントの欠落のために変換全体を
-/// 失敗させない)。
+/// For each of `font_faces`, try the `url(...)`/`local(...)` entries listed in `src` in
+/// order and take the first that loads (`format()` hints are not validated, so an
+/// unsupported format such as WOFF/WOFF2 simply fails to parse and we move on to the next
+/// candidate). An `@font-face` rule where no `src` loaded is warned about on standard
+/// error and ignored (one missing font must not fail the whole conversion).
 pub fn load_font_faces(
     font_faces: &[FontFaceRule],
     fetcher: &ImageFetcher,
@@ -47,9 +46,9 @@ fn load_one(
 ) -> Option<LoadedFontFace> {
     for src in &rule.src {
         let font = match src {
-            // 読み込みは`<img>`・`<link>`・`@import`と同じ[`ImageFetcher`]を通す。
-            // 分類も同じ`resolve`に任せる(ここで`LocalPath`と決め打ちすると
-            // `data:`URIがファイルパス扱いになって必ず失敗する)。
+            // Loading goes through the same [`ImageFetcher`] as `<img>`, `<link>` and `@import`.
+            // Classification is left to the same `resolve` (hard-coding `LocalPath` here
+            // would treat a `data:` URI as a file path and always fail).
             FontFaceSource::Url(raw) => fetcher
                 .resolve(raw)
                 .and_then(|src| fetcher.fetch(&src).ok())
@@ -57,9 +56,9 @@ fn load_one(
             FontFaceSource::Local(name) => system.load_by_full_name(name),
         };
         if let Some(font) = font {
-            // 読み込めても輪郭が無ければ何も描けないので採らず、次のsrcへ進む。
+            // A font that loads but has no outlines can draw nothing, so skip it and try the next src.
             if !font.has_outlines() {
-                warn_font_without_outlines(&format!("@font-face \"{}\"のsrc", rule.family));
+                warn_font_without_outlines(&format!("the src of @font-face \"{}\"", rule.family));
                 continue;
             }
             return Some(LoadedFontFace {
@@ -72,7 +71,7 @@ fn load_one(
         }
     }
     eprintln!(
-        "警告: @font-face \"{}\"の読み込みに失敗しました(有効なsrcが見つかりません)",
+        "warning: failed to load @font-face \"{}\" (no usable src found)",
         rule.family
     );
     None
@@ -86,8 +85,8 @@ mod tests {
 
     const DEJAVU_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts");
 
-    /// テスト用のフェッチャ。
-    /// 既定はCLIと同じ「ローカル読み込み可・許可ディレクトリの限定なし」。
+    /// Fetcher for the tests.
+    /// The default matches the CLI: local reads allowed, no directory restriction.
     fn fetcher() -> ImageFetcher {
         ImageFetcher::new(Path::new(DEJAVU_PATH).to_path_buf(), false)
     }
@@ -102,7 +101,7 @@ mod tests {
         }
     }
 
-    /// `tests/fonts`配下のフォントを、そのまま`data:`URIに埋め込んだ文字列にする。
+    /// Turn a font under `tests/fonts` into a string with it embedded directly in a `data:` URI.
     fn data_uri(file_name: &str) -> String {
         use base64::Engine;
 
@@ -112,8 +111,8 @@ mod tests {
     }
 
     fn no_system_fonts() -> SystemFonts {
-        // ローカルの空ディレクトリを走査させ、システムフォントが1つも
-        // 無い状態を作る(local()解決の対象外テスト用)。
+        // Scan an empty local directory to produce a state with no system fonts at all
+        // (for tests that are not about local() resolution).
         SystemFonts::from_dir(Path::new(DEJAVU_PATH).join("does-not-exist").as_path())
     }
 
@@ -141,8 +140,8 @@ mod tests {
         assert_eq!(loaded[0].family, "Custom Brand");
     }
 
-    /// フォント本体をbase64で埋め込んだ`data:`URI。文字列入力やHTTPサーバ
-    /// 経由の変換では、フォントを自己完結させる唯一の手段になる。
+    /// A `data:` URI with the font body base64-encoded. For string input, or conversion
+    /// through the HTTP server, it is the only way to make a font self-contained.
     #[test]
     fn loads_a_font_from_a_data_uri() {
         let rules = vec![rule(
@@ -155,7 +154,7 @@ mod tests {
         assert_eq!(loaded[0].family, "Custom Brand");
     }
 
-    /// `data:`URIはファイルを読まないので、ローカル読み込みを禁止しても使えること。
+    /// A `data:` URI reads no file, so it still works when local reads are forbidden.
     #[test]
     fn a_data_uri_source_survives_disabled_local_file_access() {
         let rules = vec![rule(
@@ -168,10 +167,10 @@ mod tests {
         assert_eq!(loaded.len(), 1);
     }
 
-    /// `<base href>`が`@font-face`の`url()`にも効くこと。
+    /// `<base href>` applies to `url()` in `@font-face` too.
     #[test]
     fn resolves_a_url_source_against_base_href() {
-        // base_dirをtests/に置き、fonts/への前置を`<base href>`に担わせる。
+        // Put base_dir at tests/ and let `<base href>` supply the fonts/ prefix.
         let base = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests")).to_path_buf();
         let based = ImageFetcher::new(base, false).with_base_href(Some("fonts/".to_string()));
 
@@ -223,7 +222,7 @@ mod tests {
         assert_eq!(loaded[0].family, "Custom Brand");
     }
 
-    /// `--disable-local-file-access`が`@font-face`の`url()`にも効くこと。
+    /// `--disable-local-file-access` applies to `url()` in `@font-face` too.
     #[test]
     fn a_url_source_is_refused_when_local_file_access_is_disabled() {
         let rules = vec![rule(
@@ -236,15 +235,15 @@ mod tests {
         let loaded = load_font_faces(&rules, &blocked, &no_system_fonts());
         assert!(
             loaded.is_empty(),
-            "ローカル読み込みを禁止したらurl()のフォントも読めてはならない"
+            "forbidding local reads must also block a url() font"
         );
     }
 
-    /// `--allow`で許可したディレクトリの外にあるフォントは、`..`で辿っても読めないこと。
+    /// A font outside the directories permitted by `--allow` must not be reachable via `..`.
     #[test]
     fn a_url_source_outside_the_allowed_dirs_is_refused() {
         let base = Path::new(DEJAVU_PATH).to_path_buf();
-        // base_dir自身は許可せず、その下の存在しないサブディレクトリだけ許可する。
+        // Do not permit base_dir itself, only a non-existent subdirectory under it.
         let allowed = vec![base.join("allowed-subdir")];
         let restricted = ImageFetcher::new(base, false).with_local_access(true, allowed);
 
@@ -255,7 +254,7 @@ mod tests {
         let loaded = load_font_faces(&rules, &restricted, &no_system_fonts());
         assert!(
             loaded.is_empty(),
-            "--allowの範囲外にあるフォントは読めてはならない"
+            "a font outside the --allow range must not be readable"
         );
     }
 

@@ -1,7 +1,7 @@
-//! `border-collapse: collapse`のE2Eテスト。
+//! E2E tests for `border-collapse: collapse`.
 //!
-//! `table_caption.rs`/`table_vertical_align.rs`/`table_rowspan.rs`と同じ方針:
-//! 実際のパイプラインを通して回帰を検知する。
+//! The same approach as `table_caption.rs`, `table_vertical_align.rs` and
+//! `table_rowspan.rs`: catch regressions by going through the real pipeline.
 
 use std::collections::HashMap;
 
@@ -56,9 +56,9 @@ fn a_grid_of_uniformly_bordered_cells_renders_a_valid_pdf_with_collapsed_borders
 
 #[test]
 fn border_collapse_and_rowspan_combined_render_a_valid_pdf_end_to_end() {
-    // rowspanで複数行にまたがるセルがある表でも、境界の統合ロジックが
-    // (グリッド情報ではなく矩形の接触判定を使う設計のため)問題なく動作する
-    // ことを確認する回帰テスト。
+    // A regression test confirming that the boundary merging logic works even in a table
+    // with cells spanning several rows via rowspan (its design using rectangle-touching
+    // rather than grid information).
     let html_src = r#"<table>
         <tr><td rowspan="2">tall</td><td>a</td></tr>
         <tr><td>b</td></tr>

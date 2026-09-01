@@ -1,4 +1,4 @@
-//! ページサイズ・マージンの定義。ページの内側(コンテンツ領域)がcontaining blockとなる。
+//! Page size and margin definitions. The inside of the page (its content area) is the containing block.
 
 use super::geometry::EdgeSizes;
 
@@ -9,33 +9,33 @@ pub struct PageSize {
 }
 
 impl PageSize {
-    /// 210mm × 297mm(96dpi換算)。
+    /// 210mm x 297mm (at 96dpi).
     pub const A4: PageSize = PageSize {
         width: 793.7,
         height: 1122.5,
     };
-    /// 297mm × 420mm(96dpi換算)。
+    /// 297mm x 420mm (at 96dpi).
     pub const A3: PageSize = PageSize {
         width: 1122.5,
         height: 1587.4,
     };
-    /// 148mm × 210mm(96dpi換算)。
+    /// 148mm x 210mm (at 96dpi).
     pub const A5: PageSize = PageSize {
         width: 559.4,
         height: 793.7,
     };
-    /// 8.5in × 11in(96dpi換算、`@page`の`size: letter`用)。
+    /// 8.5in x 11in (at 96dpi, for `size: letter` in `@page`).
     pub const LETTER: PageSize = PageSize {
         width: 816.0,
         height: 1056.0,
     };
-    /// 8.5in × 14in(96dpi換算)。
+    /// 8.5in x 14in (at 96dpi).
     pub const LEGAL: PageSize = PageSize {
         width: 816.0,
         height: 1344.0,
     };
 
-    /// 幅・高さを入れ替える(`landscape`修飾子用)。
+    /// Swap width and height (for the `landscape` modifier).
     pub fn landscape(self) -> Self {
         Self {
             width: self.height,
@@ -51,7 +51,7 @@ pub struct PageSettings {
 }
 
 impl Default for PageSettings {
-    /// 1インチ(96px)相当の既定マージン。
+    /// Default margin, equal to one inch (96px).
     fn default() -> Self {
         Self {
             size: PageSize::A4,

@@ -1,11 +1,11 @@
 //! `text-align`/`line-height`/`text-indent`/`white-space`/`letter-spacing`/
-//! `word-spacing`/`text-transform`のE2Eテスト。
+//! E2E tests for `word-spacing`/`text-transform`.
 //!
-//! `fragmentation.rs`/`float_position.rs`と同じ方針: 実際のパイプライン
-//! (HTMLパース→スタイルカスケード→ページ分割→PDFエンコード)を通して回帰を
-//! 検知する。座標の詳細な検証は`layout_document`(ページ分割前)の結果に対して
-//! 行い、PDFエンコードまでのパイプライン全体がクラッシュせず妥当な出力になる
-//! ことは`build_pdf`で別途確認する。
+//! The same approach as `fragmentation.rs`/`float_position.rs`: catch regressions by going
+//! through the real pipeline (HTML parse, style cascade, pagination, PDF encode). The
+//! detailed coordinate checks run against the result of `layout_document` (before
+//! pagination), and `build_pdf` separately confirms that the whole pipeline through to PDF
+//! encoding does not crash and produces valid output.
 
 use std::collections::HashMap;
 
@@ -18,8 +18,8 @@ use sghtmltopdf_core::pdf::encode_pdf;
 use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
-/// アセント+ディセントが1.2emを超えるフォント(1.448em)。`line-height: normal`を
-/// 固定倍率で近似していると、このフォントでグリフが行ボックスからはみ出す。
+/// A font whose ascent plus descent exceeds 1.2em (1.448em). Approximating
+/// `line-height: normal` with a fixed multiplier would let its glyphs spill out of the line box.
 const TALL_METRICS_FONT_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fonts/NotoSansCJK-Regular.ttc"
@@ -42,9 +42,9 @@ fn page_count_in_pdf(bytes: &[u8]) -> usize {
     count_occurrences(bytes, b"/MediaBox")
 }
 
-/// PDFのcontent streamはFlateDecodeで圧縮されているため、`Tc`のような
-/// コンテンツストリーム内演算子を検索するには解凍が必要
-/// (`pdf::document`テストモジュール内の同名関数と同じロジック)。
+/// A PDF's content stream is FlateDecode compressed, so searching for an operator inside it
+/// such as `Tc` requires inflating first
+/// (the same logic as the identically named function in the `pdf::document` test module).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -72,8 +72,8 @@ fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// HTML+CSSから、実際のパイプライン(パース→カスケード→ページ分割→PDF
-/// エンコード)を一通り実行する(`fragmentation.rs::build_pdf`と同じ)。
+/// Run the whole real pipeline (parse, cascade, pagination, PDF encode) from HTML plus CSS
+/// (the same as `fragmentation.rs::build_pdf`).
 fn build_pdf(html_src: &str, css: &str) -> (usize, Vec<u8>) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -120,7 +120,7 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     None
 }
 
-/// `layout_document`まで(ページ分割前)を実行する共通ヘルパー。
+/// The shared helper running as far as `layout_document` (before pagination).
 fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -161,8 +161,8 @@ fn text_align_right_shifts_the_line_end_to_end() {
     let LaidOutContent::Inline(right_lines) = &right_box.content else {
         panic!("expected inline content");
     };
-    // text-alignの効果は行の帯(`rect.x`)ではなく各ランの`x_offset`に反映される
-    // (`rect.x`はfloatの帯計算で使う左端のまま)。
+    // text-align's effect shows up in each run's `x_offset` rather than the line's band
+    // (`rect.x`), which stays the left edge used for the float band calculation.
     assert!(right_lines[0].runs[0].x_offset > 0.0);
 
     let (page_count, bytes) = build_pdf(
@@ -321,7 +321,7 @@ fn text_transform_uppercase_applies_end_to_end() {
     assert_eq!(page_count, 1);
 }
 
-/// 最初の`<p>`が組んだ1行の幅と、その行のラン数を返す。
+/// Return the width of the single line the first `<p>` laid out, and that line's run count.
 fn first_p_line(html_src: &str, css: &str) -> (f32, usize) {
     let (dom, laid) = layout(html_src, css);
     let p = find_tag(&dom, dom.document(), "p").expect("p not found");
@@ -335,9 +335,9 @@ fn first_p_line(html_src: &str, css: &str) -> (f32, usize) {
 
 #[test]
 fn whitespace_between_inline_elements_still_separates_the_words_end_to_end() {
-    // 回帰テスト(issue #3): インライン要素同士の間の空白が捨てられ、
-    // `<span>one</span> <span>two</span>`が`onetwo`と組まれていた。単語間の
-    // 空白はランのx方向オフセットとして現れるため、行幅で検証する。
+    // Regression test (issue #3): the whitespace between inline elements was discarded and
+    // `<span>one</span> <span>two</span>` came out as `onetwo`. Inter-word whitespace appears
+    // as a run's x offset, so this is checked by the line width.
     let css = "body { margin: 0; } p { margin: 0; }";
     let (separate, separate_runs) = first_p_line("<p><span>one</span> <span>two</span></p>", css);
     let (plain, _) = first_p_line("<p>one two</p>", css);
@@ -356,8 +356,8 @@ fn whitespace_between_inline_elements_still_separates_the_words_end_to_end() {
 
 #[test]
 fn trailing_whitespace_after_an_inline_element_does_not_widen_the_line_end_to_end() {
-    // 末尾の空白はスパンとして残るが、行の幅には影響してはいけない
-    // (`text-align: right`/`justify`がずれるため)。
+    // Trailing whitespace survives as a span but must not affect the line's width
+    // (or `text-align: right`/`justify` would be off).
     let css = "body { margin: 0; } p { margin: 0; }";
     let (with_whitespace, _) = first_p_line("<p><span>one</span>\n</p>", css);
     let (without, _) = first_p_line("<p><span>one</span></p>", css);
@@ -370,8 +370,8 @@ fn trailing_whitespace_after_an_inline_element_does_not_widen_the_line_end_to_en
 
 #[test]
 fn a_non_breaking_space_between_inline_elements_still_separates_the_words_end_to_end() {
-    // 同じく issue #3。`&nbsp;`も`char::is_whitespace`が真になるため、空白のみの
-    // テキストノードとして一緒に捨てられていた。
+    // Also issue #3. `&nbsp;` makes `char::is_whitespace` true too, so it was discarded along
+    // with the whitespace-only text nodes.
     let css = "body { margin: 0; } p { margin: 0; }";
     let (nbsp, _) = first_p_line("<p><span>one</span>\u{a0}<span>two</span></p>", css);
     let (joined, _) = first_p_line("<p>onetwo</p>", css);
@@ -385,7 +385,7 @@ fn a_non_breaking_space_between_inline_elements_still_separates_the_words_end_to
 #[test]
 fn combined_typography_properties_render_a_valid_pdf_end_to_end() {
     // justify + line-height + text-indent + letter-spacing + white-space: pre
-    // を1つの文書に組み合わせても、パイプライン全体が破綻しないことを確認する。
+    // combined into one document, the whole pipeline does not fall apart.
     let html_src = r#"<div>
         <p class="justified">hello world foo bar baz qux quux corge grault garply</p>
         <pre class="preformatted">line one
@@ -401,7 +401,7 @@ line   two</pre>
     assert!(count_occurrences(&decompressed_stream_bytes(&bytes), b" Tc\n") > 0);
 }
 
-/// `fonts`でレイアウトした結果から、`tag`の最初のボックスを返す。
+/// Return `tag`'s first box from the result of laying out with `fonts`.
 fn layout_with(html_src: &str, css: &str, fonts: &FontCollection) -> (Dom, LaidOutBox) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -417,7 +417,7 @@ fn layout_with(html_src: &str, css: &str, fonts: &FontCollection) -> (Dom, LaidO
     (dom, laid)
 }
 
-/// `b`以下の全ての行を集める。
+/// Collect every line under `b`.
 fn collect_lines(b: &LaidOutBox, out: &mut Vec<sghtmltopdf_core::layout::LineBox>) {
     match &b.content {
         LaidOutContent::Inline(lines) => out.extend(lines.iter().cloned()),
@@ -437,11 +437,11 @@ fn collect_lines(b: &LaidOutBox, out: &mut Vec<sghtmltopdf_core::layout::LineBox
 
 #[test]
 fn line_height_normal_fits_the_glyphs_of_a_font_taller_than_1_2em() {
-    // `line-height: normal`をfont-size*1.2で近似していると、アセント+
-    // ディセントが1.2emを超えるフォントでグリフが行ボックスからはみ出し、
-    // 積み重ねたブロックの最後の行が親の下端(セルのborder-bottom等)と重なる。
-    // はみ出し量はfont-sizeに比例するため、font-sizeが増えていく並びで
-    // 顕著になる。
+    // Approximating `line-height: normal` as font-size*1.2 lets the glyphs of a font whose
+    // ascent plus descent exceeds 1.2em spill out of the line box, so the last line of a
+    // stack of blocks overlaps the parent's bottom edge (a cell's border-bottom, say).
+    // The overflow is proportional to the font-size, so it stands out in a sequence of
+    // increasing font sizes.
     let fonts = FontCollection::new(vec![
         Font::load(TALL_METRICS_FONT_PATH).expect("should load the CJK test font")
     ]);
@@ -484,8 +484,8 @@ fn line_height_normal_fits_the_glyphs_of_a_font_taller_than_1_2em() {
 
 #[test]
 fn line_height_normal_follows_the_fonts_own_metrics() {
-    // `normal`はフォントごとに異なる。メトリクスの大きいフォントのほうが
-    // 同じfont-sizeでも行が高くなる。
+    // `normal` differs per font. A font with larger metrics gives a taller line at the same
+    // font-size.
     let html_src = r#"<p>x</p>"#;
     let css = "body { margin: 0; } p { margin: 0; font-size: 10px; }";
 

@@ -1,11 +1,11 @@
 //! `list-style-type`/`list-style-position`/`list-style-image`/`list-style`
-//! ショートハンドのE2Eテスト。
+//! E2E tests for the shorthand.
 //!
-//! `typography.rs`/`table_caption.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→ページ分割→PDFエンコード)を通して回帰を検知する。
-//! マーカーの座標・カウンタ挙動の詳細な検証は`layout_document`(ページ分割前)の
-//! 結果に対して行い、PDFエンコードまでのパイプライン全体がクラッシュせず
-//! 妥当な出力になることは`build_pdf`で別途確認する。
+//! The same approach as `typography.rs`/`table_caption.rs`: catch regressions by going
+//! through the real pipeline (HTML parse, style cascade, pagination, PDF encode).
+//! The detailed checks on marker coordinates and counter behaviour run against the result of
+//! `layout_document` (before pagination), and `build_pdf` separately confirms that the whole
+//! pipeline through to PDF encoding does not crash and produces valid output.
 
 use std::collections::HashMap;
 
@@ -94,7 +94,7 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     None
 }
 
-/// `layout_document`まで(ページ分割前)を実行する共通ヘルパー。
+/// The shared helper running as far as `layout_document` (before pagination).
 fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -173,11 +173,11 @@ fn nested_ordered_list_restarts_numbering_and_indents_further_than_its_parent() 
 
     assert_eq!(outer_first.marker.as_ref().unwrap().runs[0].text, "1.");
     assert_eq!(outer_second.marker.as_ref().unwrap().runs[0].text, "2.");
-    // 入れ子の`<ol>`は独立したカウンタスコープを持つため1から数え直す。
+    // A nested `<ol>` has its own counter scope and counts from 1 again.
     assert_eq!(inner.marker.as_ref().unwrap().runs[0].text, "1.");
 
-    // 入れ子の`<ol>`自身の`padding-left: 40px`(UAスタイルシート)により、
-    // 内側のマーカーは外側のマーカーよりcontent edgeがさらに右にあるはず。
+    // Through the nested `<ol>`'s own `padding-left: 40px` (from the UA stylesheet), the
+    // inner marker's content edge should sit further right than the outer marker's.
     let outer_marker = outer_first.marker.as_ref().unwrap();
     let inner_marker = inner.marker.as_ref().unwrap();
     assert!(
@@ -212,14 +212,14 @@ fn list_style_position_inside_wraps_the_marker_with_the_text_instead_of_a_gutter
     let li = find_tag(&dom, dom.document(), "li").expect("li not found");
     let li_box = find_laid_out(&laid, li).expect("li box not found");
 
-    // `inside`はマーカーをテキストの一部として先頭行に織り込むため、
-    // 別立てのマーカーボックスは持たない。
+    // `inside` weaves the marker into the first line as part of the text, so it has no
+    // separate marker box.
     assert!(li_box.marker.is_none());
     let LaidOutContent::Inline(lines) = &li_box.content else {
         panic!("expected inline content");
     };
-    // 単語間の空白はどのランの`text`にも literal には含まれない(gapとして
-    // 位置だけで表現される、既存の簡略化)ため、ラン自体の並びを確認する。
+    // Inter-word whitespace is not literally part of any run's `text` (it is expressed only
+    // as a positional gap; an existing simplification), so the run sequence itself is checked.
     let run_texts: Vec<&str> = lines[0].runs.iter().map(|r| r.text.as_str()).collect();
     assert_eq!(run_texts, vec!["•", "hello"]);
 }
@@ -248,8 +248,8 @@ fn list_style_shorthand_applies_type_position_and_falls_back_from_image() {
     let li = find_tag(&dom, dom.document(), "li").expect("li not found");
     let li_box = find_laid_out(&laid, li).expect("li box not found");
 
-    // `list-style-image`は常に`list-style-type`のテキストマーカーへ
-    // フォールバックする。`inside`なのでspansに埋め込まれる。
+    // `list-style-image` always falls back to the `list-style-type` text marker. Being
+    // `inside`, it is embedded in the spans.
     assert!(li_box.marker.is_none());
     let LaidOutContent::Inline(lines) = &li_box.content else {
         panic!("expected inline content");
@@ -258,7 +258,7 @@ fn list_style_shorthand_applies_type_position_and_falls_back_from_image() {
     assert_eq!(run_texts, vec!["▪", "x"]);
 }
 
-/// ページ分割まで実行する共通ヘルパー。
+/// The shared helper running as far as pagination.
 fn paginate(html_src: &str, css: &str) -> Vec<Page> {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -268,8 +268,8 @@ fn paginate(html_src: &str, css: &str) -> Vec<Page> {
     paginate_document(&dom, &styles, &fonts, &PageSettings::default())
 }
 
-/// `pages`に配置されたボックスを再帰的に辿り、outsideマーカーのテキストと
-/// そのページ内相対Y座標を、ページ番号(0始まり)つきで集める。
+/// Walk the boxes placed in `pages` recursively and collect the outside markers' text and
+/// their within-page Y coordinates, along with the page number (0-based).
 fn collect_markers(pages: &[Page]) -> Vec<(usize, String, f32)> {
     fn walk(b: &LaidOutBox, page_index: usize, out: &mut Vec<(usize, String, f32)>) {
         if let Some(marker) = &b.marker {
@@ -302,9 +302,9 @@ fn collect_markers(pages: &[Page]) -> Vec<(usize, String, f32)> {
     out
 }
 
-/// 1ページに収まらない長さの`li`を24個並べたリストを`css`つきでページ分割し、
-/// 「すべての`li`が順番どおりにマーカーを1つずつ保っている」「マーカーが
-/// 自分の載るページの中に収まっている」ことを確認する。
+/// Paginate, with `css`, a list of 24 `li`s too long to fit one page, and confirm that
+/// "every `li` keeps exactly one marker, in order" and that "each marker stays within the
+/// page it sits on".
 fn assert_split_list_keeps_every_marker(css: &str) {
     let words = "Word ".repeat(80);
     let items: String = (0..24).map(|_| format!("<li>{words}</li>")).collect();
@@ -324,8 +324,8 @@ fn assert_split_list_keeps_every_marker(css: &str) {
         "every list item should keep its marker exactly once, in order"
     );
 
-    // 分割された`li`のマーカーは、その`li`が始まるページに載っていること
-    // (ページをまたいだ結果、座標が別ページのものへずれていないこと)。
+    // A split `li`'s marker must be on the page where that `li` begins
+    // (its coordinates must not have shifted to another page's after the split).
     let content_height = PageSettings::default().content_height();
     for (page_index, text, y) in &markers {
         assert!(
@@ -334,8 +334,8 @@ fn assert_split_list_keeps_every_marker(css: &str) {
         );
     }
 
-    // 少なくとも1つのマーカーは2ページ目以降に載っているはず(先頭ページに
-    // 全部載っているなら分割経路を通っていない)。
+    // At least one marker should be on the second page or later (with them all on the first
+    // page, the splitting path was never taken).
     assert!(
         markers.iter().any(|(page_index, _, _)| *page_index > 0),
         "the fixture should place some markers on later pages"
@@ -344,16 +344,16 @@ fn assert_split_list_keeps_every_marker(css: &str) {
 
 #[test]
 fn outside_marker_survives_when_a_list_item_is_split_across_pages() {
-    // ページをまたいで分割される`li`は`place_split`経路を通る。装飾
-    // (背景・枠線)を持たない`li`でもマーカーが先頭フラグメントに残ることを
-    // 確認する。
+    // An `li` split across pages goes through the `place_split` path. This confirms the
+    // marker stays on the first fragment even for an `li` with no decoration (background or
+    // borders).
     assert_split_list_keeps_every_marker("body { margin: 0; } ol, li { margin: 0; }");
 }
 
 #[test]
 fn outside_marker_of_a_split_list_item_with_a_background_stays_on_its_own_page() {
-    // 装飾を持つ`li`は分割時に装飾フラグメントが作られる。マーカーの座標が
-    // レイアウト時の絶対Yのまま残っていると、別ページの位置へずれてしまう。
+    // An `li` with decoration gets a decoration fragment on the split. If the marker's
+    // coordinates stayed the absolute Y from layout, they would shift to another page's position.
     assert_split_list_keeps_every_marker(
         "body { margin: 0; } ol, li { margin: 0; } li { background: #eee; }",
     );

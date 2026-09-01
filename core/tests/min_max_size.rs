@@ -1,7 +1,7 @@
-//! `min-width`/`max-width`/`min-height`/`max-height`のE2Eテスト。
+//! E2E tests for `min-width`/`max-width`/`min-height`/`max-height`.
 //!
-//! `box_model.rs`/`flexbox.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→レイアウト→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `box_model.rs`/`flexbox.rs`: catch regressions by going through the
+//! real pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -81,7 +81,7 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     (dom, laid)
 }
 
-/// `id`属性を持つ要素のcontent boxを引く。
+/// Look up the content box of an element carrying an `id` attribute.
 fn content_box(
     dom: &Dom,
     laid: &LaidOutBox,
@@ -118,7 +118,7 @@ fn min_width_expands_a_narrower_block() {
 
 #[test]
 fn min_width_wins_when_it_exceeds_max_width() {
-    // CSS2.1 §10.4: max-width→min-widthの順に適用するのでminが勝つ。
+    // CSS2.1 section 10.4: max-width is applied before min-width, so min wins.
     let (dom, laid) = layout(
         "<div>min wins</div>",
         "body { margin: 0; } div { width: 400px; min-width: 300px; max-width: 100px; }",
@@ -128,8 +128,8 @@ fn min_width_wins_when_it_exceeds_max_width() {
 
 #[test]
 fn auto_width_clamped_by_max_width_is_centered_by_auto_margins() {
-    // `width: auto`の枝でmargin autoが0に潰れたままだと中央寄せされない。
-    // クランプ後に水平方向の等式を解き直すことで中央に来る。
+    // If the margin autos stayed squashed to 0 by the `width: auto` branch it would not centre.
+    // Re-solving the horizontal equation after the clamp brings it to the centre.
     let containing_width = PageSettings::default().content_width();
     let (dom, laid) = layout(
         "<div>centered</div>",
@@ -147,8 +147,8 @@ fn auto_width_clamped_by_max_width_is_centered_by_auto_margins() {
 
 #[test]
 fn min_and_max_width_are_border_box_relative_under_border_box_sizing() {
-    // `box-sizing: border-box`では指定値がborder-box基準なので、content幅は
-    // padding+borderを引いた値になる(`box-sizing`と同じ規則)。
+    // Under `box-sizing: border-box` the value is border-box based, so the content width is
+    // that minus padding and border (the same rule as `box-sizing`).
     let (dom, laid) = layout(
         "<div>bb</div>",
         "body { margin: 0; } \
@@ -195,7 +195,7 @@ fn percentage_min_width_resolves_against_the_containing_block() {
 
 #[test]
 fn percentage_min_height_is_ignored() {
-    // containing blockの高さが不定なため無視する(`height: %`と同じ)。
+    // It is ignored, the containing block's height being indefinite (as with `height: %`).
     let (dom, laid) = layout(
         "<div>x</div>",
         "body { margin: 0; } div { min-height: 50%; }",
@@ -280,7 +280,7 @@ fn min_and_max_width_apply_to_flex_items() {
 
 #[test]
 fn cell_min_width_widens_its_column_in_auto_table_layout() {
-    // セルのmin-widthは列の自然幅を押し上げる。
+    // A cell's min-width pushes up the column's natural width.
     let narrow = table_first_row_widths(
         r#"<table><tr><td class="c">x</td><td>yyyyyyyyyyyyyyyy</td></tr></table>"#,
         "body { margin: 0; } table { width: 400px; }",

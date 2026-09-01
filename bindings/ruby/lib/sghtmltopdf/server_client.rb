@@ -6,7 +6,7 @@ require "uri"
 module Sghtmltopdf
   class ServerError < Error; end
 
-  # HTTPサーバモード(`sghtmltopdf server`)へ変換を委譲するクライアント。
+  # The client delegating conversion to HTTP server mode (`sghtmltopdf server`).
   #
   #   Sghtmltopdf.configure { |c| c.server_url = "http://pdf.internal:8080" }
   #   pdf = Sghtmltopdf.render(html, page_size: "A4")
@@ -14,29 +14,28 @@ module Sghtmltopdf
     DEFAULT_OPEN_TIMEOUT = 5
     DEFAULT_READ_TIMEOUT = 120
 
-    # 一度に読むチャンクの目安。`?stream=1`のときはこの単位でブロックへ渡る。
+    # The rough size of each read. With `?stream=1` this is the unit handed to the block.
     CHUNK_SIZE = 64 * 1024
 
     attr_reader :uri, :open_timeout, :read_timeout
 
-    # @param url [String] サーバのベースURL(`http://host:port`)
+    # @param url [String] the server's base URL (`http://host:port`)
     def initialize(url, open_timeout: nil, read_timeout: nil)
       @uri = parse(url)
       @open_timeout = (open_timeout || DEFAULT_OPEN_TIMEOUT).to_f
       @read_timeout = (read_timeout || DEFAULT_READ_TIMEOUT).to_f
     end
 
-    # HTMLをPDFへ変換する。
+    # Convert HTML to PDF.
     #
-    # ブロックを渡すと`?stream=1`(chunked transfer encoding)を使い、
-    # サーバがページを確定したそばからチャンクを渡す。ブロックが無ければ
-    # PDF全体をStringで返す。
+    # Given a block it uses `?stream=1` (chunked transfer encoding) and hands over chunks as
+    # the server settles each page. With no block it returns the whole PDF as a String.
     def render(html, options, &block)
       request = build_request(html, options, stream: !block.nil?)
       pdf = nil
       start do |http|
-        # `request`はブロック付きだとレスポンスオブジェクトを返すので、
-        # 結果は外の変数で受ける。
+        # With a block, `request` returns the response object, so the result is received in an
+        # outer variable.
         http.request(request) do |response|
           ensure_success!(response)
           if block
@@ -49,9 +48,9 @@ module Sghtmltopdf
       pdf
     end
 
-    # 変換結果を`path`へ書き出す。途中で失敗しても壊れたPDFを残さないよう、
-    # 一時ファイルへ書いてからrenameする(ネイティブ拡張の`FileSink`と同じ
-    # 挙動に揃えている)。
+    # Write the conversion result to `path`. To leave no broken PDF on a failure part-way
+    # through, it writes to a temporary file and renames (matching the behaviour of the
+    # native extension's `FileSink`).
     def render_to_file(html, options, path)
       tmp = "#{path}.#{Process.pid}.tmp"
       begin
@@ -60,7 +59,7 @@ module Sghtmltopdf
         end
       rescue SystemCallError => e
         File.unlink(tmp) if File.exist?(tmp)
-        raise InputError, "#{path}への書き出しに失敗しました: #{e.message}"
+        raise InputError, "failed to write to #{path}: #{e.message}"
       rescue StandardError
         File.unlink(tmp) if File.exist?(tmp)
         raise
@@ -74,7 +73,7 @@ module Sghtmltopdf
     def parse(url)
       uri = URI.parse(url.to_s)
       unless uri.is_a?(URI::HTTP) && uri.host
-        raise ArgumentError, "server_urlにはhttp(s)のURLを指定してください: #{url.inspect}"
+        raise ArgumentError, "server_url must be an http(s) URL: #{url.inspect}"
       end
 
       uri
@@ -102,12 +101,12 @@ module Sghtmltopdf
         &block
       )
     rescue Net::OpenTimeout, Net::ReadTimeout => e
-      raise ServerError, "#{base}への接続がタイムアウトしました: #{e.class}"
+      raise ServerError, "the connection to #{base} timed out: #{e.class}"
     rescue SocketError, SystemCallError, IOError, OpenSSL::SSL::SSLError => e
-      raise ServerError, "#{base}への接続に失敗しました: #{e.message}"
+      raise ServerError, "the connection to #{base} failed: #{e.message}"
     end
 
-    # エラー応答の本文は`text/plain`の日本語メッセージ(CLIと同じ文言)。
+    # An error response's body is a `text/plain` message (the same wording as the CLI).
     def ensure_success!(response)
       return if response.is_a?(Net::HTTPOK)
 
@@ -120,8 +119,8 @@ module Sghtmltopdf
       when 400 then UsageError
       when 413 then InputError
       when 500 then RenderError
-      # 404/405はパスやメソッドの間違い＝相手がsghtmltopdfのサーバでない
-      # 可能性が高い。503/504はキュー溢れ・キュー待ちのタイムアウト。
+      # A 404 or 405 means a wrong path or method, most likely because the other end is not
+      # an sghtmltopdf server. A 503 or 504 means the queue overflowed or the queue wait timed out.
       else ServerError
       end
     end

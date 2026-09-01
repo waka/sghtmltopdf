@@ -1,19 +1,19 @@
-//! `<img src="*.svg">`と`background-image: url(*.svg)`のE2Eテスト。
+//! E2E tests for `<img src="*.svg">` and `background-image: url(*.svg)`.
 //!
-//! SVGはラスタ画像と違い「Form XObject 1つ + その参照先」という複数
-//! オブジェクトのかたまりとしてPDFへ入る。そのため確認したいのは主に2点:
+//! Unlike a raster image, an SVG goes into the PDF as a cluster of several objects: one Form
+//! XObject plus what it references. So there are mainly two things to confirm:
 //!
-//! 1. ラスタライズせずベクタのまま入っていること(Image XObjectではなく
-//!    Form XObjectになり、パス描画演算子が現れる)
-//! 2. 複数オブジェクトを差し込んでもxrefが壊れないこと
+//! 1. It goes in as vectors without rasterisation (becoming a Form XObject rather than an
+//!    Image XObject, with path drawing operators appearing)
+//! 2. Splicing in several objects does not break the xref
 //!
-//! 2つ目は書き出し方が2通りあるので両方を通す。ライブラリの`encode_pdf`は
-//! `Chunk::extend`でオフセットを付け替えるが、`Sink`へ書く経路
-//! (`StreamingPdfWriter`、CLIは`--streaming`の有無に関わらずこちらを使う)は
-//! 自前でxrefを組むため、チャンク内の各オブジェクトの位置を数える必要がある。
+//! The second is exercised through both writers. The library's `encode_pdf` fixes up the
+//! offsets with `Chunk::extend`, but the path that writes to a `Sink`
+//! (`StreamingPdfWriter`, which the CLI uses with or without `--streaming`) builds the xref
+//! itself and has to count each object's position within the chunk.
 //!
-//! 描画結果のピクセル比較はしない(svg2pdf側の責務)。ここで見るのは
-//! 「この処理系がSVGをPDFの正しい構造として繋げられているか」だけ。
+//! There is no pixel comparison of the drawing result (that is svg2pdf's job). All that is
+//! checked here is whether this engine joins the SVG into the PDF's structure correctly.
 
 #![cfg(feature = "svg")]
 
@@ -34,18 +34,17 @@ use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_style
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const BIN: &str = env!("CARGO_BIN_EXE_sghtmltopdf");
 
-/// 20x10のSVG。塗りとストロークだけで、フォントにもラスタ画像にも依存しない。
+/// A 20x10 SVG. Fills and strokes only, depending on neither fonts nor raster images.
 const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10">
   <rect x="0" y="0" width="20" height="10" fill="#0000ff"/>
   <circle cx="10" cy="5" r="4" fill="#ff0000" stroke="#00ff00" stroke-width="1"/>
 </svg>"##;
 
-/// グラデーションと`opacity`を持つSVG。svg2pdfのチャンクがShading・Pattern・
-/// ExtGState・ICCBasedのストリーム・入れ子のForm XObjectまで含むようになり、
-/// **オブジェクト番号の順序とバイト列上の順序が一致しなくなる**
-/// (グラデーションの本体の中から参照されるICCプロファイルは、番号は先に
-/// 振られるがチャンクの末尾に書かれる)。xrefのオフセットを数える処理で
-/// いちばん壊れやすいのがこのケースなので、意図して用意している。
+/// An SVG with a gradient and `opacity`. svg2pdf's chunk then contains Shading, Pattern,
+/// ExtGState, an ICCBased stream and a nested Form XObject, and **the object numbering no
+/// longer matches the order in the byte string** (the ICC profile referenced from inside the
+/// gradient is numbered earlier but written at the end of the chunk). That is the case most
+/// likely to break the code counting the xref offsets, so it is here deliberately.
 const SVG_WITH_GRADIENT: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60" width="100" height="60">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
@@ -73,8 +72,8 @@ fn find_from(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .map(|at| from + at)
 }
 
-/// content streamはFlateDecodeで圧縮されているため、演算子を探すには解凍が
-/// 必要(`tests/background.rs`の同名関数と同じロジック)。
+/// The content stream is FlateDecode compressed, so finding an operator requires inflating
+/// first (the same logic as the identically named function in `tests/background.rs`).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -97,12 +96,11 @@ fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// xrefテーブルの各エントリが本当にそのオブジェクトの先頭を指しているか
-/// 確認する。SVGを差し込むとオブジェクトが一度に何個も増えるため、
-/// オフセットが1つでもずれるとPDF全体が読めなくなる。
+/// Confirm that every xref table entry really points at the start of its object. Splicing in
+/// an SVG adds many objects at once, and one wrong offset makes the whole PDF unreadable.
 ///
-/// 併せて`/Size`とエントリ数が合っているか(=1から連番で全て書かれて
-/// いるか)も見る。ストリーミング書き出しのxrefはその前提で組まれている。
+/// It also checks that `/Size` matches the entry count (that is, that everything from 1
+/// upwards is written). The streaming writer's xref is built on that assumption.
 fn assert_xref_is_consistent(pdf: &[u8]) {
     let startxref = rfind(pdf, b"startxref").expect("PDF should end with startxref");
     let xref_offset: usize = ascii_number_after(pdf, startxref + b"startxref".len())
@@ -112,7 +110,7 @@ fn assert_xref_is_consistent(pdf: &[u8]) {
         "startxref should point at the xref table"
     );
 
-    // `xref\n0 {size}\n`のあと、1行20バイトのエントリが並ぶ。
+    // After `xref\n0 {size}\n` come the entries, 20 bytes per line.
     let header_end = find_from(pdf, b"\n", xref_offset + b"xref".len() + 1)
         .expect("xref subsection header should end with a newline");
     let subsection = std::str::from_utf8(&pdf[xref_offset + b"xref\n".len()..header_end])
@@ -123,16 +121,16 @@ fn assert_xref_is_consistent(pdf: &[u8]) {
     assert_eq!(first, "0", "the subsection should start at object 0");
     let size: usize = size.trim().parse().expect("count should be a number");
 
-    // エントリは1件20バイト固定(`nnnnnnnnnn ggggg t` + 2バイトの行末)。
-    // 先頭はオブジェクト0のフリーエントリ。実オブジェクトは1..size。
+    // An entry is a fixed 20 bytes (`nnnnnnnnnn ggggg t` plus a 2-byte line ending).
+    // The first is object 0's free entry. The real objects are 1..size.
     let entries_start = header_end + 1;
     let mut in_use = 0;
     for id in 1..size {
         let entry_at = entries_start + id * 20;
         let entry = std::str::from_utf8(&pdf[entry_at..entry_at + 20])
             .unwrap_or_else(|_| panic!("xref entry for object {id} should be ASCII"));
-        // 使われていない番号は`f`(free)エントリになる。`encode_pdf`は払い出した
-        // まま使わない番号を残すことがあるので、`n`だけを検証する。
+        // An unused number becomes an `f` (free) entry. `encode_pdf` can leave numbers
+        // allocated but unused, so only the `n` entries are checked.
         if entry.as_bytes()[17] == b'f' {
             continue;
         }
@@ -154,8 +152,8 @@ fn assert_xref_is_consistent(pdf: &[u8]) {
         );
     }
 
-    // ファイル中の`N 0 obj`の総数と`n`エントリ数が一致すること
-    // (=xrefに載っていないオブジェクトが無い)。
+    // The total number of `N 0 obj` in the file matches the number of `n` entries
+    // (that is, no object is missing from the xref).
     let written = (1..size)
         .filter(|id| count_occurrences(pdf, format!("\n{id} 0 obj\n").as_bytes()) > 0)
         .count();
@@ -179,8 +177,8 @@ fn ascii_number_after(bytes: &[u8], from: usize) -> Option<usize> {
     std::str::from_utf8(&rest[start..end]).ok()?.parse().ok()
 }
 
-/// HTMLとSVGを一時ディレクトリへ書き、CLIを通してPDFへ変換する。
-/// `extra`に`--streaming`を渡せばストリーミングのページ確定になる。
+/// Write the HTML and the SVG into a temporary directory and convert to PDF through the CLI.
+/// Passing `--streaming` in `extra` selects streaming page settling.
 fn convert(html: &str, extra: &[&str], name: &str) -> Vec<u8> {
     convert_svg_file(html, SVG, extra, name)
 }
@@ -208,7 +206,7 @@ fn convert_svg_file(html: &str, svg: &str, extra: &[&str], name: &str) -> Vec<u8
     );
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        !stderr.contains("警告"),
+        !stderr.contains("warning:"),
         "converting an SVG should not warn, got: {stderr}"
     );
 
@@ -223,8 +221,8 @@ fn cleanup(dir: &Path) {
     std::fs::remove_dir_all(dir).ok();
 }
 
-/// SVGがベクタのまま入っている印。ラスタ化されていれば
-/// `/Subtype /Image`になり、`/Subtype /Form`もパス演算子も出ない。
+/// The sign that the SVG went in as vectors. Rasterised, it would be `/Subtype /Image` with
+/// neither `/Subtype /Form` nor any path operator.
 fn assert_embedded_as_vector(pdf: &[u8]) {
     assert!(
         count_occurrences(pdf, b"/Subtype /Form") > 0,
@@ -258,9 +256,9 @@ fn an_img_pointing_at_an_svg_is_embedded_as_vector_graphics() {
     assert_xref_is_consistent(&pdf);
 }
 
-/// `<img>`に寸法が無ければSVGの内在サイズ(20x10)でレイアウトされる。
-/// `--zoom 1`・既定スケール0.75のもとで、幅20pxのボックスは`20 0 0 10`の
-/// `cm`として現れる。
+/// With no dimensions on the `<img>` it is laid out at the SVG's intrinsic size (20x10).
+/// Under `--zoom 1` and the default scale of 0.75, a 20px-wide box appears as the `cm`
+/// `20 0 0 10`.
 #[test]
 fn an_svg_without_attributes_lays_out_at_its_intrinsic_size() {
     let pdf = convert(
@@ -277,8 +275,8 @@ fn an_svg_without_attributes_lays_out_at_its_intrinsic_size() {
     );
 }
 
-/// 属性で寸法を与えたら内在サイズではなくそちらが効く(単位正方形へ
-/// 正規化されているので、ラスタと同じ`cm`だけで拡縮できる)。
+/// Dimensions given by attribute win over the intrinsic size (being normalised to the unit
+/// square, it scales with the `cm` alone, just like a raster).
 #[test]
 fn width_and_height_attributes_scale_the_svg() {
     let pdf = convert(
@@ -296,20 +294,20 @@ fn width_and_height_attributes_scale_the_svg() {
 
 // ===== object-fit / object-position =====
 
-/// 40x10のSVG。`object-fit`の効き方が縦横で違うことが分かる比率にしてある。
+/// A 40x10 SVG. The ratio is chosen so `object-fit`'s different horizontal and vertical effects show.
 const WIDE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="10">
   <rect width="40" height="10" fill="#0000ff"/>
 </svg>"##;
 
-/// 40.6 x 10.4 の**小数**の内在サイズを持つSVG。整数へ丸めると41x10になり、
-/// 比が3.904から4.100へ約5%変わる。`object-fit`はこの比で決まるので、
-/// 丸めているとここで落ちる。
+/// An SVG with a **fractional** intrinsic size of 40.6 x 10.4. Rounding to integers gives
+/// 41x10, changing the ratio from 3.904 to 4.100, about 5%. `object-fit` is decided by that
+/// ratio, so rounding would fail here.
 const FRACTIONAL_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 406 104" width="40.6" height="10.4">
   <rect width="406" height="104" fill="#0000ff"/>
 </svg>"##;
 
-/// Form XObjectを描く直前の`cm`(`a b c d e f cm`)を取り出す。
-/// `Do`の手前にある一番近い`cm`がそれ。
+/// Extract the `cm` (`a b c d e f cm`) immediately before a Form XObject is drawn.
+/// That is the nearest `cm` before the `Do`.
 fn xobject_cm(pdf: &[u8]) -> [f32; 6] {
     let content = decompressed_stream_bytes(pdf);
     let text = String::from_utf8_lossy(&content).into_owned();
@@ -339,21 +337,21 @@ fn assert_close(actual: f32, expected: f32, what: &str) {
     );
 }
 
-/// `object-fit`の5つの値それぞれで、描画される矩形が仕様どおりになること。
-/// 100x50のボックスに40x10(比4:1)のSVGを入れる。
+/// For each of `object-fit`'s five values, the drawn rectangle follows the spec.
+/// A 40x10 SVG (a 4:1 ratio) goes into a 100x50 box.
 #[test]
 fn object_fit_scales_an_svg_the_same_way_it_scales_a_raster_image() {
-    // (値, 期待する幅, 期待する高さ)
+    // (value, expected width, expected height)
     let cases = [
-        // ボックスいっぱいに引き伸ばす(比を保たない)。
+        // Stretched to fill the box (the ratio is not preserved).
         ("fill", 100.0, 50.0),
-        // 幅が先に埋まる: 100 / 4 = 25。
+        // The width fills first: 100 / 4 = 25.
         ("contain", 100.0, 25.0),
-        // 高さが先に埋まる: 50 * 4 = 200。
+        // The height fills first: 50 * 4 = 200.
         ("cover", 200.0, 50.0),
-        // 内在サイズそのまま。
+        // The intrinsic size, unchanged.
         ("none", 40.0, 10.0),
-        // 内在サイズがボックスに収まるので`none`と同じ。
+        // The intrinsic size fits the box, so it is the same as `none`.
         ("scale-down", 40.0, 10.0),
     ];
     for (fit, width, height) in cases {
@@ -368,8 +366,8 @@ fn object_fit_scales_an_svg_the_same_way_it_scales_a_raster_image() {
     }
 }
 
-/// 内在サイズが小数のSVGでもアスペクト比を保つ。丸めていると
-/// `contain`の高さが25.6ではなく24.4になる(比が5%ずれる)。
+/// Even an SVG with a fractional intrinsic size preserves its aspect ratio. Rounding would
+/// make `contain`'s height 24.4 rather than 25.6 (a 5% error in the ratio).
 #[test]
 fn object_fit_keeps_a_fractional_intrinsic_aspect_ratio() {
     let ratio = 40.6 / 10.4;
@@ -390,21 +388,21 @@ fn object_fit_keeps_a_fractional_intrinsic_aspect_ratio() {
     }
 }
 
-/// `scale-down`は内在サイズがボックスより大きいときだけ縮める
-/// (そのとき`contain`と同じ)。
+/// `scale-down` shrinks only when the intrinsic size is larger than the box
+/// (and is then the same as `contain`).
 #[test]
 fn object_fit_scale_down_shrinks_only_when_the_svg_is_larger_than_the_box() {
     let html = r#"<body style="margin:0"><img src="logo.svg"
          style="width:20px;height:20px;object-fit:scale-down"></body>"#;
     let pdf = convert_svg_file(html, WIDE_SVG, &[], "scale-down-large");
     let cm = xobject_cm(&pdf);
-    // 40x10を20x20へ収めるので幅が先に埋まる: 20 x 5。
+    // Fitting 40x10 into 20x20 fills the width first: 20 x 5.
     assert_close(cm[0], 20.0, "scale-down width");
     assert_close(cm[3], 5.0, "scale-down height");
 }
 
-/// `object-position`は収めた矩形の置き場所を動かす。既定(50% 50%)から
-/// `0% 0%`にすると左上へ寄る。
+/// `object-position` moves where the fitted rectangle sits. Going from the default (50% 50%)
+/// to `0% 0%` moves it to the top left.
 #[test]
 fn object_position_moves_the_svg_within_the_content_box() {
     let centred = convert_svg_file(
@@ -423,15 +421,15 @@ fn object_position_moves_the_svg_within_the_content_box() {
     );
 
     let (c, tl) = (xobject_cm(&centred), xobject_cm(&top_left));
-    // 大きさは変わらない。
+    // The size does not change.
     assert_close(tl[0], c[0], "width should not change with object-position");
     assert_close(tl[3], c[3], "height should not change with object-position");
-    // 25px高い矩形を上端に寄せるので、PDF座標(下が原点)ではyが上がる。
+    // A rectangle 25px shorter is moved to the top, so in PDF coordinates (origin at the bottom) y goes up.
     assert_close(tl[5] - c[5], 12.5, "object-position: 0% 0% should raise it");
 }
 
-/// `object-fit: cover`ははみ出すので、content boxでクリップされる
-/// (クリップは`re W n`の並びで書かれる)。
+/// `object-fit: cover` overflows, so it is clipped to the content box
+/// (the clip is written as the sequence `re W n`).
 #[test]
 fn object_fit_cover_is_clipped_to_the_content_box() {
     let pdf = convert_svg_file(
@@ -443,16 +441,16 @@ fn object_fit_cover_is_clipped_to_the_content_box() {
     );
     let content = decompressed_stream_bytes(&pdf);
     let text = String::from_utf8_lossy(&content);
-    // content boxの矩形 → `W`(nonzeroクリップ) → `n`(パスを描かず終える)。
+    // The content box's rectangle, then `W` (a nonzero clip), then `n` (end without drawing the path).
     assert!(
         text.contains("100 50 re\nW\nn\n"),
         "the content box should be set as a clip path, content was: {text}"
     );
-    // はみ出す幅で描かれていること(クリップされていなければページに漏れる)。
+    // It is drawn at a width that overflows (without the clip it would spill onto the page).
     assert_close(xobject_cm(&pdf)[0], 200.0, "cover width");
 }
 
-/// `width`だけ指定したときの高さは、小数の内在比から導かれる。
+/// With only `width` given, the height follows from the fractional intrinsic ratio.
 #[test]
 fn a_single_specified_dimension_derives_the_other_from_the_exact_ratio() {
     let pdf = convert_svg_file(
@@ -462,7 +460,7 @@ fn a_single_specified_dimension_derives_the_other_from_the_exact_ratio() {
         "derive-height",
     );
     let cm = xobject_cm(&pdf);
-    // 203 / (40.6/10.4) = 52。丸めた41x10の比だと49.5になる。
+    // 203 / (40.6/10.4) = 52. The rounded 41x10 ratio would give 49.5.
     assert_close(cm[0], 203.0, "width");
     assert_close(cm[3], 52.0, "height derived from the exact ratio");
 }
@@ -481,9 +479,8 @@ fn an_svg_works_as_a_background_image() {
     assert_xref_is_consistent(&pdf);
 }
 
-/// ストリーミング書き出しはxrefを自前で組むため、SVGの複数オブジェクトが
-/// 入ってもオフセットがずれないことを確認する(この検証がこのファイルの
-/// 主目的)。
+/// The streaming writer builds the xref itself, so this confirms the offsets do not shift
+/// when an SVG's several objects go in (that check is this file's main purpose).
 #[test]
 fn streaming_mode_writes_a_consistent_xref_with_an_svg() {
     let pdf = convert(
@@ -495,8 +492,8 @@ fn streaming_mode_writes_a_consistent_xref_with_an_svg() {
     assert_xref_is_consistent(&pdf);
 }
 
-/// 同じSVGを何度参照してもForm XObjectは1つしか書かれない
-/// (ラスタ画像と同じ`Rc`単位のメモ化が効く)。
+/// However many times the same SVG is referenced, only one Form XObject is written
+/// (the same per-`Rc` memoisation as a raster image).
 #[test]
 fn the_same_svg_referenced_twice_is_embedded_once() {
     let pdf = convert(
@@ -514,9 +511,9 @@ fn the_same_svg_referenced_twice_is_embedded_once() {
     assert_xref_is_consistent(&pdf);
 }
 
-/// グラデーション入りのSVGはオブジェクト番号順とバイト列上の順序が
-/// 食い違う([`SVG_WITH_GRADIENT`]のコメント参照)。`Sink`経路のxrefが
-/// それでも正しく組めることを確認する。
+/// In an SVG with a gradient the object numbering and the byte order disagree (see the
+/// comment on [`SVG_WITH_GRADIENT`]). This confirms the `Sink` path's xref is still built
+/// correctly.
 #[test]
 fn a_gradient_svg_keeps_the_xref_consistent_when_object_order_is_not_monotonic() {
     for (mode, name) in [
@@ -531,7 +528,7 @@ fn a_gradient_svg_keeps_the_xref_consistent_when_object_order_is_not_monotonic()
         );
         assert_embedded_as_vector(&pdf);
         assert_xref_is_consistent(&pdf);
-        // グラデーションがベクタのまま(Shadingとして)入っている印。
+        // The sign that the gradient went in as vectors (as a Shading).
         assert!(
             count_occurrences(&pdf, b"/ShadingType") > 0,
             "the linear gradient should stay a PDF shading, not be flattened, in {name}"
@@ -539,8 +536,8 @@ fn a_gradient_svg_keeps_the_xref_consistent_when_object_order_is_not_monotonic()
     }
 }
 
-/// ライブラリの`encode_pdf`はCLIとは別の書き出し経路(`Chunk::extend`)を
-/// 通るため、こちらも独立に確認する。
+/// The library's `encode_pdf` takes a different writing path from the CLI
+/// (`Chunk::extend`), so it is checked independently too.
 #[test]
 fn encode_pdf_embeds_an_svg_with_a_consistent_xref() {
     let svg_data_uri = format!(
@@ -559,7 +556,7 @@ fn encode_pdf_embeds_an_svg_with_a_consistent_xref() {
     ]);
     let settings = PageSettings::default();
 
-    // data URIしか使わないのでbase_dirは何でもよい(I/Oは起きない)。
+    // Only data URIs are used, so base_dir can be anything (no I/O happens).
     let image_cache = ImageAssetCache::new(PathBuf::from("."), false);
     let background_images = resolve_background_images(&styles, &image_cache);
     let pages =
@@ -571,20 +568,20 @@ fn encode_pdf_embeds_an_svg_with_a_consistent_xref() {
     assert_xref_is_consistent(&pdf);
 }
 
-/// SVGの中の`<image href="...">`からファイルを読ませない。
+/// Do not let an `<image href="...">` inside an SVG read a file.
 ///
-/// usvgの既定の解決関数はhrefをそのまま`std::fs::read`するため、`<img>`側の
-/// 封じ込め(基準ディレクトリ・`--allow`・`--disable-local-file-access`)を
-/// 迂回できてしまう。`pdf::svg`でこれを差し替えているので、参照が拒否され、
-/// 読まれた中身が一切PDFへ出ないことを確認する。
+/// usvg's default resolver calls `std::fs::read` on the href directly, which would bypass
+/// the `<img>`-side containment (the base directory, `--allow`,
+/// `--disable-local-file-access`). `pdf::svg` replaces it, so this confirms the reference is
+/// refused and none of what it would read reaches the PDF.
 #[test]
 fn an_svg_cannot_read_files_through_a_nested_image_href() {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-svg-{}-exfil", std::process::id()));
     let public = dir.join("public");
     std::fs::create_dir_all(&public).unwrap();
 
-    // base_dirの外に置いた「秘密の」SVG。マゼンタの塗り(`1 0 1 rg`)が
-    // PDFへ出てきたら中身が漏れたということ。
+    // A "secret" SVG placed outside base_dir. A magenta fill (`1 0 1 rg`) appearing in the
+    // PDF would mean the contents leaked.
     std::fs::write(
         dir.join("secret.svg"),
         r##"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="20">
@@ -617,7 +614,7 @@ fn an_svg_cannot_read_files_through_a_nested_image_href() {
     assert!(result.status.success());
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert!(
-        stderr.contains("SVG内の外部参照は読み込みません"),
+        stderr.contains("external references inside an SVG are not loaded"),
         "each nested href should be refused with a warning, got: {stderr}"
     );
 
@@ -633,16 +630,16 @@ fn an_svg_cannot_read_files_through_a_nested_image_href() {
         0,
         "/etc/passwd must not appear in the PDF"
     );
-    // 参照を拒否しても、SVG自身(グレーの背景)は描かれる。
+    // Even with the reference refused, the SVG itself (the grey background) is drawn.
     assert!(count_occurrences(&pdf, b"/Subtype /Form") > 0);
 
     cleanup(&dir);
 }
 
-// ===== インラインSVG(未対応) =====
+// ===== Inline SVG (unsupported) =====
 
-/// HTMLに直接書いた`<svg>`は描画しない。`<img src="*.svg">`は描けるように
-/// なったので、黙って何も出ないのではなく警告する。
+/// An `<svg>` written directly in the HTML is not drawn. `<img src="*.svg">` can be drawn,
+/// so rather than silently producing nothing, it warns.
 #[test]
 fn an_inline_svg_is_not_rendered_and_says_so() {
     for (mode, name) in [
@@ -676,7 +673,7 @@ fn an_inline_svg_is_not_rendered_and_says_so() {
         assert!(result.status.success(), "conversion should still succeed");
         let stderr = String::from_utf8_lossy(&result.stderr);
         assert!(
-            stderr.contains("<svg> 要素") && stderr.contains("描画されません"),
+            stderr.contains("<svg> element") && stderr.contains("not drawn"),
             "an inline <svg> should be reported, got: {stderr}"
         );
 
@@ -686,7 +683,7 @@ fn an_inline_svg_is_not_rendered_and_says_so() {
             0,
             "an inline <svg> must not produce a form XObject in {name}"
         );
-        // サブツリーごと消えるので、中の`<text>`が本文へ流れ込むこともない。
+        // The whole subtree is removed, so the `<text>` inside never flows into the body either.
         let content = decompressed_stream_bytes(&pdf);
         assert_eq!(
             count_occurrences(&content, b"INLINE"),
@@ -697,8 +694,8 @@ fn an_inline_svg_is_not_rendered_and_says_so() {
     }
 }
 
-/// 警告は1文書につき1回だけ(インラインSVGを多用した文書で
-/// 同じ警告が並ばないこと)。
+/// The warning appears once per document (so a document making heavy use of inline SVG does
+/// not fill up with the same warning).
 #[test]
 fn the_inline_svg_warning_is_emitted_once_per_document() {
     let dir = std::env::temp_dir().join(format!(
@@ -725,23 +722,23 @@ fn the_inline_svg_warning_is_emitted_once_per_document() {
         .expect("failed to run the sghtmltopdf binary");
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(
-        stderr.matches("<svg> 要素").count(),
+        stderr.matches("<svg> element").count(),
         1,
         "the warning should appear once, got: {stderr}"
     );
-    // 何個あったかは伝える。
+    // It does report how many there were.
     assert!(
-        stderr.contains("5個"),
+        stderr.contains("5 inline"),
         "the warning should count them, got: {stderr}"
     );
     cleanup(&dir);
 }
 
-/// `<img src="*.svg">`だけの文書では、インラインSVGの警告を出さない
-/// (出すと本来通っている使い方に不安を持たせる)。
+/// A document with only `<img src="*.svg">` gets no inline SVG warning
+/// (emitting one would cast doubt on a usage that is perfectly fine).
 #[test]
 fn referencing_an_svg_from_img_does_not_warn_about_inline_svg() {
-    // `convert`が「警告が出ないこと」を確かめている。
+    // `convert` confirms that no warning appears.
     let pdf = convert(
         r#"<body style="margin:0"><img src="logo.svg"></body>"#,
         &[],
@@ -750,8 +747,8 @@ fn referencing_an_svg_from_img_does_not_warn_about_inline_svg() {
     assert_embedded_as_vector(&pdf);
 }
 
-/// 壊れたSVGは画像なしの置換要素として扱われ、変換自体は成功する
-/// (ラスタのデコード失敗と同じ扱い)。
+/// A broken SVG is treated as a replaced element with no image and the conversion itself
+/// succeeds (the same handling as a failed raster decode).
 #[test]
 fn a_broken_svg_does_not_abort_the_conversion() {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-svg-{}-broken", std::process::id()));

@@ -1,44 +1,44 @@
-//! 空白文字の分類。
+//! Classification of whitespace characters.
 //!
-//! Unicodeには`char::is_whitespace`(White_Spaceプロパティ)が真になる文字が
-//! 多数あるが、CSSの行組みではそれらを一律に扱ってはいけない。分類は2軸ある。
+//! Unicode has many characters for which `char::is_whitespace` (the White_Space property)
+//! is true, but CSS line layout must not treat them all alike. There are two axes.
 //!
-//! 1. **畳み込むか** — CSS Text 3 §4.1が畳み込みの対象とするのは
-//!    space (U+0020)・tab (U+0009)・segment break (U+000A)だけで、それ以外の
-//!    Zs(`&nbsp;`やthin spaceなど)は「畳み込まれない普通の文字」として扱う。
-//!    Blinkの`Character::IsCollapsibleSpace`(space/LF/tab/CR)、Geckoの
-//!    `nsTextFrameUtils::IsSpaceOrTab`(space/tab、改行は別処理)も同じ範囲。
-//!    畳み込まない文字は行組みの単語区切りにはならず、そのままシェイピングへ
-//!    渡してフォント本来の字幅で描く(`&nbsp;`3個は空白3個分の幅になる)。
+//! 1. **Whether it collapses** - CSS Text 3 section 4.1 makes only space (U+0020), tab
+//!    (U+0009) and the segment break (U+000A) collapsible; every other Zs (`&nbsp;`, thin
+//!    space and so on) is an ordinary, non-collapsing character.
+//!    Blink's `Character::IsCollapsibleSpace` (space/LF/tab/CR) and Gecko's
+//!    `nsTextFrameUtils::IsSpaceOrTab` (space/tab, with newlines handled separately) cover
+//!    the same range. A non-collapsing character is not a word separator for line layout;
+//!    it is passed to shaping and drawn at the font's own advance (three `&nbsp;` are three spaces wide).
 //!
-//! 2. **その位置で改行してよいか** — UAX #14の行分割クラスによる。
-//!    `&nbsp;`(GL)や図形用スペース(GL)は前後で改行してはならず、
-//!    thin space等(BA)とZWSP(ZW)は直後で改行してよい。
+//! 2. **Whether a break is allowed there** - decided by the UAX #14 line breaking class.
+//!    `&nbsp;` (GL) and figure space (GL) forbid a break either side, while thin space and
+//!    friends (BA) and ZWSP (ZW) allow one immediately after.
 //!
-//! グリフを持たないフォントでも字幅が壊れないのは、シェイパー(harfrust)が
-//! HarfBuzzのspace fallback(`_hb_ot_shape_fallback_spaces`)を実装しており、
-//! 該当グリフが無ければspaceのグリフで代替して`em/2`・`em/5`といった規定の
-//! アドバンスを設定してくれるため。こちら側で幅を用意する必要はない。
+//! Advances survive even in a font without those glyphs, because the shaper (harfrust)
+//! implements HarfBuzz's space fallback (`_hb_ot_shape_fallback_spaces`): with no matching
+//! glyph it substitutes the space glyph and sets the prescribed advance, such as `em/2` or
+//! `em/5`. There is nothing for us to supply.
 //!
-//! 既知の簡略化: U+000B・U+0085・U+2028・U+2029は本来「強制改行」だが、
-//! グリフを持たないフォントで.notdefが出るのを避けるため、ここでは畳み込む
-//! 空白(=単語区切り)として扱う(従来の挙動のまま)。
+//! A known simplification: U+000B, U+0085, U+2028 and U+2029 are really forced line breaks,
+//! but to avoid .notdef in a font lacking those glyphs they are treated here as collapsible
+//! whitespace (that is, word separators), preserving the existing behaviour.
 
-/// 幅を持たない改行機会(UAX #14のZWクラス)。`<wbr>`の実体でもある。
+/// A zero-width break opportunity (the ZW class of UAX #14). Also what `<wbr>` amounts to.
 pub(crate) const ZERO_WIDTH_SPACE: char = '\u{200b}';
 
-/// 畳み込みの対象になる空白かどうか(CSS Text 3の"collapsible white space")。
+/// Whether the character is collapsible whitespace (CSS Text 3's "collapsible white space").
 ///
-/// `white-space: normal`ではこの文字の並びが1個の単語間スペースになり、行頭・
-/// 行末では捨てられる。ここに含まれない空白文字(`&nbsp;`等)は普通の文字。
+/// Under `white-space: normal` a run of these becomes one inter-word space, and is dropped
+/// at the start and end of a line. A whitespace character not listed here (`&nbsp;`, say) is an ordinary character.
 pub(crate) fn is_collapsible(ch: char) -> bool {
     matches!(
         ch,
         '\u{20}'      // SPACE
         | '\u{9}'     // TAB
-        | '\u{a}'     // LF(HTMLのsegment break)
-        | '\u{d}'     // CR(パーサでLFへ正規化されるが防御的に)
-        | '\u{c}'     // FF(HTMLのASCII whitespace)
+        | '\u{a}'     // LF (HTML's segment break)
+        | '\u{d}'     // CR (normalised to LF by the parser, but handled defensively)
+        | '\u{c}'     // FF (HTML ASCII whitespace)
         | '\u{b}'     // VT
         | '\u{85}'    // NEL
         | '\u{2028}'  // LINE SEPARATOR
@@ -46,40 +46,40 @@ pub(crate) fn is_collapsible(ch: char) -> bool {
     )
 }
 
-/// 文字列が畳み込み対象の空白だけでできているか(=そこにボックスを作らなく
-/// てよいか)。`str::trim`と違い、`&nbsp;`だけの文字列は「空白のみ」ではない
-/// (内容を持つ)と判定する。
+/// Whether a string consists only of collapsible whitespace (that is, whether no box needs
+/// to be created for it). Unlike `str::trim`, a string of only `&nbsp;` is not "whitespace
+/// only" (it has content).
 pub(crate) fn is_collapsible_only(text: &str) -> bool {
     text.chars().all(is_collapsible)
 }
 
-/// 前後で改行してはならない空白かどうか(UAX #14のGL・WJ)。
+/// Whether a break is forbidden either side of the whitespace (the GL and WJ classes of UAX #14).
 ///
-/// `&nbsp;`はまさにこのために使われる文字なので、`word-break: break-all`より
-/// 優先して効かせる(ブラウザも「10&nbsp;kg」を分断しない)。
+/// `&nbsp;` exists precisely for this, so it takes priority over `word-break: break-all`
+/// (browsers do not break "10&nbsp;kg" either).
 pub(crate) fn is_non_breaking(ch: char) -> bool {
     matches!(
         ch,
         '\u{a0}'      // NO-BREAK SPACE (GL)
-        | '\u{2007}'  // FIGURE SPACE (GL、数字の桁揃え用)
+        | '\u{2007}'  // FIGURE SPACE (GL, for aligning digits)
         | '\u{202f}'  // NARROW NO-BREAK SPACE (GL)
         | '\u{2060}'  // WORD JOINER (WJ)
         | '\u{feff}' // ZERO WIDTH NO-BREAK SPACE (WJ)
     )
 }
 
-/// 直後で改行してよい空白かどうか(UAX #14のBA)。
+/// Whether a break is allowed immediately after the whitespace (the BA class of UAX #14).
 ///
-/// 幅を持つ整形用スペース(thin space等)が対象。ZWSP(ZW)はここには現れない:
-/// グリフを出さずに改行機会のフラグへ畳むため、`inline::flatten_spans`が
-/// 文字の段階で取り除いている。
-/// U+3000 IDEOGRAPHIC SPACEは`inline::is_cjk`が既に改行機会として扱うため
-/// (かつ`word-break: keep-all`の対象であるべきなため)ここには含めない。
+/// It covers the typographic spaces that have a width (thin space and so on). ZWSP (ZW) does
+/// not appear here: it is folded into a break-opportunity flag rather than emitting a glyph,
+/// so `inline::flatten_spans` removes it at the character stage.
+/// U+3000 IDEOGRAPHIC SPACE is not listed either, since `inline::is_cjk` already treats it
+/// as a break opportunity (and it should be subject to `word-break: keep-all`).
 pub(crate) fn allows_break_after(ch: char) -> bool {
     matches!(
         ch,
         '\u{1680}'          // OGHAM SPACE MARK (BA)
-        | '\u{2000}'..='\u{2006}' // EN QUAD〜SIX-PER-EM SPACE (BA)
+        | '\u{2000}'..='\u{2006}' // EN QUAD to SIX-PER-EM SPACE (BA)
         | '\u{2008}'..='\u{200a}' // PUNCTUATION/THIN/HAIR SPACE (BA)
         | '\u{205f}' // MEDIUM MATHEMATICAL SPACE (BA)
     )
@@ -94,7 +94,7 @@ mod tests {
         for ch in [' ', '\t', '\n', '\r'] {
             assert!(is_collapsible(ch), "{ch:?} should collapse");
         }
-        // `char::is_whitespace`は真だが、CSS上は普通の文字。
+        // True for `char::is_whitespace`, but an ordinary character as far as CSS is concerned.
         for ch in ['\u{a0}', '\u{2009}', '\u{3000}', '\u{202f}', '\u{2007}'] {
             assert!(ch.is_whitespace(), "{ch:?} is Unicode white space");
             assert!(!is_collapsible(ch), "{ch:?} must not collapse");
@@ -119,8 +119,8 @@ mod tests {
             assert!(allows_break_after(ch));
             assert!(!is_non_breaking(ch));
         }
-        // ZWSPは文字として残らない(`inline::flatten_spans`が取り除く)ので
-        // どちらの表にも載せない。
+        // ZWSP does not survive as a character (`inline::flatten_spans` removes it), so it
+        // appears in neither table.
         assert!(!allows_break_after(ZERO_WIDTH_SPACE));
         assert!(!is_non_breaking(ZERO_WIDTH_SPACE));
     }

@@ -1,14 +1,14 @@
-//! T9スパイク: pdf-writerでTrueTypeフォントを埋め込み、実際のグリフでテキストを
-//! 描画したPDFを生成するPoC。
+//! T9 spike: a PoC embedding a TrueType font with pdf-writer and generating a PDF that draws
+//! text with its real glyphs.
 //!
-//! 検証したいこと:
-//! - CIDFontType2(Identity-H encoding)としてTrueTypeフォントを埋め込み、
-//!   T7の`shape_text()`が返すグリフID列をそのままPDFのテキスト描画に使えるか
-//! - base14フォント(T1のspike_krillaやspike_pdf_writer)ではなく、実際に
-//!   埋め込んだフォントのグリフが表示されるか(アクセント付き文字を含めて確認)
+//! What we want to check:
+//! - Whether a TrueType font can be embedded as a CIDFontType2 (Identity-H encoding) and the
+//!   glyph ID sequence T7's `shape_text()` returns used directly for PDF text drawing
+//! - Whether the glyphs of the actually embedded font are displayed, rather than a base14
+//!   font (as in T1's spike_krilla and spike_pdf_writer), accented characters included
 //!
-//! 実行: `cargo run --example spike_pdf_font_embedding`
-//! (T7で追加したbundled test font `core/tests/fonts/DejaVuSans.ttf`を使用)
+//! Run with: `cargo run --example spike_pdf_font_embedding`
+//! (it uses the bundled test font added in T7, `core/tests/fonts/DejaVuSans.ttf`)
 
 use std::collections::BTreeMap;
 
@@ -24,17 +24,17 @@ fn main() {
     let font_size = 24.0;
     let shaped = shape_text(&font, text, font_size);
 
-    // Identity-H: 2バイトのコードをそのままCID(=GlyphID, CIDToGIDMap=Identity)として扱う。
+    // Identity-H: a two-byte code is used directly as the CID (= GlyphID, CIDToGIDMap=Identity).
     let mut glyph_bytes = Vec::with_capacity(shaped.glyphs.len() * 2);
     for g in &shaped.glyphs {
         glyph_bytes.extend_from_slice(&g.glyph_id.to_be_bytes());
     }
 
-    // PDFの/Wは1000unit/emのグリフ空間で表現する。
+    // PDF's /W is expressed in a 1000-unit/em glyph space.
     let units_per_em = font.units_per_em() as f32;
     let to_1000 = |font_units: f32| font_units * 1000.0 / units_per_em;
 
-    // 使用したグリフごとの幅(グリフIDは連続していないので、個別に記録する)。
+    // The width of each glyph used (glyph IDs are not contiguous, so they are recorded individually).
     let mut widths: BTreeMap<u16, f32> = BTreeMap::new();
     for g in &shaped.glyphs {
         widths.entry(g.glyph_id).or_insert_with(|| {
@@ -75,7 +75,7 @@ fn main() {
     content.end_text();
     pdf.stream(content_id, &content.finish());
 
-    // フォントプログラム本体を埋め込む(TrueType、無圧縮)。
+    // Embed the font program itself (TrueType, uncompressed).
     let font_data = font.data();
     let mut font_file = pdf.stream(font_file_id, font_data);
     font_file.pair(Name(b"Length1"), font_data.len() as i32);

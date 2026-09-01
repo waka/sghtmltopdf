@@ -1,5 +1,5 @@
-# Dockerのビルドコンテキストに入れないもの。
-# 実行ファイルのビルドに要るのは Cargo.toml / Cargo.lock / core / docker だけ。
+# Files kept out of the Docker build context.
+# Building the binary only needs Cargo.toml / Cargo.lock / core / docker.
 .*/
 .gitignore
 bindings/

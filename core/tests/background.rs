@@ -1,9 +1,9 @@
-//! `background-position`/`-size`/`-repeat`/`-attachment`と`background`
-//! ショートハンドのE2Eテスト。
+//! E2E tests for `background-position`/`-size`/`-repeat`/`-attachment` and the `background`
+//! shorthand.
 //!
-//! `typography.rs`/`box_model.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→背景画像デコード→ページ分割→PDFエンコード)を通して
-//! 回帰を検知する。
+//! The same approach as `typography.rs`/`box_model.rs`: catch regressions by going through
+//! the real pipeline (HTML parse, style cascade, background image decode, pagination, PDF
+//! encode).
 
 use std::path::PathBuf;
 
@@ -28,9 +28,9 @@ fn test_fonts() -> FontCollection {
     ])
 }
 
-/// `spike_opaque.png`(20x16、既存フィクスチャ)をdata URIへ
-/// エンコードする。ネットワーク/ファイルI/Oに依存せず`ImageAssetCache`で
-/// 実際にデコードされるパスを通すため。
+/// Encode `spike_opaque.png` (20x16, an existing fixture) into a data URI, so the path
+/// really decoded by `ImageAssetCache` is exercised without depending on network or file
+/// I/O.
 fn png_data_uri() -> String {
     let bytes = std::fs::read(PNG_PATH).expect("fixture image should exist");
     format!("data:image/png;base64,{}", STANDARD.encode(bytes))
@@ -43,9 +43,9 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// PDFのcontent streamはFlateDecodeで圧縮されているため、`Do`のような
-/// コンテンツストリーム内演算子を検索するには解凍が必要
-/// (`pdf::document`テストモジュール内の同名関数と同じロジック)。
+/// A PDF's content stream is FlateDecode compressed, so searching for an operator inside it
+/// such as `Do` requires inflating first
+/// (the same logic as the identically named function in the `pdf::document` test module).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -73,8 +73,8 @@ fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// HTML+CSSから、実際のパイプライン(パース→カスケード→背景画像デコード→
-/// ページ分割→PDFエンコード)を一通り実行する。
+/// Run the whole real pipeline (parse, cascade, background image decode, pagination, PDF
+/// encode) from HTML plus CSS.
 fn build_pdf(html_src: &str, css: &str) -> Vec<u8> {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -83,8 +83,8 @@ fn build_pdf(html_src: &str, css: &str) -> Vec<u8> {
     let fonts = test_fonts();
     let settings = PageSettings::default();
 
-    // ネットワーク/ローカルファイルへは実際にはアクセスしない(data URIのみ
-    // 使う)ため、base_dirは任意で構わない。
+    // Nothing is really accessed over the network or from a local file (only data URIs are
+    // used), so base_dir can be anything.
     let image_cache = ImageAssetCache::new(PathBuf::from("."), false);
     let background_images = resolve_background_images(&styles, &image_cache);
 
@@ -117,8 +117,8 @@ fn background_shorthand_with_cover_and_no_repeat_draws_a_single_tile_end_to_end(
 
 #[test]
 fn background_repeat_tiles_the_image_across_the_box_end_to_end() {
-    // intrinsicサイズ(20x16)より大きいbox(100x60)へ`repeat`(既定値)を
-    // 指定すると、水平5列(20刻み)×垂直4行(16刻み)=20タイル敷き詰められる。
+    // With `repeat` (the default) on a box (100x60) larger than the intrinsic size (20x16),
+    // 5 columns (steps of 20) by 4 rows (steps of 16) = 20 tiles are laid.
     let css = format!(
         r#"body {{ margin: 0; }}
            .box {{
@@ -145,7 +145,7 @@ fn background_repeat_x_only_tiles_horizontally_end_to_end() {
     );
     let bytes = build_pdf(r#"<div class="box"></div>"#, &css);
     let decompressed = decompressed_stream_bytes(&bytes);
-    // 幅60を20刻みで3列、縦は1行のみ(repeat-xなので垂直方向は敷き詰めない)。
+    // A width of 60 gives 3 columns in steps of 20, and only one row (repeat-x does not tile vertically).
     assert_eq!(count_occurrences(&decompressed, b" Do\n"), 3);
 }
 
@@ -169,8 +169,8 @@ fn background_size_percentage_and_position_percentage_render_a_valid_pdf_end_to_
 
 #[test]
 fn background_attachment_fixed_still_renders_like_scroll_end_to_end() {
-    // `fixed`は`scroll`と同一視するため、
-    // クラッシュせず通常通り1枚描画されるはず。
+    // `fixed` is treated the same as `scroll`, so it should draw one image as usual without crashing.
+
     let css = format!(
         r#"body {{ margin: 0; }}
            .box {{

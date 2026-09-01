@@ -1,9 +1,9 @@
-//! セレクタマッチングと、カスケード順(オリジン→詳細度→ソース順)による
-//! 適用宣言の並べ替え。
+//! Selector matching, and ordering the applicable declarations by cascade order
+//! (origin, then specificity, then source order).
 //!
-//! 同じプロパティが複数の宣言で指定された場合にどれを採用するか(継承含む)は
-//! 計算スタイル側(スタイル計算フェーズ)の責務とする。ここでは、後ろにあるものほど
-//! 優先度が高くなるよう順序付けた宣言列を返すところまでを行う。
+//! Which declaration wins when several specify the same property (inheritance included) is
+//! the computed style's job (the style computation phase). This module goes as far as
+//! returning a declaration list ordered so that later entries have higher priority.
 
 use selectors::matching::{
     self, MatchingContext, MatchingForInvalidation, MatchingMode, NeedsSelectorFlags, QuirksMode,
@@ -25,12 +25,11 @@ enum Origin {
     Author,
 }
 
-/// [`matching_declarations`]と同じだが、UAスタイルシート由来と作者CSS由来を
-/// 分けて返す(それぞれの中はカスケード優先度の昇順)。
+/// The same as [`matching_declarations`], but returning UA-stylesheet declarations and
+/// author-CSS declarations separately (each in ascending cascade priority).
 ///
-/// レガシー表示属性(presentational hints)は「UAスタイルシートより強く、作者
-/// CSSより弱い」位置に入れる必要があるため、
-/// 両者の間に割り込めるようこの形を用意している。
+/// Legacy presentational attributes have to sit "stronger than the UA stylesheet, weaker
+/// than author CSS", so this shape exists to let them be spliced in between the two.
 pub fn matching_declarations_by_origin<'a>(
     dom: &Dom,
     element: NodeId,
@@ -50,8 +49,8 @@ pub fn matching_declarations_by_origin<'a>(
 
     let mut candidates = Vec::new();
     let mut collect = |sheet: &'a Stylesheet| {
-        // 索引で候補を絞ってから照合する(索引は取りこぼしを作らないため、
-        // 全ルールを走査した場合と結果は変わらない)。
+        // Narrow the candidates with the index before matching (the index never drops a
+        // match, so the result is the same as scanning every rule).
         sheet.index().candidates(dom, element, &mut candidates);
         let mut matched: Vec<(u32, usize, &'a Vec<PropertyDeclaration>)> = Vec::new();
         for &source_order in &candidates {
@@ -68,13 +67,13 @@ pub fn matching_declarations_by_origin<'a>(
             .collect::<Vec<_>>()
     };
 
-    // Originが最優先のソートキーなので、オリジンごとに個別へソートしたものを
-    // 順に並べれば、全体を一度にソートした結果と一致する。
+    // Origin is the primary sort key, so sorting each origin separately and then
+    // concatenating gives the same result as sorting everything at once.
     (collect(ua), collect(author))
 }
 
-/// `dom`上の`element`に適用される宣言を、カスケード優先度の昇順
-/// (先頭が最も優先度が低く、末尾が最も優先度が高い)で返す。
+/// Return the declarations that apply to `element` in `dom`, in ascending cascade priority
+/// (lowest priority first, highest last).
 pub fn matching_declarations<'a>(
     dom: &Dom,
     element: NodeId,
@@ -87,14 +86,14 @@ pub fn matching_declarations<'a>(
     ua_declarations
 }
 
-/// `dom`上の`element`が持つ`pseudo`(`::before`/`::after`/`::first-letter`)に
-/// マッチする宣言列を、カスケード優先度の昇順(先頭が最も優先度が低く、末尾が
-/// 最も優先度が高い)で返す。`matching_declarations`の擬似要素版。
+/// Return the declarations matching `pseudo` (`::before`/`::after`/`::first-letter`) on
+/// `element` in `dom`, in ascending cascade priority (lowest priority first, highest last).
+/// The pseudo-element counterpart of `matching_declarations`.
 ///
-/// マッチングには`selectors`クレートの`MatchingMode::ForStatelessPseudoElement`を使う。
-/// これは「対象のセレクタは末尾に`pseudo`を持つ」ことを前提に、その擬似要素部分を
-/// 消費してから残りの複合セレクタを通常通り`element`(実要素)に対してマッチさせる
-/// (擬似要素自身に対応するDOMノードは存在しないため)。
+/// Matching uses the `selectors` crate's `MatchingMode::ForStatelessPseudoElement`. That
+/// assumes the selector ends in `pseudo`, consumes the pseudo-element part, and matches the
+/// remaining compound selector against `element` (the real element) as usual, since no DOM
+/// node corresponds to the pseudo-element itself.
 pub(super) fn matching_pseudo_declarations<'a>(
     dom: &Dom,
     element: NodeId,
@@ -117,7 +116,7 @@ pub(super) fn matching_pseudo_declarations<'a>(
 
     let mut matched: Vec<(Origin, u32, usize, &'a Vec<PropertyDeclaration>)> = Vec::new();
     for (origin, sheet) in [(Origin::UserAgent, ua), (Origin::Author, author)] {
-        // 擬似要素セレクタを持つルールだけが対象になる。
+        // Only rules carrying a pseudo-element selector are relevant.
         let index = sheet.index();
         for &source_order in index.pseudo_candidates() {
             let source_order = source_order as usize;
@@ -146,10 +145,10 @@ pub(super) fn matching_pseudo_declarations<'a>(
         .collect()
 }
 
-/// `dom`上の`element`が持つ`::before`/`::after`(`pseudo`)の生成コンテンツ
-/// パーツ列をカスケードに従って解決する。マッチした宣言列の中に有効な`content`
-/// 宣言が一つもなければ(=生成ボックスを持たない、CSSの初期値`normal`と同じ扱い)
-/// `None`を返す。
+/// Resolve, according to the cascade, the generated-content parts of `pseudo`
+/// (`::before`/`::after`) on `element` in `dom`. Returns `None` if the matched declarations
+/// contain no valid `content` declaration at all (that is, no generated box, the same as
+/// the CSS initial value `normal`).
 pub fn matching_pseudo_content(
     dom: &Dom,
     element: NodeId,
@@ -167,8 +166,8 @@ pub fn matching_pseudo_content(
         .flatten()
 }
 
-/// リスト中、要素に実際にマッチしたセレクタの中で最大の詳細度を返す
-/// (`h1, h2 { ... }`のようなセレクタグループは、マッチした方の詳細度を使う)。
+/// Return the highest specificity among the selectors in the list that actually matched the
+/// element (for a selector group such as `h1, h2 { ... }`, the specificity of the one that matched).
 fn best_matching_specificity(
     selectors: &SelectorList<SgSelectorImpl>,
     element: &ElementRef,
@@ -225,8 +224,8 @@ mod tests {
         let dom = html::parse(br#"<div id="x" class="c">t</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
-        // 詳細度の高い#xルールをソース上は先頭に書いても、
-        // 一番優先されるのは詳細度なので最後に並ぶはず。
+        // Even with the more specific #x rule written first in the source, specificity is
+        // what wins, so it should end up last.
         let author = parse_stylesheet(
             "#x { color: rgb(2, 2, 2); } .c { color: rgb(1, 1, 1); } div { color: rgb(0, 0, 0); }",
         );
@@ -295,8 +294,8 @@ mod tests {
         let dom = html::parse(br#"<div class="foo">t</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
-        // `.bar:hover`が(パース失敗ではなく)単に非マッチになるだけなら、
-        // カンマ区切りの`.foo`は生き残って適用されるはず。
+        // If `.bar:hover` merely fails to match (rather than failing to parse), the
+        // comma-separated `.foo` should survive and apply.
         let author = parse_stylesheet(".foo, .bar:hover { color: rgb(6, 6, 6); }");
         let ua = Stylesheet::default();
 

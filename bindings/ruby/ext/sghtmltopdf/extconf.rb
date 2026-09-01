@@ -6,16 +6,16 @@ require "rb_sys/mkmf"
 core = File.expand_path("../../../../core", __dir__)
 unless File.exist?(File.join(core, "Cargo.toml"))
   abort <<~MESSAGE
-    sghtmltopdf: Rustコア(#{core})が見つかりません。
+    sghtmltopdf: the Rust core (#{core}) was not found.
 
-    このgemは対応プラットフォーム向けのprecompiled gemとして配布しています。
-    お使いの環境(#{RUBY_PLATFORM} / ruby #{RUBY_VERSION})向けのビルド済みgemが
-    無いためソースからのビルドが試みられましたが、ソースgemにはRustコアが
-    含まれていないためビルドできません。
+    This gem is distributed as a precompiled gem for the supported platforms.
+    No prebuilt gem exists for your environment (#{RUBY_PLATFORM} / ruby #{RUBY_VERSION}),
+    so a build from source was attempted, but the source gem does not include the
+    Rust core and cannot be built.
 
-    対応プラットフォーム: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin
+    Supported platforms: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin
   MESSAGE
 end
 
-# `lib/sghtmltopdf/sghtmltopdf.so`として作る。
+# Built as `lib/sghtmltopdf/sghtmltopdf.so`.
 create_rust_makefile("sghtmltopdf/sghtmltopdf")

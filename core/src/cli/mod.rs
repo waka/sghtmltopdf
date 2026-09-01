@@ -1,12 +1,12 @@
-//! CLI(`sghtmltopdf`バイナリ)の実装。
+//! Implementation of the CLI (the `sghtmltopdf` binary).
 //!
-//! `main.rs`は[`run`]を呼ぶだけの薄いエントリで、オプション定義は
-//! [`options`]の1箇所に集約する(HTTPサーバモードも同じ定義を使う)。
+//! `main.rs` is a thin entry point that only calls [`run`]; option definitions live in
+//! one place, [`options`] (the HTTP server mode uses the same definitions).
 
 pub mod convert;
 pub mod header_footer;
 pub mod options;
-/// HTTPサーバモード。`server` feature(既定ON)でのみ有効。
+/// HTTP server mode. Only available with the `server` feature (on by default).
 #[cfg(feature = "server")]
 pub mod server;
 pub mod toc;
@@ -22,19 +22,19 @@ use options::Cli;
 #[cfg(feature = "server")]
 use options::Command;
 
-/// CLIのエラー。バリアントがそのままexit codeに対応する。
+/// CLI errors. Each variant maps directly to an exit code.
 #[derive(Debug)]
 pub enum CliError {
-    /// 使用法エラー(不明なオプション、値の形式不正、非対応オプション) = 1
+    /// Usage error (unknown option, malformed value, unsupported option) = 1
     Usage(String),
-    /// 入力・リソースエラー(ファイルが無い、フォントが読めない、書き込み失敗) = 2
+    /// Input or resource error (missing file, unreadable font, failed write) = 2
     Input(String),
-    /// レンダリングエラー(エンジンの制約違反など) = 3
+    /// Rendering error (an engine limit was exceeded, etc.) = 3
     Render(String),
-    /// 制限時間を超えて打ち切った = 4
+    /// Aborted after exceeding the time limit = 4
     ///
-    /// 期限を与えるのはHTTPサーバモード(`--timeout`)だけなので、CLIから
-    /// この終了コードが出ることは今のところない。
+    /// Only the HTTP server mode sets a deadline (`--timeout`), so the CLI does not
+    /// currently produce this exit code.
     Timeout(String),
 }
 
@@ -63,19 +63,19 @@ impl std::fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
-/// 引数列を解析して[`options::ConvertArgs`]とフォント指定を返す。
+/// Parse an argument list into [`options::ConvertArgs`] plus the font specifications.
 ///
-/// CLI以外の入口（Ruby binding）が同じオプション解釈を使うための関数。
-/// 呼び出し側は`argv[0]`にプログラム名を置くこと（clapの慣習に合わせる）。
+/// This lets entry points other than the CLI (the Ruby binding) share the same option handling.
+/// Callers must put the program name in `argv[0]`, following clap's convention.
 ///
-/// `--font`と`--font-index`の対応付けには[`clap::ArgMatches`]の出現位置が
-/// 必要なため、ここで解決して[`options::FontArg`]の列にして返す
-/// （呼び出し側がclapに依存せずに済む）。
+/// Pairing up `--font` and `--font-index` needs the occurrence positions from
+/// [`clap::ArgMatches`], so that is resolved here and returned as a list of
+/// [`options::FontArg`] (which keeps callers free of a clap dependency).
 pub fn parse_convert_argv(
     argv: &[String],
 ) -> Result<(options::ConvertArgs, Vec<options::FontArg>), CliError> {
-    // 非対応オプションは、clapの「unknown argument」
-    // ではなく理由を示す。CLIの`run`と同じ扱いにする。
+    // For unsupported options, report the reason rather than clap's "unknown argument".
+    // Same handling as the CLI's `run`.
     if let Some(message) = unsupported::check_arguments(&argv[1..]) {
         return Err(CliError::Usage(message));
     }
@@ -88,23 +88,23 @@ pub fn parse_convert_argv(
     Ok((cli.convert, fonts))
 }
 
-/// CLIのエントリポイント。
+/// CLI entry point.
 pub fn run() -> ExitCode {
-    // wkhtmltopdfにあって対応していないオプションは、clapの「unknown
-    // argument」ではなく理由と代替手段を示して終了する。
+    // For options wkhtmltopdf has but we do not support, exit with a reason and an
+    // alternative rather than clap's "unknown argument".
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(message) = unsupported::check_arguments(&args) {
-        eprintln!("エラー: {message}");
+        eprintln!("error: {message}");
         return ExitCode::from(1);
     }
 
-    // clapは既定で引数エラーにexit code 2を使うが、このCLIは使用法エラーを
-    // 1に割り当てているため、自前でExitCodeへ変換する。
+    // clap uses exit code 2 for argument errors by default, but this CLI assigns 1 to
+    // usage errors, so we convert to an ExitCode ourselves.
     let matches = match Cli::command().try_get_matches() {
         Ok(matches) => matches,
         Err(e) => {
             let _ = e.print();
-            // --help/--versionは正常系(use_stderr()==false)。
+            // --help/--version are the success path (use_stderr() == false).
             return if e.use_stderr() {
                 ExitCode::from(1)
             } else {
@@ -121,9 +121,9 @@ pub fn run() -> ExitCode {
         }
     };
 
-    // 変換はレイアウト・描画がDOMの深さぶん再帰するため、既定のスタック
-    // (`ulimit -s`次第)に頼らず[`STACK_SIZE`]を確保したスレッドで走らせる。
-    // サーバモードはワーカーごとに同じことをするのでここでは包まない。
+    // Conversion recurses as deep as the DOM during layout and drawing, so rather than
+    // relying on the default stack (which depends on `ulimit -s`) we run it on a thread
+    // with [`STACK_SIZE`]. Server mode does the same per worker, so it is not wrapped here.
     #[cfg(feature = "server")]
     let result = match cli.command {
         Some(Command::Server(ref args)) => server::run(args),
@@ -135,7 +135,7 @@ pub fn run() -> ExitCode {
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("エラー: {e}");
+            eprintln!("error: {e}");
             ExitCode::from(e.exit_code())
         }
     }
@@ -175,7 +175,7 @@ mod tests {
             .expect_err("unsupported option should be rejected");
 
         match error {
-            CliError::Usage(message) => assert!(message.contains("対応していません")),
+            CliError::Usage(message) => assert!(message.contains("is not supported")),
             other => panic!("expected a usage error, got {other:?}"),
         }
     }

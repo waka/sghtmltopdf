@@ -1,11 +1,11 @@
-//! グリフの送り幅がレイアウトと描画で一致することのテスト。
+//! Tests that glyph advances agree between layout and drawing.
 //!
-//! レイアウトはシェイパーが返す`x_advance`で位置を決めるが、PDFのビューアは
-//! CIDFontの`/W`(グリフIDごとに1つ)でグリフを送る。この2つが食い違う経路が
-//! あり、差はTJ配列の補正値で埋めている(`pdf::document::show_run_glyphs`)。
+//! Layout positions from the `x_advance` the shaper returns, but a PDF viewer advances a
+//! glyph by the CIDFont's `/W` (one value per glyph ID). There are paths where the two
+//! disagree, and the difference is made up by TJ array corrections (`pdf::document::show_run_glyphs`).
 //!
-//! ここでは「補正量の合計」が「レイアウト幅と`/W`由来の幅の差」に一致すること
-//! を、実際に生成したPDFのコンテンツストリームから確かめる。
+//! Here we confirm from the content stream of a really generated PDF that "the total of the
+//! corrections" equals "the difference between the layout width and the `/W`-derived width".
 
 use std::collections::HashMap;
 use std::io::Read;
@@ -19,8 +19,8 @@ use sghtmltopdf_core::pdf::encode_pdf;
 use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const DEJAVU: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
-/// `&thinsp;`(U+2009)等のグリフを持たないフォント。シェイパーがspaceのグリフで
-/// 代替しつつアドバンスだけ差し替えるため、`/W`との食い違いが起きる。
+/// A font without glyphs for `&thinsp;` (U+2009) and the like. The shaper substitutes the
+/// space glyph while replacing only the advance, so a disagreement with `/W` arises.
 const NOTO_CJK: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fonts/NotoSansCJK-Regular.ttc"
@@ -45,8 +45,8 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     None
 }
 
-/// 最初の`<p>`について、レイアウトが使う送り幅の合計と、`/W`だけで送った場合の
-/// 合計の差(px)を返す。TJの補正が埋めるべき量そのもの。
+/// For the first `<p>`, return the difference (px) between the total advance layout uses and
+/// the total if advanced by `/W` alone. Exactly what the TJ corrections have to make up.
 fn advance_gap_of_first_p(html_src: &str, css: &str, font_path: &str) -> f32 {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
@@ -89,7 +89,7 @@ fn pdf_bytes(html_src: &str, css: &str, font_path: &str) -> Vec<u8> {
     encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings)
 }
 
-/// コンテンツストリームはFlateDecodeで圧縮されているので、展開して連結する。
+/// The content streams are FlateDecode compressed, so they are inflated and concatenated.
 fn decompressed_streams(pdf: &[u8]) -> Vec<u8> {
     fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -116,13 +116,13 @@ fn decompressed_streams(pdf: &[u8]) -> Vec<u8> {
     out
 }
 
-/// `[...] TJ`の配列に現れる補正値をすべて足す(単位はテキスト空間の1/1000)。
+/// Sum every correction appearing in a `[...] TJ` array (in 1/1000ths of text space).
 ///
-/// 文字列`(...)`の中はバイト列(エスケープあり)なので読み飛ばす。`TJ`以外の
-/// 演算子のオペランドを拾わないよう、`]`の直後が`TJ`である配列だけを数える。
-/// 展開したバイト列にはフォントファイルのストリームも混ざっており、そこに
-/// 現れた`[`から数え始めると手前の演算子のオペランドまで拾ってしまうため、
-/// 途中で`[`が出てきたらそこを配列の開始として数え直す。
+/// The inside of a `(...)` string is a byte string (with escapes) and is skipped. To avoid
+/// picking up the operands of an operator other than `TJ`, only arrays immediately followed
+/// by `TJ` after the `]` are counted. The inflated bytes also contain the font file streams,
+/// and starting the count at a `[` found there would pick up the preceding operator's
+/// operands, so a `[` encountered part-way through restarts the count as the array's start.
 fn sum_tj_adjustments(stream: &[u8]) -> f32 {
     fn take_number(buf: &mut String, out: &mut Vec<f32>) {
         if !buf.is_empty() {
@@ -163,7 +163,7 @@ fn sum_tj_adjustments(stream: &[u8]) -> f32 {
                 break;
             }
             if b == b'[' {
-                // 手前の`[`は配列の開始ではなかった。ここから数え直す。
+                // The earlier `[` was not the start of an array. Restart the count here.
                 numbers.clear();
                 buf.clear();
             } else if b == b'(' {
@@ -176,7 +176,7 @@ fn sum_tj_adjustments(stream: &[u8]) -> f32 {
             }
             j += 1;
         }
-        // `]`の後ろの空白を飛ばして演算子を見る。
+        // Skip the whitespace after `]` and look at the operator.
         let mut k = j + 1;
         while k < stream.len() && stream[k].is_ascii_whitespace() {
             k += 1;
@@ -189,7 +189,7 @@ fn sum_tj_adjustments(stream: &[u8]) -> f32 {
     total
 }
 
-/// TJの補正量の合計(px)。TJの値は送り量から減算されるので符号を反転する。
+/// The total TJ correction in px. A TJ value is subtracted from the advance, so the sign is flipped.
 fn tj_correction_px(html_src: &str, css: &str, font_path: &str, font_size: f32) -> f32 {
     let pdf = pdf_bytes(html_src, css, font_path);
     let stream = decompressed_streams(&pdf);
@@ -202,9 +202,9 @@ const JUSTIFY_CSS: &str = "body { margin: 0; } \
 
 #[test]
 fn a_justified_line_is_drawn_as_wide_as_it_was_laid_out() {
-    // 単語間の隙間は`merge_adjacent_runs`が「隙間ぶんのアドバンスを持つ空白
-    // グリフ」として復元する。`text-align: justify`が広げた隙間はspaceの字幅と
-    // 一致しないため、TJの補正が無いと行が伸ばした分だけ右端に届かない。
+    // `merge_adjacent_runs` restores an inter-word gap as "a space glyph whose advance is the
+    // gap". A gap widened by `text-align: justify` does not match the space's own width, so
+    // without the TJ correction the line falls short of the right edge by what it was stretched.
     let expected = advance_gap_of_first_p(JUSTIFIED, JUSTIFY_CSS, DEJAVU);
     assert!(
         expected > 1.0,
@@ -220,8 +220,8 @@ fn a_justified_line_is_drawn_as_wide_as_it_was_laid_out() {
 
 #[test]
 fn a_left_aligned_line_needs_no_correction() {
-    // 両端揃えでなければ隙間はspaceの字幅そのものなので、補正は出ない
-    // (通常の文書でTJ配列が無駄に長くならないことの確認でもある)。
+    // Without justification the gap is the space's own width, so no correction appears
+    // (which also confirms the TJ array does not grow needlessly in an ordinary document).
     let css = "body { margin: 0; } p { margin: 0; width: 300px; font-size: 16px; }";
     let expected = advance_gap_of_first_p(JUSTIFIED, css, DEJAVU);
     assert!(
@@ -238,9 +238,9 @@ fn a_left_aligned_line_needs_no_correction() {
 
 #[test]
 fn a_fixed_width_space_the_font_lacks_is_drawn_at_its_own_advance() {
-    // フォントが持たない固定幅スペースは、シェイパーがspaceのグリフで代替しつつ
-    // アドバンスだけ規定値(U+2009ならem/5)へ差し替える。`/W`は普通のspaceと共有
-    // なので、補正が無いと後続の文字がずれる。
+    // For a fixed-width space the font lacks, the shaper substitutes the space glyph while
+    // replacing only the advance with the prescribed value (em/5 for U+2009). `/W` is shared
+    // with the ordinary space, so without the correction the following characters shift.
     let html_src = "<p>a\u{2009}b\u{2009}c</p>";
     let css = "body { margin: 0; } p { margin: 0; font-size: 16px; }";
 

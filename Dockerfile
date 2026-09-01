@@ -1,24 +1,24 @@
 # syntax=docker/dockerfile:1
 
-# 公式Dockerイメージ(ghcr.io/waka/sghtmltopdf)
+# The official Docker image (ghcr.io/waka/sghtmltopdf)
 #
-# * 素の実行ファイルは配布せず、サーバモード用のイメージとRuby gemだけを出す
-# * 対象は linux/amd64 と linux/arm64 (Debian系=glibcのみ)
-# * 日本語フォントを同梱して、何も用意しなくても日本語のPDFが出る状態にする
-# * ENTRYPOINT/CMDで「引数なし=サーバ・引数あり=CLI」の両方に使えるようにする
+# * The bare binary is not distributed; only this server-mode image and the Ruby gem
+# * Targets are linux/amd64 and linux/arm64 (Debian-based, glibc only)
+# * Japanese fonts are bundled so Japanese PDFs work with no extra setup
+# * ENTRYPOINT/CMD make it usable both ways: no arguments = server, arguments = CLI
 
 ARG RUST_VERSION=1.96
 
 # ---------------------------------------------------------------------------
-# 1. 同梱する日本語フォントを取得する
+# 1. Fetch the Japanese fonts to bundle
 # ---------------------------------------------------------------------------
-# BIZ UDPGothic / BIZ UDPMincho の Regular と Bold(SIL OFL 1.1、計約23MB)。
-# 静的なTrueType(glyf)であること。
+# BIZ UDPGothic / BIZ UDPMincho, Regular and Bold (SIL OFL 1.1, about 23MB total).
+# They must be static TrueType (glyf).
 #
-# curlのためだけにパッケージを足さずに済むよう、ビルドと同じrustイメージを使う (buildpack-depsベースなのでcurlとCA証明書が入っている)
-# ビルドホストで動かせばよいので --platform=$BUILDPLATFORM を付ける。
+# We reuse the same rust image as the build so no package has to be added just for curl (its buildpack-deps base already has curl and CA certificates)
+# This only needs to run on the build host, hence --platform=$BUILDPLATFORM.
 FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-bookworm AS fonts
-# google/fontsのコミットで固定する。上げるときは docker/fonts.sha256 も更新すること
+# Pinned to a google/fonts commit. When bumping it, update docker/fonts.sha256 too
 ARG GOOGLE_FONTS_COMMIT=7ff85c87f93ea6cca5f41c69f2e4edcb90240f26
 WORKDIR /fonts
 COPY docker/fonts.sha256 ./
@@ -34,11 +34,11 @@ RUN set -eux; \
     rm fonts.sha256
 
 # ---------------------------------------------------------------------------
-# 2. 実行ファイルをビルドする
+# 2. Build the binary
 # ---------------------------------------------------------------------------
-# ビルドは常にビルドホストのアーキで行う (--platform=$BUILDPLATFORM)
-# QEMUの中でrustcを動かすと数十分かかるため、arm64向けはクロスコンパイルする
-# システムライブラリへのリンクは無いが、rustlsが使うringがCのソースをコンパイルするため、gccとターゲット側のlibcヘッダ (libc6-dev-arm64-cross)が必要
+# The build always runs on the build host's architecture (--platform=$BUILDPLATFORM)
+# Running rustc under QEMU takes tens of minutes, so arm64 is cross-compiled
+# Nothing links against system libraries, but ring (used by rustls) compiles C sources, so gcc and the target libc headers (libc6-dev-arm64-cross) are required
 FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-bookworm AS builder
 ARG TARGETARCH
 RUN set -eux; \
@@ -49,7 +49,7 @@ RUN set -eux; \
              apt-get install -y --no-install-recommends \
                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross; \
              rm -rf /var/lib/apt/lists/* ;; \
-      *) echo "対応していないTARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
     echo "${target}" > /target.txt; \
     rustup target add "${target}"
@@ -66,17 +66,17 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,id=cargo-registry \
     cp "target/${target}/release/sghtmltopdf" /usr/local/bin/sghtmltopdf
 
 # ---------------------------------------------------------------------------
-# 3. 実行イメージ
+# 3. Runtime image
 # ---------------------------------------------------------------------------
-# TLSのルート証明書は実行ファイルに埋め込まれている(rustls + webpki-roots)ため、ca-certificatesは不要
+# TLS root certificates are compiled into the binary (rustls + webpki-roots), so ca-certificates is not needed
 FROM debian:bookworm-slim
 LABEL org.opencontainers.image.title="sghtmltopdf" \
-      org.opencontainers.image.description="Chromium/WebKit/Geckoに依存しないHTML→PDFレンダラー" \
+      org.opencontainers.image.description="An HTML-to-PDF renderer that does not depend on Chromium, WebKit or Gecko" \
       org.opencontainers.image.source="https://github.com/waka/sghtmltopdf" \
       org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /usr/local/bin/sghtmltopdf /usr/local/bin/sghtmltopdf
-# fontdbが走査する標準ディレクトリの下に置く (fontconfigは不要)。
+# Placed under a standard directory that fontdb scans (no fontconfig needed).
 COPY --from=fonts /fonts/BIZUDP*.ttf /usr/share/fonts/truetype/sghtmltopdf/
 COPY --from=fonts /fonts/OFL-*.txt /usr/share/doc/sghtmltopdf/fonts/
 

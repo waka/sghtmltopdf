@@ -1,7 +1,7 @@
-//! レガシーHTML表示属性のE2Eテスト。
+//! E2E tests for the legacy HTML presentational attributes.
 //!
-//! wkhtmltopdf時代の帳票HTML(`<table border cellpadding>`ベース)がそれらしく
-//! 出ることを、実際のパイプラインを通して確認する。
+//! They confirm, through the real pipeline, that wkhtmltopdf-era business-document HTML
+//! (built on `<table border cellpadding>`) comes out looking right.
 
 use std::collections::HashMap;
 
@@ -203,9 +203,9 @@ fn a_legacy_document_encodes_to_a_valid_pdf() {
 
 #[test]
 fn tr_bgcolor_paints_a_row_background() {
-    // `<tr bgcolor>`(およびCSSの`tr { background-color }`)は、その行のセルを
-    // 覆う矩形として塗られる。塗り命令はFlate圧縮されるため、行背景の有無で
-    // 生成PDFのサイズが変わることで確認する。
+    // A `<tr bgcolor>` (and the CSS `tr { background-color }`) is painted as a rectangle
+    // covering that row's cells. The fill operators are Flate compressed, so this is checked
+    // by the generated PDF's size changing with and without the row background.
     let with_bg = build_pdf(
         r##"<table cellspacing="0"><tr bgcolor="#ff0000"><td>a</td><td>b</td></tr></table>"##,
     );

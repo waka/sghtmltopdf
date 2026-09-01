@@ -1,7 +1,7 @@
-//! 複数フォントのコレクションと、`font-family`/weight/style/グリフカバレッジに
-//! 基づくフォールバック選択。
+//! A collection of fonts, and fallback selection based on `font-family`, weight, style
+//! and glyph coverage.
 //!
-//! システムフォント探索(OSのフォントディレクトリを走査すること)は[`super::system`]が担う。
+//! Discovering system fonts (scanning the OS font directories) is [`super::system`]'s job.
 
 use cssparser::UnicodeRange;
 
@@ -9,30 +9,29 @@ use crate::style::{FontStyle, FontWeight};
 
 use super::font::Font;
 
-/// 数値`font-weight`をBold/Normalの2値に丸める閾値(`style::properties`の
-/// `parse_font_weight`と同じ600)。フォント自身のOS/2ウェイト値をこの2値に
-/// 丸めて`ComputedStyle::font_weight`と比較できるようにする。
+/// Threshold for rounding a numeric `font-weight` to the two values Bold/Normal (600, the
+/// same as `parse_font_weight` in `style::properties`). Rounding a font's own OS/2 weight
+/// to those two values makes it comparable with `ComputedStyle::font_weight`.
 const BOLD_WEIGHT_THRESHOLD: u16 = 600;
 
 pub struct FontCollection {
     fonts: Vec<Font>,
-    /// `@font-face`/システムフォントから読み込んだフォントの、CSS上の宣言済み
-    /// family名。`None`の要素(`--font`等で明示指定されたフォント)はフォント
-    /// 自身の`name`テーブル(`Font::family_name`)で照合する。
+    /// The family name declared in CSS for a font loaded from `@font-face` or from the
+    /// system fonts. Entries that are `None` (fonts named explicitly with `--font` and the
+    /// like) are matched on the font's own `name` table (`Font::family_name`).
     declared_families: Vec<Option<String>>,
-    /// `@font-face`のweight/styleディスクリプタによる上書き。`None`の要素は
-    /// フォント自身の`OS/2`/`post`テーブルの実メトリクス(`Font::weight`/
-    /// `Font::is_italic`)で判定する。
+    /// Overrides from an `@font-face` weight/style descriptor. Entries that are `None` are
+    /// decided from the font's own `OS/2`/`post` metrics (`Font::weight`/`Font::is_italic`).
     declared_weights: Vec<Option<FontWeight>>,
     declared_styles: Vec<Option<FontStyle>>,
-    /// `@font-face`の`unicode-range`ディスクリプタ。空`Vec`の要素
-    /// (`--font`/システムフォント、または`unicode-range`未指定の
-    /// `@font-face`)は全域(U+0-10FFFF)を暗黙にカバーするものとして扱う
+    /// The `unicode-range` descriptor from `@font-face`. Entries with an empty `Vec`
+    /// (a `--font` or system font, or an `@font-face` with no `unicode-range`) are treated
+    /// as implicitly covering the whole range (U+0-10FFFF)
     declared_unicode_ranges: Vec<Vec<UnicodeRange>>,
-    /// 文字カバレッジから自動で見つけたフォールバックとして追加された要素か。
-    /// 利用者が明示したフォント(`--font`/`@font-face`)やfamily名から解決した
-    /// フォントは`false`。[`Self::can_render_with_matching_face`]が、
-    /// 「たまたま入っただけの面」と「利用者が選んだ面」を区別するために使う。
+    /// Whether this entry was added as a fallback found automatically from character
+    /// coverage. Fonts the user named (`--font`/`@font-face`) and fonts resolved from a
+    /// family name are `false`. [`Self::can_render_with_matching_face`] uses it to tell
+    /// "a face that happened to get pulled in" from "a face the user chose".
     auto_fallbacks: Vec<bool>,
 }
 
@@ -49,14 +48,13 @@ impl FontCollection {
         }
     }
 
-    /// `@font-face { font-family: ...; src: url(...); }`やシステムフォントから
-    /// 読み込んだフォントを追加する。`family`はフォント自身の`name`テーブルより
-    /// 優先してマッチングに使う(フォントファイルの内部名とCSS上の宣言名が
-    /// 異なりうるため)。`weight`/`style`は`@font-face`のディスクリプタ値
-    /// (CSS側の申告)を渡す。システムフォントのようにCSS側の申告が無い場合は
-    /// `None`を渡し、フォント自身の実メトリクスで判定させる。`unicode_range`は
-    /// `@font-face`の`unicode-range`ディスクリプタ値で、空`Vec`は
-    /// 「未指定(全域カバー)」を意味する。
+    /// Add a font loaded from `@font-face { font-family: ...; src: url(...); }` or from the
+    /// system fonts. `family` is used for matching in preference to the font's own `name`
+    /// table (a font file's internal name can differ from the name declared in CSS).
+    /// `weight`/`style` take the `@font-face` descriptor values (what the CSS declares).
+    /// Where CSS declares nothing, as with system fonts, pass `None` and let the font's own
+    /// metrics decide. `unicode_range` takes the `@font-face` `unicode-range` descriptor,
+    /// where an empty `Vec` means "unspecified (covers everything)".
     pub fn push_font_face(
         &mut self,
         family: String,
@@ -73,8 +71,8 @@ impl FontCollection {
         self.auto_fallbacks.push(false);
     }
 
-    /// 文字カバレッジから自動で見つけたフォールバックフォントを追加する
-    /// (`super::system::load_fonts_for_uncovered_chars`用)。
+    /// Add a fallback font found automatically from character coverage
+    /// (for `super::system::load_fonts_for_uncovered_chars`).
     pub fn push_fallback_font_face(&mut self, family: String, font: Font) {
         self.push_font_face(family, None, None, Vec::new(), font);
         if let Some(flag) = self.auto_fallbacks.last_mut() {
@@ -90,14 +88,14 @@ impl FontCollection {
         self.fonts.get(index)
     }
 
-    /// `index`のフォントがCSS上で宣言しているfamily名(`@font-face`の
-    /// `font-family`、またはfamily名から解決したシステムフォント)。
+    /// The family name font `index` declares in CSS (the `font-family` of an `@font-face`,
+    /// or a system font resolved from a family name).
     ///
-    /// `None`は「CSS側の申告が無い」(`--font`で明示指定されたフォント等)で、
-    /// その場合の照合はフォント自身の`name`テーブル([`Font::family_name`])で
-    /// 行う。[`Self::matches_family`]と同じ区別を外から使えるようにしたもので、
-    /// SVG用のフォントデータベース(`pdf::svg`)を組むときに、CSSで名乗って
-    /// いる名前でも引けるようにするために要る。
+    /// `None` means "CSS declares nothing" (a font named explicitly with `--font`, say),
+    /// in which case matching uses the font's own `name` table ([`Font::family_name`]).
+    /// This exposes the same distinction [`Self::matches_family`] makes, which is needed
+    /// when building the font database for SVG (`pdf::svg`) so fonts can also be looked up
+    /// by the name they go by in CSS.
     pub fn declared_family(&self, index: usize) -> Option<&str> {
         self.declared_families.get(index)?.as_deref()
     }
@@ -110,18 +108,18 @@ impl FontCollection {
         self.fonts.is_empty()
     }
 
-    /// `families`(CSSの`font-family`リスト、優先順)の名前に一致し、かつ`c`の
-    /// グリフを持つフォントのインデックスを返す。
+    /// Return the index of a font whose name matches one in `families` (the CSS
+    /// `font-family` list, in priority order) and that has a glyph for `c`.
     ///
-    /// 選定順序: (1) familyが一致し`c`を描画できるフォントのうち、実際に
-    /// `weight`/`style`も満たすもの、(2) familyが一致し`c`を描画できる
-    /// フォント(weight/styleは問わない)、(3) familyを問わず`c`を描画できる
-    /// 最初のフォント、(4) それでも見つからなければ先頭のフォント
-    /// (tofu表示になる)。コレクションが空の場合のみ`None`。
+    /// Selection order: (1) a font whose family matches, that can draw `c`, and that also
+    /// really satisfies `weight`/`style`; (2) a font whose family matches and that can draw
+    /// `c` (weight/style ignored); (3) the first font that can draw `c` regardless of
+    /// family; (4) failing all that, the first font in the collection (which renders as
+    /// tofu). `None` only when the collection is empty.
     ///
-    /// 選ばれたフォントが実際に要求`weight`/`style`を満たしているかは
-    /// [`Self::is_bold`]/[`Self::is_italic`]で別途確認できる(呼び出し側は
-    /// これを見て疑似太字/疑似イタリックの要否を判断する)。
+    /// Whether the chosen font really satisfies the requested `weight`/`style` can be
+    /// checked separately with [`Self::is_bold`]/[`Self::is_italic`] (callers use that to
+    /// decide whether faux bold or faux italic is needed).
     pub fn select_for_char(
         &self,
         families: &[String],
@@ -141,10 +139,10 @@ impl FontCollection {
             }
         }
 
-        // familyがどれも一致しない場合でも、fontを問わずweight/styleが一致する
-        // フォントを優先する(既定の"sans-serif"のように、どのフォントの内部
-        // family名とも一致しない指定が珍しくないため、ここでも太字/イタリックの
-        // 実体選択の機会を諦めない)。
+        // Even when no family matches, prefer a font whose weight/style match, ignoring the
+        // family (a setting such as the default "sans-serif" commonly matches no font's
+        // internal family name, and we do not want to give up the chance to pick a real
+        // bold or italic face here either).
         if let Some(index) = self.best_match(weight, style, c, |_, _| true) {
             return Some(index);
         }
@@ -152,16 +150,16 @@ impl FontCollection {
         Some(0)
     }
 
-    /// `eligible`を満たし、`unicode-range`(宣言されていれば)が`c`を含み、
-    /// かつ`c`のグリフを持つフォントの中から、`weight`/`style`も実際に
-    /// 満たすものを優先して選ぶ(`Self::is_bold`/`Self::is_italic`で判定)。
-    /// 一致するものが無ければ、条件を満たす最初のフォントを返す。
+    /// Among the fonts satisfying `eligible`, whose `unicode-range` (if declared) contains
+    /// `c`, and that have a glyph for `c`, prefer one that also really satisfies
+    /// `weight`/`style` (decided by `Self::is_bold`/`Self::is_italic`).
+    /// If none matches, return the first font meeting the conditions.
     ///
-    /// `unicode-range`はハードフィルタとして働く: 宣言されたrangeに`c`が
-    /// 含まれない場合、そのフォントが実際に`c`のグリフを持っていても候補
-    /// から除外する。走査順(=登録順=CSSソース順)で最初に
-    /// 条件を満たしたフォントを採用するため、同じfamily/weight/styleで
-    /// rangeが重複する場合は自然に「宣言順(先勝ち)」になる。
+    /// `unicode-range` acts as a hard filter: if a declared range does not contain `c`, the
+    /// font is excluded from the candidates even when it really does have a glyph for `c`.
+    /// The first font meeting the conditions in scan order (= registration order = CSS
+    /// source order) is taken, so overlapping ranges within the same family/weight/style
+    /// naturally resolve as "declaration order wins".
     fn best_match(
         &self,
         weight: FontWeight,
@@ -184,8 +182,8 @@ impl FontCollection {
         first_match
     }
 
-    /// `index`のフォントの宣言済み`unicode-range`(あれば)に`c`が含まれるか。
-    /// `unicode-range`が未宣言(空`Vec`)の場合は常に`true`(全域カバー)。
+    /// Whether font `index`'s declared `unicode-range` (if any) contains `c`.
+    /// Always `true` when no `unicode-range` was declared (an empty `Vec`), covering everything.
     fn in_unicode_range(&self, index: usize, c: char) -> bool {
         match self.declared_unicode_ranges.get(index) {
             Some(ranges) if !ranges.is_empty() => {
@@ -198,8 +196,8 @@ impl FontCollection {
         }
     }
 
-    /// `family`に一致するフォント(`--font`/`@font-face`/システムフォント問わず)が
-    /// 既にコレクションに含まれているか(weight/styleは問わない)。
+    /// Whether a font matching `family` (from `--font`, `@font-face` or the system fonts
+    /// alike) is already in the collection, ignoring weight and style.
     pub fn has_family(&self, family: &str) -> bool {
         self.fonts
             .iter()
@@ -207,10 +205,10 @@ impl FontCollection {
             .any(|(i, f)| self.matches_family(i, f, family))
     }
 
-    /// `family`に一致し、かつ実際に`weight`/`style`も満たすフォントが
-    /// 既にコレクションに含まれているか。システムフォント探索が、既存の
-    /// フォントで賄えないweight/style(例: Regularしか無い family宛のBold要求)
-    /// だけを補って探すために使う。
+    /// Whether a font matching `family` that also really satisfies `weight`/`style` is
+    /// already in the collection. System font discovery uses this to look only for the
+    /// weights and styles the existing fonts cannot cover (a Bold request against a family
+    /// that only has Regular, say).
     pub fn has_matching_face(&self, family: &str, weight: FontWeight, style: FontStyle) -> bool {
         self.fonts.iter().enumerate().any(|(i, f)| {
             self.matches_family(i, f, family)
@@ -219,12 +217,12 @@ impl FontCollection {
         })
     }
 
-    /// `c`を実際に描画できるフォントがコレクションにあるか。
+    /// Whether the collection has a font that can actually draw `c`.
     ///
-    /// [`Self::select_for_char`]はコレクションが空でない限り必ず何らかの
-    /// フォントを返す(最後の手段が「先頭のフォント」=豆腐)ので、豆腐に
-    /// なるかどうかを知りたい呼び出し側は、返ってきたフォントが本当に`c`の
-    /// グリフを持つかまで確認する必要がある。その判定をまとめたもの。
+    /// [`Self::select_for_char`] always returns some font as long as the collection is not
+    /// empty (its last resort is "the first font", which renders as tofu), so a caller that
+    /// wants to know whether it will be tofu has to check whether the returned font really
+    /// has a glyph for `c`. This packages that check up.
     pub fn can_render(
         &self,
         families: &[String],
@@ -237,18 +235,18 @@ impl FontCollection {
             .is_some_and(|font| font.has_glyph(c))
     }
 
-    /// `c`を、要求どおりの`weight`/`style`の面で描画できるか。
+    /// Whether `c` can be drawn by a face of the requested `weight`/`style`.
     ///
-    /// [`Self::can_render`]は「豆腐にならないか」だけを見るので、自動
-    /// フォールバックで入ったBold面しか`c`を持たない場合に`true`を返す。
-    /// それだけを頼りにフォント探索を打ち切ると、通常ウェイトの文字まで
-    /// Bold面で描かれてしまう(文書中に太字の日本語が先に現れると以降の
-    /// 日本語が全て太くなる、という出現順依存のバグになる)。
+    /// [`Self::can_render`] only asks "will it be tofu", so it returns `true` when the only
+    /// font with `c` is a Bold face pulled in by automatic fallback. Stopping the font
+    /// search on that alone would draw regular-weight characters in the Bold face (an
+    /// order-dependent bug where bold Japanese appearing earlier in the document makes all
+    /// later Japanese bold).
     ///
-    /// 一致を要求するのは自動フォールバックの面だけで、利用者が明示した
-    /// フォント(`--font`/`@font-face`)しか`c`を持たない場合は`true`のまま
-    /// にする。そちらは意図して選ばれた1本なので、勝手にシステムフォントへ
-    /// 差し替えず疑似太字/疑似イタリックで賄う。
+    /// A match is only required of automatic fallback faces: when the only font with `c` is
+    /// one the user named (`--font`/`@font-face`), this stays `true`. That one was chosen
+    /// deliberately, so rather than swapping in a system font behind the user's back, we
+    /// cover it with faux bold or faux italic.
     pub fn can_render_with_matching_face(
         &self,
         families: &[String],
@@ -269,8 +267,8 @@ impl FontCollection {
             && self.is_italic(index) == (style == FontStyle::Italic)
     }
 
-    /// `index`のフォントが実際にBold相当かどうか。`@font-face`の`font-weight`
-    /// 申告があればそれを優先し、無ければフォント自身のOS/2ウェイト値で判定する。
+    /// Whether font `index` really counts as Bold. An `@font-face` `font-weight`
+    /// declaration wins; without one, the font's own OS/2 weight decides.
     pub fn is_bold(&self, index: usize) -> bool {
         match self.declared_weights.get(index).copied().flatten() {
             Some(weight) => weight == FontWeight::Bold,
@@ -281,9 +279,9 @@ impl FontCollection {
         }
     }
 
-    /// `index`のフォントが実際にItalic相当かどうか。`@font-face`の`font-style`
-    /// 申告があればそれを優先し、無ければフォント自身の`post`/OS2テーブルの
-    /// イタリックフラグで判定する。
+    /// Whether font `index` really counts as Italic. An `@font-face` `font-style`
+    /// declaration wins; without one, the italic flags in the font's own `post`/OS2 tables
+    /// decide.
     pub fn is_italic(&self, index: usize) -> bool {
         match self.declared_styles.get(index).copied().flatten() {
             Some(style) => style == FontStyle::Italic,
@@ -356,8 +354,8 @@ mod tests {
     #[test]
     fn falls_back_to_any_font_that_has_the_glyph_when_family_does_not_match() {
         let collection = FontCollection::new(vec![dejavu(), cjk()]);
-        // "sans-serif"はどちらのフォント名にも一致しないので、
-        // カバレッジだけで選ばれるはず。
+        // "sans-serif" matches neither font's name, so the choice should come from
+        // coverage alone.
         let index = select(
             &collection,
             "sans-serif",
@@ -382,8 +380,8 @@ mod tests {
     #[test]
     fn has_matching_face_is_weight_aware_unlike_has_family() {
         let collection = FontCollection::new(vec![dejavu()]);
-        // "DejaVu Sans"自体は登録されているが、Regularのみ。Bold要求には
-        // 一致しないはず(has_familyはweightを問わないので真になるのと対照的)。
+        // "DejaVu Sans" itself is registered, but only in Regular. A Bold request should
+        // not match (in contrast to has_family, which ignores weight and is therefore true).
         assert!(collection.has_family("DejaVu Sans"));
         assert!(collection.has_matching_face("DejaVu Sans", FontWeight::Normal, FontStyle::Normal));
         assert!(!collection.has_matching_face("DejaVu Sans", FontWeight::Bold, FontStyle::Normal));
@@ -391,9 +389,9 @@ mod tests {
 
     #[test]
     fn can_render_with_matching_face_rejects_a_fallback_face_of_the_wrong_weight() {
-        // 自動フォールバックでBold面だけが入った状態(文書中に太字の日本語が
-        // 先に現れたときに起きる)。can_renderは「豆腐にならない」ので真だが、
-        // 通常ウェイトの文字をBold面で描くことになるため、探索を続けさせたい。
+        // The state where automatic fallback has pulled in only a Bold face (which
+        // happens when bold Japanese appears earlier in the document). can_render is true
+        // because it "will not be tofu", but drawing regular text in Bold is wrong, so keep searching.
         let mut collection = FontCollection::new(vec![]);
         collection.push_fallback_font_face("DejaVu Sans".to_string(), dejavu_bold());
 
@@ -411,7 +409,7 @@ mod tests {
             'A'
         ));
 
-        // Regular面が足された後は、どちらのウェイトも一致する面で賄える。
+        // Once a Regular face is added, both weights are covered by a matching face.
         collection.push_fallback_font_face("DejaVu Sans".to_string(), dejavu());
         assert!(collection.can_render_with_matching_face(
             &[],
@@ -423,9 +421,9 @@ mod tests {
 
     #[test]
     fn can_render_with_matching_face_accepts_an_explicit_font_of_the_wrong_weight() {
-        // 利用者が明示した1本(`--font`/`@font-face`)しか無い場合は、
-        // 勝手にシステムフォントへ差し替えず疑似太字で賄う方針なので、
-        // ウェイトが違っても探索を続けさせない。
+        // When there is only the one font the user named (`--font`/`@font-face`), the rule
+        // is to cover it with faux bold rather than swapping in a system font behind their
+        // back, so a differing weight must not keep the search going.
         let collection = FontCollection::new(vec![dejavu()]);
         assert!(collection.can_render_with_matching_face(
             &[],
@@ -437,11 +435,11 @@ mod tests {
 
     #[test]
     fn font_face_declared_family_takes_priority_over_the_fonts_own_name_table() {
-        // 同じDejaVu Sansを2つ登録する: index 0はプレーン(内部name "DejaVu Sans"で照合)、
-        // index 1は`@font-face { font-family: "Custom Brand"; }`として読み込んだ体で登録する。
-        // "Custom Brand"はどちらのフォントの内部nameとも一致しないので、宣言名の
-        // 上書きが効いていなければ名前一致では見つからず、カバレッジのみの
-        // フォールバック(先頭=index 0)に落ちてしまい、期待するindex 1にならない。
+        // Register the same DejaVu Sans twice: index 0 plain (matched on the internal name
+        // "DejaVu Sans"), and index 1 as if loaded from `@font-face { font-family: "Custom Brand"; }`.
+        // "Custom Brand" matches neither font's internal name, so without the declared-name
+        // override it would not be found by name, would fall back on coverage alone (to the
+        // first entry, index 0), and would not be the expected index 1.
         let mut collection = FontCollection::new(vec![dejavu()]);
         collection.push_font_face("Custom Brand".to_string(), None, None, Vec::new(), dejavu());
 
@@ -459,7 +457,7 @@ mod tests {
     #[test]
     fn falls_back_to_first_font_when_no_font_has_the_glyph() {
         let collection = FontCollection::new(vec![dejavu()]);
-        // DejaVu SansはCJKを含まないので、フォールバックしても先頭(0)になる。
+        // DejaVu Sans has no CJK, so even the fallback lands on the first entry (0).
         let index = select(
             &collection,
             "sans-serif",
@@ -490,8 +488,8 @@ mod tests {
     #[test]
     fn is_bold_and_is_italic_prefer_the_font_face_declared_override() {
         let mut collection = FontCollection::new(vec![]);
-        // 実体はRegularのDejaVu Sansだが、`@font-face { font-weight: bold; font-style: italic; }`
-        // として読み込まれた体で登録する。実メトリクスではなく申告値が優先されるはず。
+        // Really a Regular DejaVu Sans, but registered as if loaded from
+        // `@font-face { font-weight: bold; font-style: italic; }`. The declaration should win over the real metrics.
         collection.push_font_face(
             "Declared Brand".to_string(),
             Some(FontWeight::Bold),
@@ -506,8 +504,8 @@ mod tests {
     #[test]
     fn select_for_char_prefers_the_real_bold_face_over_the_regular_one() {
         let collection = FontCollection::new(vec![dejavu(), dejavu_bold()]);
-        // どちらもfamily名"DejaVu Sans"で一致するが、weight: Boldを要求したら
-        // 実際にBoldなindex 1が選ばれるはず(index 0は疑似太字に頼らずに済む)。
+        // Both match the family name "DejaVu Sans", but a request for weight: Bold should
+        // pick index 1, which really is Bold (so index 0 does not have to rely on faux bold).
         let index = select(
             &collection,
             "DejaVu Sans",
@@ -522,8 +520,8 @@ mod tests {
     #[test]
     fn select_for_char_falls_back_to_the_regular_face_when_no_bold_face_matches() {
         let collection = FontCollection::new(vec![dejavu()]);
-        // Boldなフォントが無い場合は、家族名一致するRegularフォントにフォール
-        // バックする(呼び出し側が疑似太字で補う)。
+        // With no Bold font available, fall back to the family-matching Regular font
+        // (the caller makes up the difference with faux bold).
         let index = select(
             &collection,
             "DejaVu Sans",
@@ -538,11 +536,11 @@ mod tests {
 
     #[test]
     fn unicode_range_excludes_a_font_even_when_it_has_the_glyph() {
-        // index 0はグリフとしては'é'(U+00E9)を実際に持つDejaVu Sansだが、
-        // `unicode-range: U+0-7F`(Basic Latinのみ)を宣言しているため対象外。
-        // index 1は同じDejaVu Sansをrange指定なしで再登録したもの。
-        // ハードフィルタが効いていれば、グリフの有無に関わらずindex 0は
-        // 除外されindex 1が選ばれるはず。
+        // index 0 is a DejaVu Sans that really does have a glyph for 'e-acute' (U+00E9), but
+        // it declares `unicode-range: U+0-7F` (Basic Latin only), so it is out of scope.
+        // index 1 is the same DejaVu Sans registered again with no range.
+        // If the hard filter works, index 0 is excluded regardless of the glyph and index 1
+        // is chosen.
         let mut collection = FontCollection::new(vec![]);
         collection.push_font_face(
             "Brand".to_string(),
@@ -558,7 +556,7 @@ mod tests {
 
         assert!(
             collection.get(0).unwrap().has_glyph('é'),
-            "テスト前提: DejaVu Sansは'é'のグリフを持つはず"
+            "test premise: DejaVu Sans should have a glyph for 'e-acute'"
         );
 
         let index = select(
@@ -599,8 +597,8 @@ mod tests {
 
     #[test]
     fn unicode_range_unspecified_covers_the_whole_unicode_range() {
-        // 既存の挙動の後方互換確認: unicode_rangeを指定しない登録は
-        // これまで通り全域をカバーする。
+        // Backward-compatibility check on existing behaviour: a registration with no
+        // unicode_range still covers the whole range.
         let collection = FontCollection::new(vec![dejavu()]);
         let index = select(
             &collection,
@@ -615,9 +613,9 @@ mod tests {
 
     #[test]
     fn overlapping_unicode_ranges_prefer_the_first_declared_font() {
-        // 同じfamily・weight/style・重複するrangeを持つ2つのフォントが
-        // 同じ文字をカバーする場合、CSSソース中で先に登録された方
-        // (登録順=走査順)が優先されるはず。
+        // When two fonts with the same family, weight/style and overlapping ranges cover
+        // the same character, the one registered earlier in the CSS source
+        // (registration order = scan order) should win.
         let mut collection = FontCollection::new(vec![]);
         collection.push_font_face(
             "Brand".to_string(),
@@ -678,8 +676,8 @@ mod tests {
 
     #[test]
     fn unicode_range_splits_a_latin_and_a_cjk_face_declared_under_the_same_family() {
-        // 典型的なwebfont配信パターン: 英数字用フォントとCJK用フォントを
-        // 同じfamily名でunicode-range分けして併用する。
+        // The classic webfont delivery pattern: an alphanumeric font and a CJK font used
+        // together under one family name, split by unicode-range.
         let mut collection = FontCollection::new(vec![]);
         collection.push_font_face(
             "Brand".to_string(),

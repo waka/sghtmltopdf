@@ -1,9 +1,8 @@
-//! HTTPサーバモード(`sghtmltopdf server`)のE2Eテスト。
+//! E2E tests for HTTP server mode (`sghtmltopdf server`).
 //!
-//! 実際にバイナリをサーバとして起動し、`ureq`でリクエストを投げて
-//! ステータスコードとPDFバイト列を検証する。ポート衝突を避けるため
-//! `--listen 127.0.0.1:0`で起動し、標準出力に出る`listening on <addr>`から
-//! 実ポートを読む。
+//! They really start the binary as a server, send requests with `ureq` and check the status
+//! codes and PDF bytes. To avoid a port clash it starts with `--listen 127.0.0.1:0` and
+//! reads the real port from the `listening on <addr>` line on standard output.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -12,7 +11,7 @@ const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVu
 const BIN: &str = env!("CARGO_BIN_EXE_sghtmltopdf");
 const HTML: &str = "<html><body><h1>hello</h1></body></html>";
 
-/// 起動したサーバ。`Drop`で確実に落とす。
+/// The started server. `Drop` reliably shuts it down.
 struct TestServer {
     child: Child,
     addr: String,
@@ -62,8 +61,8 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// `/MediaBox`の期待値をCSS pxで書けるようにするヘルパ
-/// (PDFへはpt=0.75倍で書かれる。f32の丸めがあるのでRust側で同じ計算をする)。
+/// A helper letting the expected `/MediaBox` be written in CSS px
+/// (it is written to the PDF in pt, 0.75x; f32 rounding means the same computation is done on the Rust side).
 fn media_box(width_px: f32, height_px: f32) -> String {
     format!(
         "/MediaBox [0 0 {} {}]",
@@ -72,7 +71,7 @@ fn media_box(width_px: f32, height_px: f32) -> String {
     )
 }
 
-/// 4xx/5xxも含めてステータスコードを取り出す。
+/// Extract the status code, 4xx and 5xx included.
 fn status_of(result: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> u16 {
     match result {
         Ok(response) => response.status().as_u16(),
@@ -124,7 +123,7 @@ fn query_options_are_interpreted_exactly_like_the_cli() {
         .send(HTML)
         .unwrap();
     let pdf = response.body_mut().read_to_vec().unwrap();
-    // A5 = 559.4 x 793.7 CSS px。
+    // A5 = 559.4 x 793.7 CSS px.
     assert!(
         count_occurrences(&pdf, media_box(559.4, 793.7).as_bytes()) > 0,
         "page-size=A5 should be applied"
@@ -161,8 +160,8 @@ fn options_that_take_local_paths_are_rejected() {
 
 #[test]
 fn local_file_access_is_disabled_by_default() {
-    // 既定ではローカル参照が禁止なので、画像は取得されず本文だけが出る。
-    // 取得しようとしても失敗して無視される。
+    // Local references are forbidden by default, so the image is not fetched and only the
+    // body appears. Even attempted, the fetch fails and is ignored.
     let server = TestServer::start(&[]);
     let html = r#"<html><body><img src="/etc/hostname"><p>x</p></body></html>"#;
 
@@ -198,7 +197,7 @@ fn unknown_paths_and_methods_are_reported() {
 
 #[test]
 fn a_render_error_is_reported_as_a_server_error() {
-    // ストリーミングモードで`counter(pages)`を使うとレンダリングエラー。
+    // Using `counter(pages)` in streaming mode is a rendering error.
     let server = TestServer::start(&[]);
     let html = r#"<html><head><style>
             @page { @bottom-center { content: counter(pages); } }
@@ -211,14 +210,14 @@ fn a_render_error_is_reported_as_a_server_error() {
 fn stream_query_switches_to_chunked_transfer_encoding() {
     let server = TestServer::start(&[]);
 
-    // 既定はバッファ返却(Content-Lengthが付く)。
+    // The default is a buffered response (with a Content-Length).
     let buffered = ureq::post(server.url("/pdf")).send(HTML).unwrap();
     assert!(
         buffered.headers().get("content-length").is_some(),
         "the default response should be buffered"
     );
 
-    // `?stream=1`でchunkedになる。
+    // `?stream=1` makes it chunked.
     let mut streamed = ureq::post(server.url("/pdf?stream=1")).send(HTML).unwrap();
     assert_eq!(streamed.status().as_u16(), 200);
     assert_eq!(
@@ -252,8 +251,8 @@ fn other_query_options_still_apply_in_stream_mode() {
 fn stream_mode_reports_errors_before_the_body_starts() {
     let server = TestServer::start(&[]);
 
-    // クエリの不正・空ボディ・サイズ超過は、ヘッダを送る前に検出できるので
-    // 通常どおりのステータスで返る。
+    // A malformed query, an empty body and an oversized body are all detectable before the
+    // headers are sent, so they come back with their usual status.
     assert_eq!(
         status_of(ureq::post(server.url("/pdf?stream=1&font=/etc/passwd")).send(HTML)),
         400

@@ -1,25 +1,26 @@
-# cargo-audit の設定。CIは `--deny warnings` で走らせるので、
-# ここに挙げていないアドバイザリが1件でも出ればビルドが落ちる。
+# cargo-audit configuration. CI runs with `--deny warnings`, so the build fails
+# if even one advisory not listed here shows up.
 
 [advisories]
-# どちらも脆弱性ではなく `unmaintained`(メンテナンス終了)の通知で、
-# 修正版は存在しない(advisoryの `patched = []`)。
+# Neither is a vulnerability: both are `unmaintained` notices, and no fixed
+# release exists (the advisories carry `patched = []`).
 #
-# 出どころはsvg2pdfの`text` feature(=こちらの`svg-text`)が使うusvg/fontdbで、
-# **既定のビルドではコンパイルされない**。cargo-auditはfeatureの有効・無効に
-# 関わらずCargo.lockを見るため、依存グラフに載っているだけで検出される。
+# They come from usvg/fontdb, which svg2pdf's `text` feature (our `svg-text`)
+# pulls in, and that is **not compiled in a default build**. cargo-audit reads
+# Cargo.lock regardless of which features are enabled, so merely sitting in the
+# dependency graph is enough to be reported.
 #
-# 皮肉なことに、両advisoryが移行先として挙げているのは skrifa と harfrust で、
-# この処理系が本体のフォント処理に既に使っているものそのもの。つまり本体の
-# フォント経路はメンテナンスされている側に乗っており、古い方はSVG内の
-# `<text>`を描くときだけ通る。`svg-text`を既定で切っている理由がもう1つ増えた形。
+# Ironically, the replacements both advisories suggest are skrifa and harfrust,
+# which is exactly what this engine already uses for its main font handling. So
+# the main font path runs on the maintained crates, and the older ones are only
+# reached when drawing `<text>` inside an SVG. One more reason `svg-text` is off by default.
 #
-# svg2pdf自体がアーカイブ済みなので、この2件は上流では解消されない。SVG内の
-# テキスト描画をやめるか、フォークしてusvgを上げるかしない限り残る
-# (krillaへ移っても krilla-svg が rustybuzz 0.20 に依存しているので同じ)。
+# svg2pdf itself is archived, so these two will not be fixed upstream. They stay
+# until we either drop text rendering inside SVG or fork and bump usvg
+# (moving to krilla would not help: krilla-svg depends on rustybuzz 0.20).
 ignore = [
-    # ttf-parser is unmaintained (2026-06-28)。移行先の提案は skrifa。
+    # ttf-parser is unmaintained (2026-06-28). Suggested replacement: skrifa.
     "RUSTSEC-2026-0192",
-    # rustybuzz is unmaintained (2026-07-11)。移行先の提案は harfrust。
+    # rustybuzz is unmaintained (2026-07-11). Suggested replacement: harfrust.
     "RUSTSEC-2026-0206",
 ]

@@ -1,8 +1,8 @@
-//! CSS Nesting(ネストしたスタイルルール)のE2Eテスト(waka/sghtmltopdf#25)。
+//! E2E tests for CSS Nesting (nested style rules) (waka/sghtmltopdf#25).
 //!
-//! `&`の置き換えとネストの解決は`selectors`クレートの実装を使うため、ここで
-//! 固定するのは「ネストしたルールが捨てられずにカスケードへ届くこと」と
-//! 「詳細度・ソース順が仕様どおりカスケードの勝敗に反映されること」。
+//! Substituting `&` and resolving the nesting use the `selectors` crate's implementation, so
+//! what is pinned here is that "a nested rule is not discarded and reaches the cascade" and
+//! that "specificity and source order are reflected in the cascade as the spec requires".
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -13,7 +13,7 @@ use sghtmltopdf_core::style::{
     LengthPercentageOrAuto,
 };
 
-/// `id`属性で要素を探す。
+/// Find an element by its `id` attribute.
 fn find_by_id(dom: &Dom, from: NodeId, id: &str) -> Option<NodeId> {
     if let NodeData::Element { attrs, .. } = &dom.node(from).data {
         if attrs
@@ -34,21 +34,21 @@ fn styles_of(html_src: &str, css: &str) -> (Dom, HashMap<NodeId, Rc<ComputedStyl
 
 fn style_of(html_src: &str, css: &str) -> Rc<ComputedStyle> {
     let (dom, styles) = styles_of(html_src, css);
-    let target = find_by_id(&dom, dom.document(), "target").expect("#target がない");
-    Rc::clone(styles.get(&target).expect("styleがない"))
+    let target = find_by_id(&dom, dom.document(), "target").expect("no #target");
+    Rc::clone(styles.get(&target).expect("no style"))
 }
 
-/// `#target`の`color`を`#rrggbb`形式で返す。
+/// Return `#target`'s `color` in `#rrggbb` form.
 fn color_of(html_src: &str, css: &str) -> String {
     let c = style_of(html_src, css).color;
     format!("#{:02x}{:02x}{:02x}", c.red, c.green, c.blue)
 }
 
-/// `#target`の`margin-left`をpxで返す。
+/// Return `#target`'s `margin-left` in px.
 fn margin_left_of(html_src: &str, css: &str) -> f32 {
     match style_of(html_src, css).margin_left {
         LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(px)) => px,
-        other => panic!("margin-left が長さではない: {other:?}"),
+        other => panic!("margin-left is not a length: {other:?}"),
     }
 }
 
@@ -58,7 +58,7 @@ const BLUE: &str = "#0000ff";
 
 const NESTED_PROBE: &str = r#"<div class="wrap"><div class="probe" id="target">X</div></div>"#;
 
-// ===== issue #25 の再現ケース =====
+// ===== Reproducing issue #25 =====
 
 #[test]
 fn flat_control_rule_applies() {
@@ -88,13 +88,13 @@ fn nested_compound_parent_selector_applies() {
     assert_eq!(
         margin_left_of(NESTED_PROBE, css),
         0.0,
-        "`&.probe`は`.wrap.probe`であって`.wrap .probe`ではない"
+        "`&.probe` is `.wrap.probe`, not `.wrap .probe`"
     );
 }
 
 #[test]
 fn nested_rule_with_leading_combinator_applies() {
-    // `margin-left`は継承しないので、孫が親から値を受け継ぐことはない。
+    // `margin-left` is not inherited, so a grandchild never takes the value from its parent.
     let css = ".list { > li { margin-left: 90px } }";
     assert_eq!(
         margin_left_of(r#"<ul class="list"><li id="target">a</li></ul>"#, css),
@@ -106,14 +106,14 @@ fn nested_rule_with_leading_combinator_applies() {
             css
         ),
         0.0,
-        "孫は`> li`にマッチしない"
+        "a grandchild does not match `> li`"
     );
 }
 
 #[test]
 fn nested_type_selector_is_not_mistaken_for_a_declaration() {
-    // `p {`は宣言(`p:`)と同じくidentで始まるので、宣言として読めなければ
-    // ルールとして読み直す必要がある。
+    // `p {` starts with an ident just as a declaration (`p:`) does, so if it cannot be read
+    // as a declaration it has to be re-read as a rule.
     let css = ".wrap { p { color: red } }";
     assert_eq!(
         color_of(r#"<div class="wrap"><p id="target">a</p></div>"#, css),
@@ -123,7 +123,7 @@ fn nested_type_selector_is_not_mistaken_for_a_declaration() {
 
 #[test]
 fn nested_pseudo_class_selector_is_not_mistaken_for_a_declaration() {
-    // `a:link { }`は`a: link { }`という宣言にも見える。
+    // `a:link { }` also looks like the declaration `a: link { }`.
     let css = ".wrap { a:link { color: red } }";
     assert_eq!(
         color_of(
@@ -150,7 +150,7 @@ fn nesting_can_be_deeper_than_one_level() {
             css
         ),
         BLACK,
-        "`.b`を飛ばした要素にはマッチしない"
+        "it does not match an element that skipped `.b`"
     );
 }
 
@@ -175,7 +175,7 @@ fn nested_rule_does_not_match_outside_its_parent() {
     );
 }
 
-// ===== 親ルールの宣言との共存 =====
+// ===== Coexisting with the parent rule's declarations =====
 
 #[test]
 fn declarations_before_a_nested_rule_still_apply_to_the_parent() {
@@ -197,8 +197,8 @@ fn declarations_after_a_nested_rule_still_apply_to_the_parent() {
 
 #[test]
 fn declarations_after_a_nested_rule_cascade_after_it() {
-    // 仕様(CSSNestedDeclarations)では、ネストしたルールの後ろにある宣言は
-    // そのルールより後ろの位置でカスケードに参加する。先頭へ巻き上げない。
+    // Per the spec (CSSNestedDeclarations), declarations after a nested rule join the cascade
+    // at a position after that rule. They are not hoisted to the front.
     let css = ".probe { & { color: red } color: blue }";
     assert_eq!(
         color_of(r#"<div class="probe" id="target">X</div>"#, css),
@@ -206,11 +206,11 @@ fn declarations_after_a_nested_rule_cascade_after_it() {
     );
 }
 
-// ===== 詳細度 =====
+// ===== Specificity =====
 
 #[test]
 fn nested_selector_takes_the_parent_specificity() {
-    // `#wrap { & .probe }` = (1,1,0) は後続の`.wrap .probe` = (0,2,0)に勝つ。
+    // `#wrap { & .probe }` = (1,1,0) beats the later `.wrap .probe` = (0,2,0).
     let css = "#wrap { & .probe { color: red } } .wrap .probe { color: blue }";
     assert_eq!(
         color_of(
@@ -227,12 +227,12 @@ fn equal_specificity_falls_back_to_source_order() {
     assert_eq!(color_of(NESTED_PROBE, css), BLUE);
 }
 
-// ===== エラー回復 =====
+// ===== Error recovery =====
 
 #[test]
 fn an_invalid_nested_rule_does_not_take_its_siblings_with_it() {
-    // `::first-line`は非対応なのでそのネストしたルールだけが捨てられ、
-    // 後続の宣言と兄弟のネストしたルールは生き残る。
+    // `::first-line` is unsupported, so only that nested rule is discarded and the
+    // declarations and sibling nested rules that follow survive.
     let css = ".wrap { .probe::first-line { color: blue } color: red; .probe { color: red } }";
     assert_eq!(
         color_of(r#"<div class="wrap" id="target">X</div>"#, css),
@@ -241,17 +241,17 @@ fn an_invalid_nested_rule_does_not_take_its_siblings_with_it() {
     assert_eq!(color_of(NESTED_PROBE, css), RED);
 }
 
-// ===== トップレベルの`&` =====
+// ===== A top-level `&` =====
 
 #[test]
 fn a_top_level_parent_selector_acts_as_scope() {
-    // 置き換える親が無い`&`は仕様どおり`:scope`、スタイルシートではルート要素。
-    // `color`は継承するので、`html`に効いたことを子孫で観測する。
+    // An `&` with no parent to substitute is `:scope` as the spec says, which in a stylesheet
+    // is the root element. `color` is inherited, so its effect on `html` is observed on a descendant.
     let css = "& { color: red }";
     assert_eq!(color_of(r#"<div id="target">X</div>"#, css), RED);
     assert_eq!(
         margin_left_of(r#"<div id="target">X</div>"#, "& { margin-left: 90px }"),
         0.0,
-        "ルート以外の要素にはマッチしない"
+        "it does not match an element other than the root"
     );
 }

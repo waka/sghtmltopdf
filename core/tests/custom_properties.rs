@@ -1,7 +1,7 @@
-//! CSS Custom Properties(`--foo`/`var()`)のE2Eテスト。
+//! E2E tests for CSS Custom Properties (`--foo`/`var()`).
 //!
-//! `box_sizing.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイル
-//! カスケード→ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `box_sizing.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, pagination, PDF encode).
 
 use std::path::PathBuf;
 
@@ -59,10 +59,10 @@ fn find_laid_out(
     None
 }
 
-/// `<style>`タグへcssを埋め込んだ1つのDOMを組み立てる。`var()`/カスタム
-/// プロパティの解決は`parse_stylesheet`ではなく`extract_author_stylesheet`
-/// (DOM走査+テキスト置換)側の責務なので、このテストファイルのヘルパーは
-/// 単発のCSS文字列を直接`parse_stylesheet`へは渡さず、常にこの経路を通す。
+/// Build a single DOM with the css embedded in a `<style>` tag. Resolving `var()` and custom
+/// properties is `extract_author_stylesheet`'s job (a DOM walk plus text substitution)
+/// rather than `parse_stylesheet`'s, so the helpers in this test file never hand a one-off
+/// CSS string straight to `parse_stylesheet` and always go through this path.
 fn dom_with_style(html_body: &str, css: &str) -> Dom {
     html::parse(
         format!("<html><head><style>{css}</style></head><body>{html_body}</body></html>")
@@ -157,9 +157,9 @@ fn fallback_value_is_used_when_the_custom_property_is_undefined() {
 
 #[test]
 fn an_undefined_var_without_a_fallback_leaves_the_declaration_ignored() {
-    // フォールバックが無い未定義の`var`は、置換されずに残ったテキストが既存の
-    // 「未対応/不正な宣言は無視される」経路に自然に
-    // 乗り、`width`は指定なし(auto)扱いになる。
+    // An undefined `var` with no fallback leaves its text unsubstituted, which falls
+    // naturally into the existing "an unsupported or invalid declaration is ignored" path,
+    // so `width` counts as unset (auto).
     let (dom, laid) = layout(
         r#"<div class="box">content</div>"#,
         "body { margin: 0; } \
@@ -168,7 +168,7 @@ fn an_undefined_var_without_a_fallback_leaves_the_declaration_ignored() {
     let mut divs = Vec::new();
     find_all_tags(&dom, dom.document(), "div", &mut divs);
     let div = find_laid_out(&laid, divs[0]).unwrap();
-    // autoなのでcontent幅は親の利用可能幅いっぱいに広がる(0pxには潰れない)。
+    // Being auto, the content width stretches to the parent's available width (it does not collapse to 0px).
     assert!(div.layout.content.width > 90.0);
 }
 
@@ -189,9 +189,9 @@ fn later_declaration_wins_across_the_whole_document_regardless_of_selector_scope
 
 #[test]
 fn custom_properties_declared_in_one_style_tag_resolve_in_another() {
-    // extract_author_stylesheetは複数の<style>タグを連結してから置換するため、
-    // 別タグで宣言した`--foo`が別タグの`var(--foo)`から参照できるはず
-    // (文書全体でフラットな名前空間)。
+    // extract_author_stylesheet concatenates several <style> tags before substituting, so a
+    // `--foo` declared in one tag should be reachable from a `var(--foo)` in another
+    // (one flat namespace across the document).
     let dom = html::parse(
         br#"<html><head>
             <style>:root { --brand-width: 64px; }</style>
@@ -223,16 +223,16 @@ fn extract_author_stylesheet_resolves_var_via_the_style_tag_helper() {
         ":root { --w: 33px; } .box { width: var(--w); }",
     );
     let sheet = extract_stylesheet(&dom);
-    // カスタムプロパティの宣言はテキスト置換で解決済みなので、`:root`側は
-    // 宣言の無いルールとして捨てられ、`.box`の1つだけが残る。
+    // Custom property declarations are already resolved by text substitution, so the `:root`
+    // rule is discarded as having no declarations and only the one for `.box` survives.
     assert_eq!(sheet.rules.len(), 1);
 }
 
 #[test]
 fn var_inside_nested_calc_resolves_the_tailwind_space_y_shape() {
-    // issue #17: Tailwind v4の`space-y-*`/`divide-*`は
+    // issue #17: Tailwind v4's `space-y-*`/`divide-*` emit
     // `calc(calc(var(--spacing) * N) * calc(1 - var(--tw-space-y-reverse)))`
-    // を出力する。15px * 6 * (1 - 0) = 90px。
+    // 15px * 6 * (1 - 0) = 90px.
     let (dom, laid) = layout(
         r#"<div class="box">content</div>"#,
         ":root { --spacing: 15px; --reverse: 0; } \

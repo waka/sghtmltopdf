@@ -1,4 +1,4 @@
-//! `display: inline-block`とフォーム要素の静的描画のE2Eテスト。
+//! E2E tests for `display: inline-block` and the static rendering of form elements.
 
 use std::collections::HashMap;
 
@@ -35,7 +35,7 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     (dom, laid)
 }
 
-/// 文書内の全ての行ボックスを出現順に集める。
+/// Collect every line box in the document in order of appearance.
 fn all_lines(b: &LaidOutBox) -> Vec<LineBox> {
     fn walk(b: &LaidOutBox, out: &mut Vec<LineBox>) {
         match &b.content {
@@ -102,7 +102,7 @@ fn an_inline_block_sits_on_the_same_line_as_the_surrounding_text() {
     let lines = all_lines(&laid);
     assert_eq!(lines.len(), 1, "everything must fit on one line");
     assert_eq!(lines[0].atomics.len(), 1);
-    // 箱の前後にテキストがある(=行の途中に置かれている)。
+    // There is text either side of the box (that is, it sits part-way through the line).
     let atomic = &lines[0].atomics[0];
     assert!(atomic.x_offset > 0.0, "the box should follow 'before'");
     assert_eq!(atomic.margin_box_width, 40.0);
@@ -135,13 +135,13 @@ fn an_inline_block_grows_the_line_and_its_block() {
         with_box.layout.content.height
     );
     assert!(with_box.layout.content.height > plain.layout.content.height);
-    // 次の段落が重ならない(箱の高さが親のフローに反映されている)。
+    // The next paragraph does not overlap (the box's height is reflected in the parent's flow).
     assert!(with_box.layout.content.y >= plain.layout.content.y + plain.layout.content.height);
 }
 
 #[test]
 fn a_line_containing_only_inline_blocks_still_takes_space() {
-    // 回帰テスト: 行にテキストランが1つも無いと行ごと捨てられていた。
+    // Regression test: a line with no text run at all used to be discarded whole.
     let (dom, laid) = layout(
         r#"<p><span class="ib">a</span></p><p>after</p>"#,
         "body { margin: 0; } p { margin: 0; } .ib { display: inline-block; width: 30px; height: 30px; }",
@@ -200,7 +200,7 @@ fn vertical_align_top_aligns_the_box_with_the_top_of_the_line() {
         .iter()
         .find(|a| a.margin_box_height <= 20.0)
         .expect("short box");
-    // 上端が行の上端に一致する。
+    // Its top edge coincides with the top of the line.
     assert!(
         (short.content.layout.border_box().y - line.rect.y).abs() < 0.01,
         "expected {}, got {}",
@@ -209,7 +209,7 @@ fn vertical_align_top_aligns_the_box_with_the_top_of_the_line() {
     );
 }
 
-// ===== フォーム要素 =====
+// ===== Form elements =====
 
 #[test]
 fn a_text_input_renders_its_value_inside_a_box() {
@@ -250,7 +250,7 @@ fn a_text_input_falls_back_to_its_placeholder() {
         .iter()
         .map(|r| r.text.as_str())
         .collect();
-    // `input`のUA規則は`white-space: pre`なので、値の空白がそのまま残る。
+    // The UA rule for `input` is `white-space: pre`, so whitespace in the value survives.
     assert_eq!(text, "your name");
 }
 
@@ -323,7 +323,7 @@ fn a_checkbox_is_a_small_square_without_text() {
         panic!("expected inline content");
     };
     assert!(inner_lines.is_empty(), "a checkbox has no text of its own");
-    // ラベルのテキストは通常のランとして同じ行に残る。
+    // The label text stays on the same line as an ordinary run.
     let label: String = line.runs.iter().map(|r| r.text.as_str()).collect();
     assert_eq!(label, "label");
 }
@@ -363,7 +363,7 @@ fn a_form_encodes_to_a_valid_pdf() {
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
 
-// ===== インラインの`<img>` =====
+// ===== Inline `<img>` =====
 
 fn jpeg_data_uri() -> String {
     use base64::Engine;
@@ -408,7 +408,7 @@ fn an_inline_image_sits_on_the_same_line_as_the_text() {
         1,
         "the image is an atomic inline box"
     );
-    // 画像の前後にテキストがある。
+    // There is text either side of the image.
     let text: String = lines[0].runs.iter().map(|r| r.text.as_str()).collect();
     assert_eq!(text, "icontext");
 }
@@ -431,13 +431,13 @@ fn an_inline_image_uses_its_attribute_size() {
 
 #[test]
 fn a_block_image_still_takes_its_own_line() {
-    // `display: block`を明示した`<img>`は従来どおりブロック置換要素。
+    // An `<img>` with an explicit `display: block` is still a block replaced element.
     let html_src = format!(
         r#"<p>before</p><img src="{}" width="40" height="30" style="display: block;"><p>after</p>"#,
         jpeg_data_uri()
     );
     let (_, laid) = layout_with_images(&html_src, "body { margin: 0; }");
-    // ブロック画像は行(atomics)に載らない。
+    // A block image does not sit on the line (atomics).
     let lines = all_lines(&laid);
     assert!(
         lines.iter().all(|l| l.atomics.is_empty()),
@@ -454,7 +454,7 @@ fn a_vertical_align_applies_to_an_inline_image() {
     let (_, laid) = layout_with_images(&html_src, "body { margin: 0; } p { margin: 0; }");
     let line = &all_lines(&laid)[0];
     let img = &line.atomics[0];
-    // 上端揃え: 画像の上端が行の上端に一致する。
+    // Top alignment: the image's top edge coincides with the top of the line.
     assert!(
         (img.content.layout.border_box().y - line.rect.y).abs() < 0.01,
         "expected {}, got {}",
@@ -465,8 +465,8 @@ fn a_vertical_align_applies_to_an_inline_image() {
 
 #[test]
 fn an_inline_image_is_embedded_in_the_pdf() {
-    // 画像の解決は`Engine`のパイプライン全体を通す(`paginate_document`は
-    // 内部でbox treeを組み直すため、テスト側で`resolve_images`しても効かない)。
+    // Image resolution goes through the whole `Engine` pipeline (`paginate_document` rebuilds
+    // the box tree internally, so calling `resolve_images` from the test has no effect).
     use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
     use sghtmltopdf_core::sink::MemorySink;
 
@@ -493,11 +493,11 @@ fn an_inline_image_is_embedded_in_the_pdf() {
     );
 }
 
-// ===== `text-align`とインラインの`<img>` (issue #19) =====
+// ===== `text-align` and an inline `<img>` (issue #19) =====
 
-/// `text-align: right`は同じ行のテキストを右端に寄せるが、`<img>`は左端に
-/// 残っていた(issue #19)。置換要素もテキストと同じ行に載っている以上、
-/// 同じように寄せられなければならない。
+/// `text-align: right` moves the text on a line to the right edge, but the `<img>` stayed at
+/// the left (issue #19). A replaced element sits on the same line as the text, so it has to
+/// be moved the same way.
 #[test]
 fn text_align_right_moves_an_inline_image_to_the_right_edge() {
     let html_src = format!(r#"<div class="box"><img src="{}"></div>"#, jpeg_data_uri());
@@ -508,7 +508,7 @@ fn text_align_right_moves_an_inline_image_to_the_right_edge() {
     let lines = all_lines(&laid);
     assert_eq!(lines.len(), 1);
     let img = &lines[0].atomics[0];
-    // コンテナ幅400px、画像幅40pxなので左端は360pxに来る(issue #19の期待値)。
+    // The container is 400px wide and the image 40px, so its left edge lands at 360px (issue #19's expected value).
     assert!(
         (img.content.layout.border_box().x - 360.0).abs() < 0.01,
         "expected the image at x=360, got x={}",
@@ -532,8 +532,8 @@ fn text_align_center_moves_an_inline_image_to_the_middle() {
     );
 }
 
-/// issue #19の「もう1つの観察」: テキストと画像が同じ行にあると、テキストだけが
-/// 右に寄って画像が左に取り残され、両者が離れてしまっていた。
+/// Issue #19's "other observation": with text and an image on the same line, only the text
+/// moved right, stranding the image on the left and separating the two.
 #[test]
 fn text_align_right_keeps_text_and_an_inline_image_together_at_the_right_edge() {
     let html_src = format!(
@@ -550,7 +550,7 @@ fn text_align_right_keeps_text_and_an_inline_image_together_at_the_right_edge() 
     let word = &line.runs[0];
     let img = &line.atomics[0];
     let img_box = img.content.layout.border_box();
-    // 画像の右端がコンテナの右端に接し、テキストはその直前に続く。
+    // The image's right edge touches the container's, and the text follows immediately before it.
     assert!(
         (img_box.x + img_box.width - 400.0).abs() < 0.01,
         "expected the image's right edge at 400, got {}",
@@ -582,8 +582,8 @@ fn text_align_right_moves_an_inline_image_wrapped_in_a_span() {
     );
 }
 
-/// UAスタイルシートは`input`自身に`text-align: left`を付けるが、それは箱の
-/// 中身の揃え方であって、箱をどこに置くかはコンテナの`text-align`が決める。
+/// The UA stylesheet gives `input` itself `text-align: left`, but that is how the box's
+/// contents are aligned; where the box goes is decided by the container's `text-align`.
 #[test]
 fn text_align_right_moves_a_lone_input_despite_its_own_ua_text_align() {
     let html_src = r#"<p class="box"><input></p>"#;
@@ -604,8 +604,8 @@ fn text_align_right_moves_a_lone_input_despite_its_own_ua_text_align() {
     );
 }
 
-/// 逆に、UAスタイルシートが`button`に付ける`text-align: center`が箱自身の
-/// 配置に漏れてはいけない(コンテナは`left`のまま)。
+/// Conversely, the `text-align: center` the UA stylesheet gives `button` must not leak into
+/// the box's own placement (the container stays `left`).
 #[test]
 fn a_lone_button_is_not_centered_by_its_own_ua_text_align() {
     let html_src = r#"<p class="box"><button>ok</button></p>"#;
@@ -619,10 +619,9 @@ fn a_lone_button_is_not_centered_by_its_own_ua_text_align() {
     );
 }
 
-/// `text-align`はブロックコンテナに適用されるプロパティで、インラインボックスは
-/// 継承するだけなので、行内の`<span>`に書かれた値がコンテナの値に勝ってはいけない。
-/// IFCの代表値を先頭のテキストspanから読んでいたため、先頭spanの`left`が勝って
-/// いた。
+/// `text-align` is a property applying to the block container, and an inline box merely
+/// inherits it, so a value written on a `<span>` in the line must not beat the container's.
+/// The IFC representative was read from the first text span, so the first span's `left` won.
 #[test]
 fn the_containers_text_align_wins_over_a_text_align_on_an_inline_span() {
     let html_src = r#"<div class="box"><span class="inner">WORD</span></div>"#;

@@ -1,8 +1,8 @@
-//! `overflow`/`z-index`/`outline`/`visibility`/`border-style`拡張
-//! (groove/ridge/inset/outset)/`border-radius`楕円のE2Eテスト。
+//! E2E tests for `overflow`, `z-index`, `outline`, `visibility`, the `border-style`
+//! extensions (groove/ridge/inset/outset) and elliptical `border-radius`.
 //!
-//! `list_style.rs`/`typography.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `list_style.rs`/`typography.rs`: catch regressions by going through
+//! the real pipeline (HTML parse, style cascade, pagination, PDF encode).
 
 use std::collections::HashMap;
 
@@ -130,20 +130,20 @@ fn visibility_hidden_reserves_layout_space_but_display_none_does_not() {
     );
     let mut divs = Vec::new();
     find_all_tags(&dom, dom.document(), "div", &mut divs);
-    // DOM上は4つの`div`が存在する(`display: none`はDOMそのものは削らない)。
+    // The DOM holds four `div`s (`display: none` does not remove them from the DOM itself).
     assert_eq!(divs.len(), 4);
 
     let a = find_laid_out(&laid, divs[0]).unwrap();
     let hidden = find_laid_out(&laid, divs[1]).unwrap();
-    // `display: none`の要素はbox tree自体から除外される(Cに対応するボックスは無い)。
+    // A `display: none` element is excluded from the box tree entirely (there is no box for C).
     assert!(find_laid_out(&laid, divs[2]).is_none());
     let d = find_laid_out(&laid, divs[3]).unwrap();
 
-    // `visibility: hidden`は`display: none`と違い、レイアウト上の高さをそのまま
-    // 占有する(見えないだけ)。
+    // Unlike `display: none`, `visibility: hidden` still occupies its height in layout
+    // (it is merely invisible).
     assert_eq!(hidden.layout.content.height, 40.0);
-    // Dは「A(40px) + hidden(40px、占有される)」の直後に来るはず
-    // (Cはツリーに存在しないため高さに寄与しない)。
+    // D should come right after "A (40px) plus the hidden one (40px, which is occupied)"
+    // (C is not in the tree and contributes no height).
     assert_eq!(d.layout.content.y, a.layout.content.y + 80.0);
 }
 
@@ -158,12 +158,12 @@ fn z_index_reorders_overlapping_relative_siblings_but_keeps_their_own_position()
     );
     let mut divs = Vec::new();
     find_all_tags(&dom, dom.document(), "div", &mut divs);
-    // divs[0]は"outer"、divs[1]="first"、divs[2]="second"。
+    // divs[0] is "outer", divs[1] is "first" and divs[2] is "second".
     let first_box = find_laid_out(&laid, divs[1]).unwrap();
     let second_box = find_laid_out(&laid, divs[2]).unwrap();
 
-    // `position: relative`のオフセットは通常のフロー位置には影響しない
-    // (後続要素の配置計算には`position:relative`前の位置を使う、既存動作)。
+    // A `position: relative` offset does not affect the ordinary flow position
+    // (later elements are placed against the pre-`position:relative` position; existing behaviour).
     assert_eq!(
         first_box.layout.content.y,
         second_box.layout.content.y - 30.0 + 20.0
@@ -180,7 +180,7 @@ fn border_radius_longhand_and_shorthand_render_a_valid_pdf() {
     assert_eq!(page_count, 1);
 }
 
-// ===== 親子間・空ブロックのマージン相殺 =====
+// ===== Parent/child and empty-block margin collapsing =====
 
 #[test]
 fn a_child_top_margin_collapses_through_a_borderless_parent() {
@@ -195,15 +195,15 @@ fn a_child_top_margin_collapses_through_a_borderless_parent() {
     let wrap = find_laid_out(&laid, divs[0]).unwrap();
     let child = find_laid_out(&laid, ps[0]).unwrap();
 
-    // 子の margin-top が親を突き抜け、子は親の content 上端に密着する。
+    // The child's margin-top escapes the parent and the child sits flush against the top of the parent's content.
     assert_eq!(child.layout.content.y, wrap.layout.content.y);
-    // 親自身が実効 margin-top 30 を持つ(= 子の margin と相殺)。
+    // The parent itself gets an effective margin-top of 30 (collapsed with the child's margin).
     assert_eq!(wrap.layout.margin.top, 30.0);
 }
 
 #[test]
 fn the_gap_between_a_wrapped_child_and_a_following_sibling_collapses() {
-    // 親子相殺(下)と隣接兄弟相殺が連鎖し、余白は二重にならず 40 の1つになる。
+    // Parent/child collapsing (bottom) chains with adjacent-sibling collapsing, so the gap is a single 40 rather than doubled.
     let (dom, laid) = layout(
         r#"<div class="wrap"><p class="inner">child</p></div><p class="sib">sibling</p>"#,
         "body { margin: 0; } .wrap { margin: 0; }          .inner { margin-bottom: 40px; } .sib { margin-top: 20px; }",
@@ -214,7 +214,7 @@ fn the_gap_between_a_wrapped_child_and_a_following_sibling_collapses() {
     let sib = find_laid_out(&laid, ps[1]).unwrap();
 
     let gap = sib.layout.content.y - (inner.layout.content.y + inner.layout.content.height);
-    // 単純加算(40+20=60)ではなく、相殺で max(40, 20) = 40。
+    // Not a plain sum (40+20=60) but max(40, 20) = 40 after collapsing.
     assert!(
         (gap - 40.0).abs() < 0.5,
         "gap should collapse to 40, got {gap}"
@@ -233,7 +233,7 @@ fn an_empty_block_does_not_double_its_margins() {
     let below = find_laid_out(&laid, ps[1]).unwrap();
 
     let gap = below.layout.content.y - (above.layout.content.y + above.layout.content.height);
-    // 空 div の上下 25px が二重(50)にならず、相殺で 25。
+    // The empty div's 25px top and bottom do not double (50); they collapse to 25.
     assert!(
         (gap - 25.0).abs() < 0.5,
         "empty block margins should collapse, got {gap}"
@@ -278,7 +278,7 @@ fn calc_padding_resolves_em_and_pixels() {
     let mut divs = Vec::new();
     find_all_tags(&dom, dom.document(), "div", &mut divs);
     let c = find_laid_out(&laid, divs[0]).unwrap();
-    // 1em(16px) + 4px = 20px。
+    // 1em (16px) + 4px = 20px.
     assert!(
         (c.layout.padding.left - 20.0).abs() < 0.5,
         "got {}",
@@ -288,8 +288,8 @@ fn calc_padding_resolves_em_and_pixels() {
 
 #[test]
 fn calc_nested_inside_calc_resolves_like_parentheses() {
-    // issue #17: `calc()`の項に`calc()`を書くと宣言ごと無効化されていた。
-    // 括弧で書いた同じ式と同じ90pxになるべき。
+    // issue #17: a `calc()` inside a `calc()` term used to invalidate the whole declaration.
+    // It should give the same 90px as the equivalent written with parentheses.
     for css in [
         "body { margin: 0; } .c { margin-left: calc(calc(45px * 2) * calc(1 - 0)); }",
         "body { margin: 0; } .c { margin-left: calc((45px * 2) * (1 - 0)); }",

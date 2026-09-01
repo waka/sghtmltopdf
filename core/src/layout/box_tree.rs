@@ -1,9 +1,9 @@
-//! DOM+計算スタイルからレイアウトボックスツリーを構築する。
+//! Building the layout box tree from the DOM plus the computed styles.
 //!
-//! `display: none`の要素(とその部分木)は除外する。ブロックコンテナの子が
-//! block-levelとinline-level/テキストの混在になる場合は、CSSの無名ボックス生成
-//! 規則(CSS2.1 9.2.1.1)に従い、連続するinline-levelの内容を無名ブロックボックスに
-//! まとめる。無名ボックスは対応するDOMノードを持たないため`node: None`とする。
+//! Elements with `display: none` (and their subtrees) are excluded. Where a block
+//! container's children mix block-level with inline-level content and text, runs of
+//! consecutive inline-level content are wrapped in anonymous block boxes, following the CSS
+//! anonymous box generation rules (CSS2.1 9.2.1.1). An anonymous box has no corresponding DOM node, so its `node` is `None`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -20,22 +20,21 @@ use super::white_space;
 
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
-    /// 対応するDOM要素。無名ボックスの場合は`None`。
+    /// The corresponding DOM element. `None` for an anonymous box.
     pub node: Option<NodeId>,
     pub content: BoxContent,
-    /// `display: list-item`のマーカー(箇条書きの記号・番号)テキスト。
-    /// `list-style-position: inside`かつ内容が`BoxContent::Inline`の場合は
-    /// 代わりに`content`の先頭`InlineSpan`へ直接埋め込むため、この場合は
-    /// `None`のまま(二重描画を避ける)。それ以外(`outside`、またはブロック子を
-    /// 持つ`inside`)はレイアウト層(`block.rs`)
-    /// がこのフィールドを見て別途配置する。
+    /// The marker text (bullet or number) for `display: list-item`.
+    /// With `list-style-position: inside` and `BoxContent::Inline` content, it is instead
+    /// embedded directly into the first `InlineSpan` of `content`, so this stays `None`
+    /// (to avoid drawing it twice). Otherwise (`outside`, or an `inside` with block
+    /// children) the layout layer (`block.rs`) reads this field and places it separately.
     pub marker: Option<String>,
-    /// 採寸結果のメモ。詳細は[`MeasureMemo`]。
+    /// Memoised measurements. See [`MeasureMemo`].
     pub measured: MeasureMemo,
 }
 
 impl LayoutBox {
-    /// 内容だけを持つボックス(無名ボックス・置換要素の入れ物)。
+    /// A box holding only content (an anonymous box, or the container for a replaced element).
     pub fn anonymous(content: BoxContent) -> Self {
         Self {
             node: None,
@@ -45,7 +44,7 @@ impl LayoutBox {
         }
     }
 
-    /// `node`に対応するボックス。
+    /// The box corresponding to `node`.
     pub fn for_node(node: NodeId, content: BoxContent) -> Self {
         Self {
             node: Some(node),
@@ -56,26 +55,26 @@ impl LayoutBox {
     }
 }
 
-/// ボックス1つ分の採寸メモ。
+/// The measurement memo for one box.
 ///
-/// 同じ部分木は何度も測り直される。flex/gridのアイテムは祖先の段ごとに測られ、
-/// さらに高さを知るための捨てレイアウトが幅の候補ごとに走るため、メモが無いと
-/// ネストの段数に対して指数的に増える。
+/// The same subtree is measured over and over: a flex/grid item is measured at every
+/// ancestor level, and a throwaway layout runs for each candidate width just to learn the
+/// height, so without the memo the cost grows exponentially in the nesting depth.
 ///
-/// メモした値はボックスの内容・計算スタイル・フォントだけで決まる。ツリーは
-/// 文書ごとに組み直され、`resolve_images`のような内容の書き換えはレイアウト
-/// 開始前に終わっているので、レイアウト中は不変になる。
+/// A memoised value is determined solely by the box's content, computed style and font. The
+/// tree is rebuilt per document, and content rewriting such as `resolve_images` finishes
+/// before layout begins, so it is immutable during layout.
 #[derive(Debug, Clone, Default)]
 pub struct MeasureMemo {
-    /// 自然幅(max-content幅)。[`super::table::measure_natural_content_width`]が埋める。
+    /// The natural (max-content) width. Filled in by [`super::table::measure_natural_content_width`].
     natural_width: Cell<Option<f32>>,
-    /// content幅を決め打ちして組んだときのcontent高さ。flex/gridの採寸ブリッジが
-    /// 埋める。
+    /// The content height when built with a fixed content width. Filled in by the flex/grid
+    /// measure bridge.
     ///
-    /// キーはcontent幅とcontaining width(`(content, containing)`)の組。中身の
-    /// パーセンテージ指定はcontaining widthを基準に解決されるので、同じcontent幅
-    /// でもcontaining widthが違えば高さは変わりうる。1つのボックスに対して問われる
-    /// 組は数種類しかないので、線形探索で足りる(ハッシュより速い)。
+    /// The key is the pair of content width and containing width (`(content, containing)`).
+    /// Percentages inside resolve against the containing width, so the same content width
+    /// can give a different height under a different containing width. Only a handful of
+    /// pairs are ever asked of one box, so a linear search suffices (and beats hashing).
     heights: RefCell<Vec<(u32, u32, f32)>>,
 }
 
@@ -109,64 +108,64 @@ impl MeasureMemo {
 #[derive(Debug, Clone)]
 pub enum BoxContent {
     Blocks(Vec<LayoutBox>),
-    /// インラインフォーマッティングコンテキストの内容。
+    /// The content of an inline formatting context.
     Inline(Vec<InlineSpan>),
-    /// `display: table`要素の内容(行・セル)。
+    /// The content of a `display: table` element (its rows and cells).
     Table(TableBox),
-    /// `display: flex`要素の内容(flexアイテムの並び)。
+    /// The content of a `display: flex` element (its sequence of flex items).
     Flex(FlexBox),
     Grid(GridBox),
-    /// `<img>`要素(置換要素として扱う、[`resolve_images`]参照)。
+    /// An `<img>` element (treated as a replaced element; see [`resolve_images`]).
     Image(ImageBoxContent),
 }
 
-/// `display: flex`要素から集めたflexアイテムの並び。各アイテムは通常の
-/// ブロック子と同じ`LayoutBox`(子要素ごとに1個、`build_children_boxes`の無名
-/// ボックス生成規則は適用しない)。
+/// The sequence of flex items collected from a `display: flex` element. Each item is an
+/// ordinary `LayoutBox`, just like a block child (one per child element; the anonymous box
+/// generation rules of `build_children_boxes` do not apply).
 #[derive(Debug, Clone)]
 pub struct FlexBox {
     pub items: Vec<LayoutBox>,
 }
 
-/// `display: grid`のコンテナ。構造は[`FlexBox`]と同じで、レイアウト時に渡す
-/// taffyの`Style`だけが異なる。
+/// A `display: grid` container. Structurally identical to [`FlexBox`]; only the taffy
+/// `Style` handed over at layout time differs.
 #[derive(Debug, Clone)]
 pub struct GridBox {
     pub items: Vec<LayoutBox>,
 }
 
-/// `<img>`要素のコンテンツ。`resolve_images`が構築する。
+/// The content of an `<img>` element. Built by `resolve_images`.
 #[derive(Debug, Clone)]
 pub struct ImageBoxContent {
-    /// フェッチ・デコードに成功した場合の画像データ。失敗
-    /// (ネットワークエラー・SSRFブロック・デコード不能等、いずれも同列)した
-    /// 場合は`None`になり、レイアウトはこれを空の置換要素として扱う。
+    /// The image data when the fetch and decode succeeded. On failure (a network error, an
+    /// SSRF block, an undecodable image; all treated alike) it is `None`, and layout treats
+    /// this as an empty replaced element.
     pub image: Option<std::rc::Rc<crate::pdf::PreparedImage>>,
-    /// `width`/`height`属性の値(px、HTML属性由来)
+    /// The values of the `width`/`height` attributes (px, from the HTML attributes)
     pub attr_width: Option<u32>,
     pub attr_height: Option<u32>,
 }
 
-/// `display: table`要素から集めた行の並びと、任意の`caption`。
+/// The sequence of rows collected from a `display: table` element, plus an optional `caption`.
 #[derive(Debug, Clone)]
 pub struct TableBox {
-    /// `display: table-caption`の子要素(`<caption>`)。複数ある場合は最初の
-    /// 1つのみ採用する(既知の簡略化)。`Box`は`LayoutBox`→`BoxContent::Table`
-    /// →`TableBox`の再帰を間接参照で断ち切るために必要(サイズが無限になる
-    /// コンパイルエラーの回避)。
+    /// The `display: table-caption` child (`<caption>`). With several, only the first is
+    /// used (a known simplification). The `Box` is needed to break the
+    /// `LayoutBox` -> `BoxContent::Table` -> `TableBox` recursion by indirection (avoiding
+    /// the infinite-size compile error).
     pub caption: Option<Box<LayoutBox>>,
-    /// captionの計算スタイルから読んだ`caption-side`(captionが無ければ初期値`Top`)。
+    /// The `caption-side` read from the caption's computed style (the initial value `Top` when there is no caption).
     pub caption_side: CaptionSide,
     pub rows: Vec<TableRow>,
-    /// `<colgroup>`/`<col>`由来の列幅ヒント(列インデックス順、`None`は指定なし)。
-    /// `<col>`要素の計算スタイルの`width`をそのまま持つ。実際の列数より多い
-    /// 分は`layout::table`側で切り捨て、少ない分は指定なしとして扱う。
+    /// Column width hints from `<colgroup>`/`<col>` (in column index order, `None` meaning
+    /// unspecified). It holds the `width` from the `<col>` element's computed style as-is.
+    /// Any beyond the real column count are discarded by `layout::table`, and any shortfall counts as unspecified.
     pub column_widths: Vec<Option<LengthPercentage>>,
 }
 
-/// テーブル行が属するセクション。`<thead>`/`<tbody>`/`<tfoot>`は専用の
-/// `display`値を持たない「透明な入れ物」なので、
-/// 入れ物の要素名から判定してここに残す。
+/// The section a table row belongs to. `<thead>`/`<tbody>`/`<tfoot>` have no `display`
+/// value of their own, being "transparent containers", so this is decided from the
+/// container's element name and kept here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TableSection {
     Head,
@@ -175,71 +174,71 @@ pub enum TableSection {
     Foot,
 }
 
-/// `display: table-row`要素(`<tr>`)1行分。
+/// One `display: table-row` element (`<tr>`).
 #[derive(Debug, Clone)]
 pub struct TableRow {
-    /// 元の`display: table-row`要素。CSSの無名ボックス生成規則で作られた行は
-    /// 対応するDOMノードを持たないため`None`。
+    /// The original `display: table-row` element. A row created by the CSS anonymous box
+    /// generation rules has no corresponding DOM node, so it is `None`.
     pub node: Option<NodeId>,
     pub cells: Vec<TableCell>,
-    /// この行が属するセクション。ページ分割層が`<thead>`の行を各ページの
-    /// 先頭に複製するために使う。
+    /// The section this row belongs to. The pagination layer uses it to repeat the
+    /// `<thead>` rows at the top of every page.
     pub section: TableSection,
 }
 
-/// `display: table-cell`要素(`<td>`/`<th>`)1セル分。
+/// One `display: table-cell` element (`<td>`/`<th>`).
 #[derive(Debug, Clone)]
 pub struct TableCell {
-    /// 元の`display: table-cell`要素。無名セルは`None`。
+    /// The original `display: table-cell` element. `None` for an anonymous cell.
     pub node: Option<NodeId>,
-    /// `colspan`属性の値(未指定または不正な値は1)。
+    /// The value of the `colspan` attribute (1 when absent or invalid).
     pub colspan: usize,
-    /// `rowspan`属性の値(未指定または不正な値は1)。`rowspan="0"`(HTML5の
-    /// 「以降の行末まで拡張」特殊値)は非対応、1として扱う。
+    /// The value of the `rowspan` attribute (1 when absent or invalid). `rowspan="0"`
+    /// (HTML5's "extend to the end of the section" special value) is not supported and is treated as 1.
     pub rowspan: usize,
-    /// セル自身の内容(通常のブロック/インラインボックスと同じ構造)。
+    /// The cell's own content (the same structure as an ordinary block/inline box).
     pub content: LayoutBox,
 }
 
-/// 1つのDOMテキストノードに由来する、単一の計算スタイルを持つテキスト区間。
+/// A text run with a single computed style, coming from one DOM text node.
 #[derive(Debug, Clone)]
 pub struct InlineSpan {
-    /// このテキストの元になったDOMテキストノード。`styles`から計算スタイルを
-    /// 引く(`<b>`/`<span style="...">`等の祖先の宣言は、テキストノード自身の
-    /// 計算スタイルに継承・カスケード済みなので、このノードのスタイルを見れば足りる)。
+    /// The DOM text node this text came from. The computed style is looked up from `styles`
+    /// (declarations on ancestors such as `<b>` or `<span style="...">` are already
+    /// inherited and cascaded into the text node's own computed style, so that is all we need).
     pub node: NodeId,
     pub text: String,
-    /// `::first-letter`用に分離された先頭1文字かどうか。`true`の場合、
-    /// `node`の計算スタイルの`first_letter_style`(あれば)で一部プロパティが
-    /// 上書きされる(`layout::inline::flatten_spans`が適用する)。
+    /// Whether this is the first character split off for `::first-letter`. When `true`,
+    /// some properties are overridden by `node`'s computed `first_letter_style` (if any),
+    /// which `layout::inline::flatten_spans` applies.
     pub is_first_letter: bool,
-    /// `<br>`由来の強制改行かどうか。`true`のとき`text`は`"\n"`で、`node`は
-    /// `<br>`要素自身(空行の高さをその計算スタイルから求めるため)。
+    /// Whether this is a forced break from a `<br>`. When `true`, `text` is `"\n"` and
+    /// `node` is the `<br>` element itself (so the empty line's height comes from its computed style).
     pub is_forced_break: bool,
-    /// `display: inline-block`のアトミックボックス。`Some`のとき`text`は
-    /// 空で、このスパンは「テキストではなく1つの箱」を表す。
+    /// An atomic box for `display: inline-block`. When `Some`, `text` is empty and this span
+    /// represents "one box, not text".
     pub atomic: Option<Box<LayoutBox>>,
-    /// このテキストを囲む`<a href>`のhref値。同じリンク配下に多数のランが
-    /// 生成されるため`Rc`で共有する。
+    /// The href of the `<a href>` enclosing this text. Many runs are generated under the
+    /// same link, so it is shared through an `Rc`.
     pub link: Option<Rc<str>>,
-    /// このテキストを囲むインライン要素(`<mark>`/`<span>`等)の
-    /// `background-color`。無ければ透明。
+    /// The `background-color` of the inline element enclosing this text (`<mark>`,
+    /// `<span>` and so on). Transparent when there is none.
     ///
-    /// テキストノードの計算スタイルは親の非継承プロパティ(背景色を含む)まで
-    /// クローンしている(`style::computed::compute_recursive`)ため、
-    /// `styles[&span.node].background_color`を使うとブロックの背景まで
-    /// インライン背景として塗ってしまう。ここでスパン構築時に「IFC内で
-    /// 直近のインライン要素が指定した背景」だけを取り出して持たせる。
+    /// A text node's computed style clones even the parent's non-inherited properties
+    /// (background colour included) in `style::computed::compute_recursive`, so using
+    /// `styles[&span.node].background_color` would paint the block's background as an
+    /// inline background. So at span construction we extract just "the background specified
+    /// by the nearest inline element within the IFC" and carry it here.
     pub background_color: RgbaColor,
 }
 
 impl InlineSpan {
-    /// 通常のテキスト区間(囲むインライン要素の装飾なし)。
+    /// An ordinary text run (with no decoration from an enclosing inline element).
     fn text(node: NodeId, text: String) -> Self {
         Self::text_in_inline_context(node, text, &InlineContext::default())
     }
 
-    /// 通常のテキスト区間(囲むインライン要素から受け継ぐ情報つき)。
+    /// An ordinary text run (carrying information inherited from an enclosing inline element).
     fn text_in_inline_context(node: NodeId, text: String, context: &InlineContext) -> Self {
         Self {
             node,
@@ -252,7 +251,7 @@ impl InlineSpan {
         }
     }
 
-    /// `display: inline-block`のアトミックボックス。
+    /// An atomic box for `display: inline-block`.
     fn atomic(node: NodeId, atomic: LayoutBox) -> Self {
         Self {
             node,
@@ -265,9 +264,9 @@ impl InlineSpan {
         }
     }
 
-    /// `<br>`由来の強制改行。`text`を`"\n"`にしておくことで、
-    /// `white-space: pre`の経路(`layout::inline::layout_pre_content`は
-    /// `'\n'`で行を分割する)が改修なしで強制改行を処理できる。
+    /// A forced break from a `<br>`. Setting `text` to `"\n"` lets the
+    /// `white-space: pre` path handle the forced break unchanged
+    /// (`layout::inline::layout_pre_content` splits lines on `'\n'`).
     fn forced_break(node: NodeId) -> Self {
         Self {
             node,
@@ -281,14 +280,14 @@ impl InlineSpan {
     }
 }
 
-/// インラインフォーマッティングコンテキストを下りながら受け継ぐ情報
-/// (囲んでいるインライン要素に由来し、テキストノードの計算スタイルからは
-/// 復元できないもの)。
+/// Information carried down while descending an inline formatting context
+/// (coming from the enclosing inline elements, and not recoverable from a text node's
+/// computed style).
 #[derive(Debug, Clone)]
 struct InlineContext {
-    /// 直近の`<a href>`のhref。
+    /// The href of the nearest `<a href>`.
     link: Option<Rc<str>>,
-    /// 直近のインライン要素が指定した背景色。
+    /// The background colour specified by the nearest inline element.
     background_color: RgbaColor,
 }
 
@@ -303,13 +302,13 @@ impl Default for InlineContext {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChildKind {
-    /// `display: none`など、ボックスを生成しない。
+    /// Generates no box, as with `display: none`.
     None,
     Block,
     Inline,
-    /// 空白のみのテキストノード。インライン内容の間に挟まっている場合だけ
-    /// 意味を持つ(単語間の空白として畳み込まれる)。ブロックの間や
-    /// インライン内容の前後では捨てる(CSS2.1 9.2.2.1)。
+    /// A whitespace-only text node. It only means something when sandwiched between inline
+    /// content (where it collapses into an inter-word space). Between blocks, or before or
+    /// after inline content, it is discarded (CSS2.1 9.2.2.1).
     Whitespace,
 }
 
@@ -320,11 +319,11 @@ pub fn build_box_tree(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>) ->
     )))
 }
 
-/// `node`単体(とその子孫)から[`LayoutBox`]を構築する。`build_box_tree`が
-/// 文書全体を辿る際の内部処理だが、ストリーミング処理では
-/// 「切り出したトップレベル要素1つ分だけ」の`LayoutBox`を作るために直接使う
-/// (`build_box_tree`のように`dom.document()`の子全部を辿るのではなく、
-/// 特定の`node`だけを対象にする)。
+/// Build a [`LayoutBox`] from `node` alone (and its descendants). This is internal to
+/// `build_box_tree`'s walk of the whole document, but streaming calls it directly to build
+/// a `LayoutBox` for "just the one top-level element that was cut out"
+/// (targeting that specific `node` rather than walking every child of `dom.document()` as
+/// `build_box_tree` does).
 pub(crate) fn build_box_for_element(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -361,8 +360,8 @@ pub(crate) fn build_box_for_element(
         .any(|&c| child_kind(dom, styles, c) == ChildKind::Block);
 
     let content = if has_block_child {
-        // `::before`/`::after`はブロック子を持つ要素では非対応(簡略化)。
-        // 無名ボックス生成規則との組み合わせが複雑になるため見送る。
+        // `::before`/`::after` are unsupported on an element with block children (a
+        // simplification), the combination with the anonymous box rules being complicated.
         let list_item_start = read_list_item_start(dom, node);
         BoxContent::Blocks(build_children_boxes(
             dom,
@@ -384,8 +383,8 @@ pub(crate) fn build_box_for_element(
         }
         push_after_content(styles, node, &mut spans);
         apply_first_letter(node, style, &mut spans);
-        // `Vec`は最初のpushで最小4要素分を確保する。テキスト1つだけの箱
-        // (表のセルなど)が大量にある文書では、この余剰がそのまま積み上がる。
+        // A `Vec` reserves room for at least 4 elements on its first push. In a document with
+        // many boxes holding a single text (table cells, say) that slack simply accumulates.
         spans.shrink_to_fit();
         BoxContent::Inline(spans)
     };
@@ -393,19 +392,19 @@ pub(crate) fn build_box_for_element(
     Some(LayoutBox::for_node(node, content))
 }
 
-/// box tree構築後に呼び、`<img>`要素に対応するボックス(`child_kind`により
-/// ブロック扱いされ、この時点では中身が空の`BoxContent::Inline(vec![])`に
-/// なっている)を実際に[`BoxContent::Image`]へ差し替える。
+/// Called after the box tree is built, this replaces the boxes corresponding to `<img>`
+/// elements (treated as blocks by `child_kind`, and holding an empty
+/// `BoxContent::Inline(vec![])` at this point) with a real [`BoxContent::Image`].
 ///
-/// `image_cache`がフェッチ・デコードを行う(I/Oを伴う)。同じ`src`は
-/// `image_cache`内でメモ化されるため、同一画像が繰り返し参照されても
-/// 実際のフェッチ・デコードは初回のみ。
+/// `image_cache` does the fetching and decoding (which involves I/O). The same `src` is
+/// memoised inside `image_cache`, so even a repeatedly referenced image is fetched and
+/// decoded only the first time.
 pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetCache) {
     if let Some(node) = tree.node {
         if let NodeData::Element { name, .. } = &dom.node(node).data {
             if &*name.local == "img" {
                 tree.content = BoxContent::Image(build_image_box_content(dom, node, image_cache));
-                return; // <img>はvoid element(子を持たない)なので再帰不要。
+                return; // <img> is a void element (it has no children), so no recursion is needed.
             }
         }
     }
@@ -436,9 +435,8 @@ pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetC
                 resolve_images(item, dom, image_cache);
             }
         }
-        // 行に参加するアトミックボックス(インラインの`<img>`・
-        // `display: inline-block`)の中も辿る。辿らないとインライン画像が常に
-        // 「取得失敗」扱いになる。
+        // Descend into the atomic boxes that take part in a line (an inline `<img>` and
+        // `display: inline-block`). Without this, an inline image would always count as a failed fetch.
         BoxContent::Inline(spans) => {
             for span in spans {
                 if let Some(atomic) = span.atomic.as_deref_mut() {
@@ -450,14 +448,14 @@ pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetC
     }
 }
 
-/// `background-image`が指定された要素の、デコード済み画像を`NodeId`キーで
-/// 引けるようにする側マップを構築する。`<img>`の[`resolve_images`]と異なり
-/// box tree(`LayoutBox`)の中身は一切変更しない(背景画像はレイアウトのサイズ
-/// 計算に影響しない、描画専用の情報のため)。DOM木の再走査も不要で、カスケード
-/// 計算済みの`styles`を`background_image.is_some()`でフィルタするだけで済む。
+/// Build a side map letting the decoded image of an element with a `background-image` be
+/// looked up by `NodeId`. Unlike [`resolve_images`] for `<img>`, it changes nothing inside
+/// the box tree (`LayoutBox`), a background image being draw-time-only information that does
+/// not affect layout sizing. It needs no second walk of the DOM tree either: filtering the
+/// already-cascaded `styles` by `background_image.is_some()` is enough.
 ///
-/// フェッチ・デコードに失敗した要素は、その要素だけ背景画像なし扱いにして
-/// マップに含めない(0014と同じフォールバック方針、文書全体は止めない)。
+/// An element whose fetch or decode failed is simply left out of the map and treated as
+/// having no background image (the same fallback policy as 0014, never stopping the whole document).
 pub fn resolve_background_images(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     image_cache: &ImageAssetCache,
@@ -490,11 +488,11 @@ fn build_image_box_content(
     }
 }
 
-/// `list_item_start`は、この子ボックス列の中で`display: list-item`の子を
-/// 数える際の初期値(`<ol start="N">`のHTML属性、未指定は1)。この関数の呼び出し
-/// 単位(=1つのコンテナの直接の子)がそのままカウンタのスコープになる
-/// (入れ子の`<ol>`/`<ul>`はそれぞれ独立した呼び出しになるため、副作用的に
-/// 1から数え直す)。
+/// `list_item_start` is the starting value when counting `display: list-item` children
+/// within this list of child boxes (the HTML `<ol start="N">` attribute; 1 when absent).
+/// The unit of this call (that is, one container's direct children) is exactly the counter's
+/// scope (a nested `<ol>`/`<ul>` becomes its own call, so as a side effect it starts
+/// counting from 1 again).
 fn build_children_boxes(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -526,43 +524,43 @@ fn build_children_boxes(
     result
 }
 
-/// 空白のみのテキストノード(`ChildKind::Whitespace`)をスパン列に足す。
+/// Add a whitespace-only text node (`ChildKind::Whitespace`) to the span list.
 ///
-/// `<span>one</span> <span>two</span>`のように、インライン要素同士の間にある
-/// 空白は単語間の空白として意味を持つ(行組みの段階で1個に畳み込まれる)ため、
-/// 捨てずにスパンとして残す必要がある。一方、直前にインライン内容が無い場合
-/// (ブロックの直後や親の先頭)は、畳み込みが効くならその空白は行頭に来るだけで
-/// 結果に影響しないので足さない。空白だけが並んだ列から無名ボックスが
-/// 作られないことは[`flush_pending_spans`]が保証する。
+/// In `<span>one</span> <span>two</span>` the whitespace between the inline elements means
+/// something as an inter-word space (collapsed to one during line layout), so it must be
+/// kept as a span rather than discarded. Where there is no preceding inline content, on the
+/// other hand (right after a block, or at the start of the parent), the whitespace would
+/// only end up at the start of a line and change nothing once collapsed, so it is not added.
+/// [`flush_pending_spans`] guarantees that a run of nothing but whitespace creates no anonymous box.
 ///
-/// ただし`white-space: pre`では行頭の空白もそのまま残る(インデントとして
-/// 意味を持つ)ため、この間引きをしてはいけない。`<pre>   <b>x</b>y</pre>`の
-/// ように空白のみのテキストノードで始まる場合に効く。
+/// Under `white-space: pre`, though, leading whitespace survives as written (it is
+/// meaningful as indentation), so this thinning must not happen. That matters for content
+/// starting with a whitespace-only text node, as in `<pre>   <b>x</b>y</pre>`.
 fn push_collapsible_whitespace(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
     out: &mut Vec<InlineSpan>,
 ) {
-    // `white-space`は継承プロパティなので、テキストノード自身の計算スタイルに
-    // 親の値が入っている。
+    // `white-space` is inherited, so the parent's value is already in the text node's own
+    // computed style.
     let preserves_leading_whitespace =
         styles.get(&node).map(|s| s.white_space) == Some(WhiteSpace::Pre);
     if out.is_empty() && !preserves_leading_whitespace {
         return;
     }
-    // 元のテキストをそのまま渡す(`white-space: pre`の経路は空白の並びを
-    // そのまま使うため、ここで1個に潰してはいけない)。
+    // Pass the original text through unchanged (the `white-space: pre` path uses the run of
+    // whitespace as written, so it must not be squashed to one here).
     collect_spans(dom, styles, node, out);
 }
 
-/// `node`の計算スタイルが`::first-letter`にマッチしていれば(`first_letter_style`
-/// が`Some`)、`spans`のうち最初の非空白文字を含むspanから先頭1文字を分離し、
-/// `is_first_letter: true`のspanとして直前に挿入する。
+/// If `node`'s computed style matched `::first-letter` (`first_letter_style` is `Some`),
+/// split the first character off the first span in `spans` containing a non-whitespace
+/// character and insert it before that span, as a span with `is_first_letter: true`.
 ///
-/// 既知の簡略化: 先頭の空白・約物のスキップは行わない(単純にテキストの
-/// 最初の1文字を対象にする)。`spans`はホストの直接のテキスト内容のみを見るため、
-/// ネストしたインライン要素の中から始まる内容には適用されない。
+/// A known simplification: leading whitespace and punctuation are not skipped (simply the
+/// first character of the text is used). `spans` covers only the host's direct text content,
+/// so it does not apply to content starting inside a nested inline element.
 fn apply_first_letter(node: NodeId, style: &ComputedStyle, spans: &mut Vec<InlineSpan>) {
     if style.first_letter_style.is_none() {
         return;
@@ -591,12 +589,11 @@ fn apply_first_letter(node: NodeId, style: &ComputedStyle, spans: &mut Vec<Inlin
     );
 }
 
-/// `node`(`b`に対応する要素)が`display: list-item`であれば、カウンタを1つ
-/// 進めた上でマーカーテキストを`b`に反映する。`list-style-position: inside`か
-/// つ`b`の内容が`BoxContent::Inline`の場合は、`::before`と同じ要領で先頭に
-/// `InlineSpan`として埋め込む(この場合`b.marker`は`None`のまま)。それ以外は
-/// `b.marker`にテキストを持たせ、実際の
-/// 配置はレイアウト層(`block.rs`)に委ねる。
+/// If `node` (the element corresponding to `b`) is `display: list-item`, advance the counter
+/// by one and put the marker text on `b`. With `list-style-position: inside` and
+/// `BoxContent::Inline` content on `b`, it is embedded at the front as an `InlineSpan`, the
+/// same way `::before` is (and `b.marker` stays `None`). Otherwise the text goes on
+/// `b.marker` and the actual placement is left to the layout layer (`block.rs`).
 fn apply_list_item_marker(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
@@ -624,8 +621,8 @@ fn apply_list_item_marker(
     b.marker = Some(text);
 }
 
-/// `list-style-type`からマーカーテキストを生成する。`None`はマーカーなし
-/// (`list-style-type: none`)。
+/// Generate the marker text from `list-style-type`. `None` means no marker
+/// (`list-style-type: none`).
 fn format_list_marker(list_style_type: ListStyleType, n: usize) -> Option<String> {
     match list_style_type {
         ListStyleType::None => None,
@@ -645,8 +642,8 @@ fn format_list_marker(list_style_type: ListStyleType, n: usize) -> Option<String
     }
 }
 
-/// `start`属性(`<ol start="N">`)を読む(未指定・0以下・非数値は1として扱う、
-/// `read_colspan`/`read_rowspan`と同じ方針)。
+/// Read the `start` attribute (`<ol start="N">`), treating absent, non-positive and
+/// non-numeric values as 1 (the same policy as `read_colspan`/`read_rowspan`).
 fn read_list_item_start(dom: &Dom, node: NodeId) -> usize {
     let NodeData::Element { attrs, .. } = &dom.node(node).data else {
         return 1;
@@ -659,8 +656,8 @@ fn read_list_item_start(dom: &Dom, node: NodeId) -> usize {
         .unwrap_or(1)
 }
 
-/// `table_node`(`display: table`)の子孫から`table-row`要素と`caption`を集めて
-/// [`TableBox`]を組み立てる。
+/// Collect the `table-row` elements and the `caption` from `table_node`'s
+/// (`display: table`) descendants and assemble a [`TableBox`].
 fn build_table_box(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -686,12 +683,12 @@ fn build_table_box(
     }
 }
 
-/// `<colgroup>`/`<col>`から列幅ヒントを列インデックス順に集める。
+/// Collect the column width hints from `<colgroup>`/`<col>` in column index order.
 ///
-/// `<colgroup>`が`<col>`を子に持てばその`<col>`群を、持たなければ
-/// `<colgroup>`自身を`span`属性の回数だけ列として展開する。テーブル直下の
-/// `<col>`(`<colgroup>`を省略した書き方。html5everは`<colgroup>`を暗黙補完
-/// するが、防御的に直下も見る)も同様に扱う。
+/// A `<colgroup>` with `<col>` children expands to those `<col>`s; without them it expands
+/// to itself repeated as many times as its `span` attribute says. A `<col>` directly under
+/// the table (written without a `<colgroup>`; html5ever inserts an implicit `<colgroup>`,
+/// but we look directly under the table defensively) is handled the same way.
 fn collect_column_widths(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -740,11 +737,11 @@ fn collect_column_widths(
     widths
 }
 
-/// フォームコントロールの表示テキストを生成する。
+/// Generate the display text for a form control.
 ///
-/// `<input>`はvoid要素でテキストノードを持たないため、`value`/`placeholder`
-/// 属性から生成する必要がある。`<select>`は選択中の`<option>`のテキストを
-/// 表示する(`<option>`自身はUAスタイルシートで`display: none`のまま)。
+/// `<input>` is a void element with no text node, so the text has to be generated from its
+/// `value`/`placeholder` attributes. A `<select>` displays the text of the selected
+/// `<option>` (the `<option>` itself stays `display: none` under the UA stylesheet).
 fn push_form_control_content(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -765,21 +762,21 @@ fn push_form_control_content(
         "input" => {
             let input_type = attr("type").unwrap_or_else(|| "text".to_string());
             match input_type.trim().to_ascii_lowercase().as_str() {
-                // チェックボックス・ラジオは枠と塗りだけで表す。
+                // A checkbox or radio is drawn as just a frame and a fill.
                 "checkbox" | "radio" | "hidden" | "file" | "color" | "range" => None,
                 "submit" => Some(attr("value").unwrap_or_else(|| "Submit".to_string())),
                 "reset" => Some(attr("value").unwrap_or_else(|| "Reset".to_string())),
                 _ => attr("value").or_else(|| attr("placeholder")),
             }
         }
-        // `<select>`は`selected`が付いた`<option>`、無ければ最初の`<option>`。
+        // For `<select>`, the `<option>` carrying `selected`, or the first `<option>` if there is none.
         "select" => selected_option_text(dom, node),
         _ => None,
     };
 
     if let Some(text) = text.filter(|t| !t.is_empty()) {
         let mut span = InlineSpan::text(node, text);
-        // 生成テキストは要素自身の計算スタイルで描画する(`::before`と同じ扱い)。
+        // The generated text is drawn with the element's own computed style (handled like `::before`).
         span.background_color = styles
             .get(&node)
             .map(|s| s.background_color)
@@ -789,7 +786,7 @@ fn push_form_control_content(
     }
 }
 
-/// `<select>`の表示テキスト(選択中の`<option>`、無ければ最初の`<option>`)。
+/// The display text of a `<select>` (the selected `<option>`, or the first one if there is none).
 fn selected_option_text(dom: &Dom, select: NodeId) -> Option<String> {
     let mut first: Option<String> = None;
     let mut stack: Vec<NodeId> = dom.children(select).collect();
@@ -808,7 +805,7 @@ fn selected_option_text(dom: &Dom, select: NodeId) -> Option<String> {
                     first = Some(text);
                 }
             }
-            // `<optgroup>`の中の`<option>`も対象にする。
+            // `<option>`s inside an `<optgroup>` count too.
             "optgroup" => {
                 let mut children: Vec<NodeId> = dom.children(node).collect();
                 children.reverse();
@@ -820,7 +817,7 @@ fn selected_option_text(dom: &Dom, select: NodeId) -> Option<String> {
     first
 }
 
-/// `node`以下のテキストノードを連結する(前後の空白は落とす)。
+/// Concatenate the text nodes under `node` (dropping leading and trailing whitespace).
 fn collect_text_content(dom: &Dom, node: NodeId) -> String {
     fn walk(dom: &Dom, node: NodeId, out: &mut String) {
         if let NodeData::Text { contents } = &dom.node(node).data {
@@ -835,8 +832,8 @@ fn collect_text_content(dom: &Dom, node: NodeId) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// `display: inline-block`要素の中身を、
-/// 通常のブロックと同じ規則で組み立てる。
+/// Build the contents of a `display: inline-block` element by the same rules as an ordinary
+/// block.
 fn build_inline_block_box(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -865,8 +862,8 @@ fn build_inline_block_box(
         }
         push_after_content(styles, node, &mut spans);
         apply_first_letter(node, style, &mut spans);
-        // `Vec`は最初のpushで最小4要素分を確保する。テキスト1つだけの箱
-        // (表のセルなど)が大量にある文書では、この余剰がそのまま積み上がる。
+        // A `Vec` reserves room for at least 4 elements on its first push. In a document with
+        // many boxes holding a single text (table cells, say) that slack simply accumulates.
         spans.shrink_to_fit();
         BoxContent::Inline(spans)
     };
@@ -874,8 +871,8 @@ fn build_inline_block_box(
     Some(LayoutBox::for_node(node, content))
 }
 
-/// `node`が`href`を持つ`<a>`要素であれば、その値。
-/// `javascript:`スキームはリンクとして扱わない。
+/// If `node` is an `<a>` element with an `href`, its value.
+/// The `javascript:` scheme is not treated as a link.
 fn link_href(dom: &Dom, node: NodeId) -> Option<Rc<str>> {
     let NodeData::Element { name, attrs, .. } = &dom.node(node).data else {
         return None;
@@ -901,8 +898,8 @@ fn element_local_name(dom: &Dom, node: NodeId) -> Option<String> {
     }
 }
 
-/// `<col span>`/`<colgroup span>`を読む(未指定・0以下・非数値は1、`colspan`と
-/// 同じ寛容さ)。
+/// Read `<col span>`/`<colgroup span>` (absent, non-positive and non-numeric values are 1,
+/// the same leniency as `colspan`).
 fn read_span(dom: &Dom, node: NodeId) -> usize {
     let NodeData::Element { attrs, .. } = &dom.node(node).data else {
         return 1;
@@ -915,17 +912,17 @@ fn read_span(dom: &Dom, node: NodeId) -> usize {
         .unwrap_or(1)
 }
 
-/// flexコンテナ(`node`)の子ごとに1個ずつflexアイテムを構築する。CSS仕様上
-/// flexアイテムは各子要素ごとに独立して生成され、隣接するinline-level要素を
-/// 1つの無名ボックスへまとめる規則(`build_children_boxes`)はflexコンテナの
-/// 子要素には適用されないため、`build_box_for_element`を子要素ごとに直接呼ぶ。
-/// 子要素自身の`display`値(`block`/`table`/入れ子の`flex`等)はそのまま
-/// 尊重され、そのアイテムの中身のレイアウトに使われる(ネスト無制限)。
+/// Build one flex item per child of the flex container (`node`). Per the CSS spec a flex
+/// item is generated independently for each child element, and the rule that wraps adjacent
+/// inline-level elements into one anonymous box (`build_children_boxes`) does not apply to
+/// a flex container's children, so `build_box_for_element` is called directly per child.
+/// A child's own `display` value (`block`, `table`, a nested `flex` and so on) is respected
+/// as-is and used for laying out that item's contents (nesting without limit).
 ///
-/// 要素で包まれていない裸のテキストは、連続する並びをまとめて1個の無名
-/// flexアイテムにする(CSS Flexbox §4)。空白だけの並びからはアイテムを
-/// 作らない。`display: none`の子はボックスを生成しないので、それを挟んだ
-/// 前後のテキストは連続しているものとして1個にまとまる。
+/// Bare text not wrapped in an element has its consecutive runs gathered into a single
+/// anonymous flex item (CSS Flexbox section 4). A run of nothing but whitespace produces no
+/// item. A `display: none` child generates no box, so text either side of one counts as
+/// contiguous and gathers into a single item.
 fn build_flex_box(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: NodeId) -> FlexBox {
     let mut items = Vec::new();
     let mut pending_spans: Vec<InlineSpan> = Vec::new();
@@ -936,8 +933,8 @@ fn build_flex_box(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: 
                 if styles.get(&child).map(|s| s.display) == Some(Display::None) {
                     continue;
                 }
-                // 要素は必ず独立したアイテムになるので、ここまでに溜めた
-                // テキストの並びを先に無名アイテムとして確定させる。
+                // An element always becomes its own item, so the text accumulated so far is
+                // settled as an anonymous item first.
                 flush_pending_spans(&mut pending_spans, &mut items);
                 if let Some(item) = build_box_for_element(dom, styles, child) {
                     items.push(item);
@@ -952,11 +949,11 @@ fn build_flex_box(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: 
     FlexBox { items }
 }
 
-/// `node`の子を辿り、`table-row`を見つけたら行として収集し、`table-caption`を
-/// 見つけたら(最初の1つだけ)`out_caption`に記録する。`thead`/`tbody`/`tfoot`
-/// のような透過的な入れ物(`table-row`/`table-caption`でも`table`でもない要素)は
-/// 素通りして再帰する。入れ子の`table`はそれ自体が別のテーブルなので
-/// (その中の行は内側のテーブルに属する)ここでは再帰しない。
+/// Walk `node`'s children, collecting each `table-row` as a row and recording the first
+/// `table-caption` found in `out_caption`. A transparent container such as
+/// `thead`/`tbody`/`tfoot` (an element that is neither `table-row`/`table-caption` nor
+/// `table`) is passed through and recursed into. A nested `table` is a separate table in
+/// itself (its rows belong to the inner table), so it is not recursed into here.
 fn collect_table_rows(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -965,9 +962,9 @@ fn collect_table_rows(
     out_caption: &mut Option<NodeId>,
 ) {
     collect_table_rows_in_section(dom, styles, node, TableSection::Body, out, out_caption);
-    // `<tfoot>`はHTML4では`<tbody>`より前に書く決まりだった。セクションが
-    // 分かるようになったので、ソース順に関わらず末尾へ寄せる。安定
-    // ソートなのでセクション内の順序は保たれる。
+    // HTML4 required `<tfoot>` to be written before `<tbody>`. Now that the section is
+    // known, it is moved to the end regardless of source order. The sort is stable, so the
+    // order within a section is preserved.
     out.sort_by_key(|row| match row.section {
         TableSection::Head => 0,
         TableSection::Body => 1,
@@ -975,18 +972,18 @@ fn collect_table_rows(
     });
 }
 
-/// テーブル(またはその中の`<thead>`等の入れ物)の子が、テーブル構造の中で
-/// 何として扱われるか。
+/// What a child of a table (or of a container such as `<thead>` inside it) counts as within
+/// the table structure.
 enum TableChild {
     Row,
     Caption,
-    /// `<thead>`/`<tbody>`/`<tfoot>`。専用の`display`値を持たない透明な入れ物
-    /// なので、中の行をそのセクションとして集める。
+    /// `<thead>`/`<tbody>`/`<tfoot>`. Transparent containers with no `display` value of their
+    /// own, so the rows inside are collected as that section.
     Section(TableSection),
-    /// 行にもセクションにもならない子。無名の行・セルでくるむ対象
-    /// (CSS2.1 17.2.1 規則2.1)。
+    /// A child that is neither a row nor a section. Something to wrap in an anonymous row or
+    /// cell (CSS2.1 17.2.1 rule 2.1).
     Content,
-    /// ボックスを生成しない(`display: none`・列指定・コメント等)。
+    /// Generates no box (`display: none`, a column specification, a comment and so on).
     Ignored,
 }
 
@@ -996,8 +993,8 @@ fn table_child_kind(
     node: NodeId,
 ) -> TableChild {
     if !matches!(dom.node(node).data, NodeData::Element { .. }) {
-        // テキストノードは内容として扱う(空白のみのものは、その並びが
-        // 空白しか無ければ`flush_anonymous_row`が捨てる)。コメント等は無視。
+        // A text node counts as content (a whitespace-only one is discarded by
+        // `flush_anonymous_row` if its whole run is whitespace). Comments and the like are ignored.
         return match dom.node(node).data {
             NodeData::Text { .. } => TableChild::Content,
             _ => TableChild::Ignored,
@@ -1012,15 +1009,15 @@ fn table_child_kind(
             Some("thead") => TableChild::Section(TableSection::Head),
             Some("tfoot") => TableChild::Section(TableSection::Foot),
             Some("tbody") => TableChild::Section(TableSection::Body),
-            // 列を表すボックスは描画されず、無名ボックスも生成しない
-            // (幅のヒントは`collect_column_widths`が別途読む)。
+            // A box representing a column is never drawn and generates no anonymous box
+            // (the width hints are read separately by `collect_column_widths`).
             Some("colgroup") | Some("col") => TableChild::Ignored,
             _ => TableChild::Content,
         },
     }
 }
 
-/// [`collect_table_rows`]の本体。`section`は「今いる入れ物」が示すセクション。
+/// The body of [`collect_table_rows`]. `section` is the section indicated by "the container we are currently in".
 fn collect_table_rows_in_section(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1029,7 +1026,7 @@ fn collect_table_rows_in_section(
     out: &mut Vec<TableRow>,
     out_caption: &mut Option<NodeId>,
 ) {
-    // 行にならない子が連続する区間。区切りに達したところで無名の行にまとめる。
+    // The run of consecutive children that are not rows. On reaching a boundary they are gathered into an anonymous row.
     let mut pending: Vec<NodeId> = Vec::new();
 
     for child in dom.children(node) {
@@ -1056,9 +1053,9 @@ fn collect_table_rows_in_section(
     flush_anonymous_row(dom, styles, &mut pending, section, out);
 }
 
-/// 溜まっている「行にならない子」を1つの無名`table-row`にまとめて`out`へ積む
-/// (CSS2.1 17.2.1 規則2.1)。空白のみの並びは行を作らずに捨てる(規則1の
-/// 「無意味なボックスを取り除く」に相当)。
+/// Gather the accumulated "children that are not rows" into one anonymous `table-row` and
+/// push it onto `out` (CSS2.1 17.2.1 rule 2.1). A run of nothing but whitespace is discarded
+/// without creating a row (the equivalent of rule 1's "remove irrelevant boxes").
 fn flush_anonymous_row(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1087,8 +1084,8 @@ fn flush_anonymous_row(
     });
 }
 
-/// 空白のみのテキストノードか。テーブル構造の隙間(行やセルの間)にある
-/// 空白は、ボックスを生成しない。
+/// Whether this is a whitespace-only text node. Whitespace in the gaps of a table structure
+/// (between rows or cells) generates no box.
 fn is_ignorable_whitespace(dom: &Dom, node: NodeId) -> bool {
     match &dom.node(node).data {
         NodeData::Text { contents } => white_space::is_collapsible_only(contents),
@@ -1096,9 +1093,9 @@ fn is_ignorable_whitespace(dom: &Dom, node: NodeId) -> bool {
     }
 }
 
-/// 行の子(`children`)からセル列を作る。`display: table-cell`はそのまま
-/// セルになり、そうでない子は連続するかたまりごとに無名のセルでくるむ
-/// (CSS2.1 17.2.1 規則2.2)。
+/// Build the cell list from a row's children (`children`). A `display: table-cell` becomes a
+/// cell as-is, and any other child is wrapped, run by consecutive run, in an anonymous cell
+/// (CSS2.1 17.2.1 rule 2.2).
 fn build_row_cells(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1130,7 +1127,7 @@ fn build_row_cells(
     cells
 }
 
-/// 要素以外(コメント等)や列の指定はボックスを生成しない。
+/// Anything that is not an element (a comment and so on) and any column specification generates no box.
 fn generates_a_box(dom: &Dom, node: NodeId) -> bool {
     match &dom.node(node).data {
         NodeData::Text { .. } => true,
@@ -1142,8 +1139,8 @@ fn generates_a_box(dom: &Dom, node: NodeId) -> bool {
     }
 }
 
-/// 溜まっている「セルにならない子」を1つの無名`table-cell`にまとめる。
-/// 空白のみの並びはセルを作らずに捨てる。
+/// Gather the accumulated "children that are not cells" into one anonymous `table-cell`.
+/// A run of nothing but whitespace is discarded without creating a cell.
 fn flush_anonymous_cell(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1184,7 +1181,7 @@ fn build_table_row(
     }
 }
 
-/// `colspan`属性を読む(未指定・0以下・非数値は1として扱う)。
+/// Read the `colspan` attribute (absent, non-positive and non-numeric values are treated as 1).
 fn read_colspan(dom: &Dom, node: NodeId) -> usize {
     let NodeData::Element { attrs, .. } = &dom.node(node).data else {
         return 1;
@@ -1197,8 +1194,8 @@ fn read_colspan(dom: &Dom, node: NodeId) -> usize {
         .unwrap_or(1)
 }
 
-/// `rowspan`属性を読む(未指定・0以下・非数値は1として扱う。`rowspan="0"`の
-/// 特殊値も非対応で1扱い、`read_colspan`と同じ方針)。
+/// Read the `rowspan` attribute (absent, non-positive and non-numeric values are treated as 1;
+/// the special value `rowspan="0"` is also unsupported and treated as 1, the same policy as `read_colspan`).
 fn read_rowspan(dom: &Dom, node: NodeId) -> usize {
     let NodeData::Element { attrs, .. } = &dom.node(node).data else {
         return 1;
@@ -1212,9 +1209,9 @@ fn read_rowspan(dom: &Dom, node: NodeId) -> usize {
 }
 
 fn flush_pending_spans(pending: &mut Vec<InlineSpan>, result: &mut Vec<LayoutBox>) {
-    // 空白のみのテキストからは無名ブロックを作らない(CSS2.1 9.2.2.1)。
-    // ただしアトミックボックス(インラインの`<img>`・`display: inline-block`)は
-    // `text`が空でも意味のある内容なので、1つでもあれば無名ブロックを作る
+    // Whitespace-only text creates no anonymous block (CSS2.1 9.2.2.1).
+    // An atomic box (an inline `<img>` or `display: inline-block`) is meaningful content even
+    // with an empty `text`, though, so one alone is enough to create an anonymous block
     let has_meaningful_content = pending
         .iter()
         .any(|span| span.atomic.is_some() || !white_space::is_collapsible_only(&span.text));
@@ -1234,8 +1231,8 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
                 return ChildKind::None;
             }
             match display {
-                // `inline-block`は親の行に参加する(中身は
-                // ブロックとしてレイアウトされる)。
+                // An `inline-block` takes part in the parent's line (its contents are laid
+                // out as a block).
                 Some(Display::InlineBlock) => ChildKind::Inline,
                 Some(Display::Block)
                 | Some(Display::Table)
@@ -1243,10 +1240,10 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
                 | Some(Display::Flex)
                 | Some(Display::Grid) => ChildKind::Block,
                 Some(Display::Inline) => ChildKind::Inline,
-                // table-row/table-cell/table-captionは`build_table_box`が専用に
-                // 探索するため、通常のブロック/インライン走査では(不正な
-                // マークアップ等でテーブル文脈の外に出現しない限り)出現しない。
-                // 防御的に無視する。
+                // table-row/table-cell/table-caption are searched for specially by
+                // `build_table_box`, so they do not appear in the ordinary block/inline walk
+                // (unless invalid markup puts them outside a table context).
+                // They are ignored defensively.
                 Some(Display::TableRow)
                 | Some(Display::TableCell)
                 | Some(Display::TableCaption) => ChildKind::None,
@@ -1254,8 +1251,8 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
             }
         }
         NodeData::Text { contents } => {
-            // `&nbsp;`だけのテキストノードは「空白のみ」ではない(畳み込まれない
-            // 内容を持つ)ので、`str::trim`ではなくCSSの分類で判定する。
+            // A text node of nothing but `&nbsp;` is not "whitespace only" (it has
+            // non-collapsing content), so the CSS classification decides, not `str::trim`.
             if white_space::is_collapsible_only(contents) {
                 ChildKind::Whitespace
             } else {
@@ -1266,11 +1263,11 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
     }
 }
 
-/// インライン要素の子孫を再帰的に辿り、テキストノードごとに[`InlineSpan`]を積む。
-/// テキストノード自身の計算スタイルに、祖先のインライン要素(`<b>`/`<span>`等)の
-/// カスケード・継承結果が反映済みのため、ここではノードIDを保持するだけでよい。
-/// 各インライン要素の`::before`/`::after`生成コンテンツも、対応する子孫の
-/// 前後にスパンとして挿入する。
+/// Walk an inline element's descendants recursively and push an [`InlineSpan`] per text node.
+/// The cascade and inheritance from ancestor inline elements (`<b>`, `<span>` and so on) are
+/// already reflected in the text node's own computed style, so only the node ID needs keeping here.
+/// Each inline element's `::before`/`::after` generated content is also inserted as spans
+/// before and after the corresponding descendants.
 fn collect_spans(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1280,8 +1277,8 @@ fn collect_spans(
     collect_spans_in_context(dom, styles, node, &InlineContext::default(), out)
 }
 
-/// [`collect_spans`]の本体。`context`は「このノードを囲むインライン要素から
-/// 受け継ぐ情報」(IFCの外側=ブロック側の指定は含まない)。
+/// The body of [`collect_spans`]. `context` is "what is inherited from the inline elements
+/// enclosing this node" (settings from outside the IFC, on the block side, are not included).
 fn collect_spans_in_context(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1296,23 +1293,23 @@ fn collect_spans_in_context(
             context,
         )),
         NodeData::Element { name, .. } => {
-            // インライン文脈の子孫にも`display: none`を効かせる。`child_kind`は
-            // ブロック/インラインの振り分け時にしか呼ばれないため、ここで見ないと
-            // 「インライン要素の中にある非表示要素」(例:
-            // `<p>a <select><option>x</option></select> b</p>`)の子孫テキストが
-            // 本文へ漏れる(UAスタイルシートによる非表示化の前提)。
+            // Make `display: none` take effect on inline-context descendants too.
+            // `child_kind` is only called when sorting into block and inline, so without
+            // checking here the descendant text of a hidden element inside an inline element
+            // (`<p>a <select><option>x</option></select> b</p>`, say) would leak into the
+            // body (the premise of the UA stylesheet's hiding).
             if styles.get(&node).map(|s| s.display) == Some(Display::None) {
                 return;
             }
-            // `<br>`は子を持たない強制改行マーカー。
+            // `<br>` is a forced-break marker with no children.
             if &*name.local == "br" {
                 out.push(InlineSpan::forced_break(node));
                 return;
             }
-            // `<wbr>`は子を持たない「ここで改行してよい」マーカー
-            // (HTML仕様: line break opportunity)。ZWSPを1つ置くだけで、幅ゼロの
-            // 改行機会という同じ意味になる(`layout::white_space`が改行機会と
-            // して扱う)。ブラウザの実装も同様。
+            // `<wbr>` is a childless "a break is allowed here" marker (a line break
+            // opportunity, in HTML spec terms). Placing one ZWSP gives exactly that meaning:
+            // a zero-width break opportunity (`layout::white_space` treats it as one).
+            // Browsers implement it the same way.
             if &*name.local == "wbr" {
                 out.push(InlineSpan::text_in_inline_context(
                     node,
@@ -1321,8 +1318,8 @@ fn collect_spans_in_context(
                 ));
                 return;
             }
-            // インラインの`<img>`(置換要素)も1つの箱として行に参加する。
-            // 中身は`resolve_images`が後から`BoxContent::Image`へ差し替える。
+            // An inline `<img>` (a replaced element) also takes part in the line as one box.
+            // Its contents are swapped for `BoxContent::Image` later by `resolve_images`.
             if &*name.local == "img" {
                 out.push(InlineSpan::atomic(
                     node,
@@ -1330,8 +1327,8 @@ fn collect_spans_in_context(
                 ));
                 return;
             }
-            // `display: inline-block`は1つの箱として行に参加する。中身は
-            // 通常のブロックと同じ規則で構築する。
+            // `display: inline-block` takes part in the line as one box. Its contents are
+            // built by the same rules as an ordinary block.
             if styles.get(&node).map(|s| s.display) == Some(Display::InlineBlock) {
                 if let Some(mut atomic) = build_inline_block_box(dom, styles, node) {
                     atomic.marker = None;
@@ -1339,9 +1336,9 @@ fn collect_spans_in_context(
                 }
                 return;
             }
-            // このインライン要素自身が背景色を持つなら、以降の子孫はその背景で
-            // 塗られる(入れ子の場合は内側が勝つ、CSSの背景の重なりの簡略化)。
-            // `<a href>`のリンクも同様に、以降の子孫へ受け継がれる。
+            // If this inline element has a background colour of its own, the descendants that
+            // follow are painted with it (when nested, the inner one wins; a simplification
+            // of CSS background layering). An `<a href>` link is likewise carried down to the descendants.
             let mut context = context.clone();
             if let Some(background) = styles
                 .get(&node)
@@ -1363,8 +1360,8 @@ fn collect_spans_in_context(
     }
 }
 
-/// `node`に`::before`の生成コンテンツがあれば、その計算スタイルを引くための
-/// ノードID(`node`自身)と共にスパンを積む。
+/// If `node` has `::before` generated content, push its spans along with the node ID used to
+/// look up the computed style (`node` itself).
 fn push_before_content(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
@@ -1378,8 +1375,8 @@ fn push_before_content(
     }
 }
 
-/// `node`に`::after`の生成コンテンツがあれば、その計算スタイルを引くための
-/// ノードID(`node`自身)と共にスパンを積む。
+/// If `node` has `::after` generated content, push its spans along with the node ID used to
+/// look up the computed style (`node` itself).
 fn push_after_content(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
@@ -1433,8 +1430,8 @@ mod tests {
 
     #[test]
     fn an_inline_img_becomes_an_atomic_span_inside_the_text() {
-        // `<img>`の既定displayはinlineなので、テキストと同じ
-        // インラインボックスにアトミックボックスとして載る。
+        // The default display of `<img>` is inline, so it sits in the same inline box as the
+        // text, as an atomic box.
         let dom = html::parse(br#"<p>before <img src="a.png"> after</p>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1451,8 +1448,8 @@ mod tests {
 
     #[test]
     fn a_lone_inline_img_between_blocks_is_not_dropped() {
-        // 回帰テスト: `flush_pending_spans`が「テキストが空白のみ」で無名ブロックを
-        // 捨てていたため、`<p>`兄弟の間の裸の`<img>`が消えていた。
+        // Regression test: `flush_pending_spans` used to discard the anonymous block when
+        // "the text is whitespace only", losing a bare `<img>` between `<p>` siblings.
         let dom = html::parse(br#"<p>a</p><img src="x.png"><p>b</p>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1469,8 +1466,8 @@ mod tests {
 
     #[test]
     fn a_block_img_is_still_a_block_replaced_element() {
-        // `display: block`を明示した`<img>`は従来どおりブロック置換要素
-        // (アトミックスパンにはならない)。
+        // An `<img>` with an explicit `display: block` is still a block replaced element
+        // (it does not become an atomic span).
         let dom = html::parse(br#"<div><img src="a.png" style="display: block;"></div>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1500,13 +1497,13 @@ mod tests {
         assert_eq!(spans[0].text, "before ");
         assert_eq!(spans[1].text, "bold");
         assert_eq!(spans[2].text, " after");
-        // 太字テキストのスパンは<b>の子テキストノード由来であり、<p>直下のテキストとは
-        // 別のNodeIdを持つ(=別の計算スタイルを引ける)。
+        // The bold text's span comes from the child text node of <b> and has a different
+        // NodeId from the text directly under <p> (so it looks up a different computed style).
         assert_ne!(spans[0].node, spans[1].node);
         assert_eq!(dom.children(b).next(), Some(spans[1].node));
     }
 
-    /// `<p>`(最初のもの)のスパン列のテキストを連結して返す。
+    /// Concatenate and return the text of the (first) `<p>`'s span list.
     fn first_p_text(html_src: &[u8]) -> String {
         let dom = html::parse(html_src);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
@@ -1522,8 +1519,8 @@ mod tests {
 
     #[test]
     fn whitespace_between_two_inline_elements_is_kept() {
-        // 回帰テスト(issue #3): 空白のみのテキストノードを一律で捨てていたため、
-        // インライン要素同士の間の単語間空白が消えて`onetwo`になっていた。
+        // Regression test (issue #3): whitespace-only text nodes were discarded across the
+        // board, so the inter-word space between inline elements vanished, giving `onetwo`.
         assert_eq!(
             first_p_text(br#"<p><span>one</span> <span>two</span></p>"#),
             "one two"
@@ -1532,7 +1529,7 @@ mod tests {
 
     #[test]
     fn whitespace_between_inline_elements_is_kept_across_a_whole_run() {
-        // 3つ以上並んだ場合も、間の空白がすべて残る。
+        // With three or more in a row, every space between them survives.
         assert_eq!(
             first_p_text(br#"<p><b>one</b> <i>two</i> <span>three</span></p>"#),
             "one two three"
@@ -1541,8 +1538,8 @@ mod tests {
 
     #[test]
     fn a_newline_between_two_inline_elements_is_kept() {
-        // 整形されたマークアップでよくある改行も、単語間の空白として残る
-        // (1個の空白へ畳み込むのは行組み側`layout::inline`の仕事)。
+        // The newlines common in formatted markup also survive as inter-word spaces
+        // (collapsing them to one is the line layout's job, in `layout::inline`).
         assert_eq!(
             first_p_text(b"<p><span>one</span>\n  <span>two</span></p>"),
             "one\n  two"
@@ -1551,8 +1548,8 @@ mod tests {
 
     #[test]
     fn a_non_breaking_space_between_two_inline_elements_is_kept() {
-        // `&nbsp;`は`char::is_whitespace`が真になるため「空白のみのテキスト
-        // ノード」として一緒に捨てられていた。
+        // `&nbsp;` makes `char::is_whitespace` true, so it used to be discarded along with
+        // the "whitespace-only text nodes".
         assert_eq!(
             first_p_text("<p><span>one</span>\u{a0}<span>two</span></p>".as_bytes()),
             "one\u{a0}two"
@@ -1561,9 +1558,9 @@ mod tests {
 
     #[test]
     fn whitespace_before_the_first_inline_child_creates_no_span() {
-        // 行頭に来るだけで結果に影響しない空白はスパンを作らない
-        // (整形されたマークアップでスパンが無駄に増えないように)。末尾側は
-        // 行組みが無視するので残っていてよい(`white-space: pre`では意味を持つ)。
+        // Whitespace that only ends up at the start of a line, changing nothing, creates no
+        // span (so formatted markup does not pile up pointless spans). At the end it may
+        // remain, line layout ignoring it (and it means something under `white-space: pre`).
         let dom = html::parse(b"<p>\n  <span>one</span>\n</p>");
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1580,9 +1577,9 @@ mod tests {
 
     #[test]
     fn leading_whitespace_is_kept_when_white_space_preserves_it() {
-        // `white-space: pre`では行頭の空白もインデントとして意味を持つので、
-        // 空白のみのテキストノードで始まっていても捨ててはいけない
-        // (捨てていた頃は`<pre>   <b>x</b>y</pre>`が`xy`になっていた)。
+        // Under `white-space: pre`, leading whitespace means something as indentation, so it
+        // must not be discarded even when the content starts with a whitespace-only text node
+        // (when it was discarded, `<pre>   <b>x</b>y</pre>` came out as `xy`).
         let dom = html::parse(b"<pre>   <b>x</b>y</pre>");
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1597,8 +1594,8 @@ mod tests {
 
     #[test]
     fn wbr_becomes_a_zero_width_space() {
-        // `<wbr>`は「ここで改行してよい」だけを表す要素。ZWSPを1つ置いて
-        // `layout::white_space`の改行機会の規則に載せる。
+        // `<wbr>` expresses only "a break is allowed here". Placing one ZWSP puts it on the
+        // break opportunity rules of `layout::white_space`.
         let dom = html::parse(br#"<p>aaa<wbr>bbb</p>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1609,13 +1606,13 @@ mod tests {
 
         let text: String = spans.iter().map(|span| span.text.as_str()).collect();
         assert_eq!(text, "aaa\u{200b}bbb");
-        // `<br>`とは違い強制改行ではない(改行「機会」を足すだけ)。
+        // Unlike `<br>` it is not a forced break (it only adds a break *opportunity*).
         assert!(spans.iter().all(|span| !span.is_forced_break));
     }
 
     #[test]
     fn whitespace_between_block_siblings_creates_no_anonymous_box() {
-        // ブロックの間の空白は従来どおりボックスを生成しない(CSS2.1 9.2.2.1)。
+        // Whitespace between blocks still generates no box, as before (CSS2.1 9.2.2.1).
         let dom = html::parse(b"<div>\n  <p>a</p>\n  <p>b</p>\n</div>");
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
         let tree = build_box_tree(&dom, &styles);
@@ -1655,9 +1652,9 @@ mod tests {
 
     #[test]
     fn before_and_after_content_are_prepended_and_appended_as_spans() {
-        // <span>はインライン要素なので、単独では自分自身のLayoutBoxを持たず
-        // 祖先のブロックコンテナ(ここでは<body>)の平坦化されたスパン列に
-        // 織り込まれる。それでも::before/::afterは正しく前後に挿入されるはず。
+        // <span> is an inline element, so on its own it has no LayoutBox and is woven into
+        // the flattened span list of an ancestor block container (here <body>).
+        // ::before/::after should still be inserted correctly either side of it.
         let dom = html::parse(br#"<span class="badge">Text</span>"#);
         let ua = user_agent_stylesheet();
         let author = crate::style::parse_stylesheet(
@@ -1673,8 +1670,8 @@ mod tests {
         assert_eq!(spans[0].text, "[");
         assert_eq!(spans[1].text, "Text");
         assert_eq!(spans[2].text, "]");
-        // 生成コンテンツのスパンはホスト要素自身のノードIDを持つ
-        // (=ホストの計算スタイルをそのまま流用する)。
+        // A generated-content span carries the host element's own node ID
+        // (that is, it reuses the host's computed style).
         assert_eq!(spans[0].node, span);
         assert_eq!(spans[2].node, span);
     }
@@ -1709,8 +1706,8 @@ mod tests {
 
     #[test]
     fn stray_table_cells_get_an_anonymous_row() {
-        // CSS2.1 17.2.1 規則2.1: `table`直下の連続する`table-cell`は1つの
-        // 無名`table-row`にまとまる。
+        // CSS2.1 17.2.1 rule 2.1: consecutive `table-cell`s directly under a `table` gather
+        // into one anonymous `table-row`.
         let dom = html::parse(
             br#"<div style="display: table">
                 <div style="display: table-cell">alpha</div>
@@ -1738,8 +1735,8 @@ mod tests {
 
     #[test]
     fn non_cell_children_get_an_anonymous_cell() {
-        // CSS2.1 17.2.1 規則2.2: セルでない子は、連続するかたまりごとに
-        // 1つの無名`table-cell`でくるまれる。
+        // CSS2.1 17.2.1 rule 2.2: children that are not cells are wrapped, run by consecutive
+        // run, in one anonymous `table-cell`.
         let dom = html::parse(
             br#"<div style="display: table">
                 <div style="display: table-row">
@@ -1948,8 +1945,8 @@ mod tests {
 
     #[test]
     fn nested_table_rows_belong_to_the_inner_table_only() {
-        // 入れ子のtableの<tr>は、内側のtableに属し、外側のtableの行としては
-        // 収集されないはず。
+        // A nested table's <tr> belongs to the inner table and should not be collected as a
+        // row of the outer table.
         let dom = html::parse(
             br#"<table id="outer"><tr><td>
                 <table id="inner"><tr><td>nested</td></tr></table>
@@ -1970,8 +1967,8 @@ mod tests {
             "outer table should have exactly one row"
         );
         assert_eq!(outer_table.rows[0].cells.len(), 1);
-        // 外側の唯一のセルの中身はブロックコンテナ(内側のtableを含む)であり、
-        // 内側のtableの行が紛れ込んでいないはず。
+        // The outer table's single cell holds a block container (containing the inner table),
+        // and the inner table's rows should not have slipped in.
         let BoxContent::Blocks(cell_children) = &outer_table.rows[0].cells[0].content.content
         else {
             panic!("expected the outer cell to contain a block (the nested table)")
@@ -2010,9 +2007,9 @@ mod tests {
 
     #[test]
     fn resolve_background_images_decodes_only_nodes_with_background_image_set() {
-        // `resolve_background_images`はDOM木の再走査をせず、カスケード
-        // 計算済みの`styles`を`background_image.is_some()`で
-        // フィルタするだけで側マップを構築できるはず。
+        // `resolve_background_images` should build the side map without walking the DOM tree
+        // again, just by filtering the already-cascaded `styles` on
+        // `background_image.is_some()`.
         let dom = html::parse(br#"<div><p>text</p></div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         let p = find(&dom, div, "p").expect("p not found");
@@ -2089,13 +2086,13 @@ mod tests {
             find_box(&tree, lis[1]).unwrap().marker.as_deref(),
             Some("2.")
         );
-        // 3つ目の`li`はブロック子(入れ子の`ol`)を持つため、自身は
-        // マーカーだけを持つ(内容は`BoxContent::Blocks`)。
+        // The third `li` has a block child (the nested `ol`), so it carries only the marker
+        // itself (its content is `BoxContent::Blocks`).
         assert_eq!(
             find_box(&tree, lis[2]).unwrap().marker.as_deref(),
             Some("3.")
         );
-        // 入れ子の`ol`は独立したカウンタスコープを持つため1から数え直す。
+        // The nested `ol` has its own counter scope and counts from 1 again.
         assert_eq!(
             find_box(&tree, lis[3]).unwrap().marker.as_deref(),
             Some("1.")
@@ -2135,7 +2132,7 @@ mod tests {
         let mut lis = Vec::new();
         find_all(&dom, dom.document(), "li", &mut lis);
         assert_eq!(find_box(&tree, lis[0]).unwrap().marker, None);
-        // `none`の項目もカウンタは1つ消費する(実際のブラウザの挙動に合わせる)。
+        // A `none` item still consumes one counter step (matching what browsers really do).
         assert_eq!(
             find_box(&tree, lis[1]).unwrap().marker.as_deref(),
             Some("2.")
@@ -2151,7 +2148,7 @@ mod tests {
 
         let li = find(&dom, dom.document(), "li").expect("li not found");
         let li_box = find_box(&tree, li).expect("li box not found");
-        // `inside`はspansへ埋め込むため、`marker`フィールド自体は`None`のまま。
+        // `inside` embeds into the spans, so the `marker` field itself stays `None`.
         assert_eq!(li_box.marker, None);
         let BoxContent::Inline(spans) = &li_box.content else {
             panic!("expected inline content");
@@ -2235,11 +2232,11 @@ mod tests {
         assert_eq!(spans.len(), 2, "first-letter span + remainder span");
         assert_eq!(spans[0].text, "H");
         assert!(spans[0].is_first_letter);
-        // 分割された先頭文字スパンは、::first-letterスタイルを引くためホスト要素(p)自身のノードIDを持つ。
+        // The split first-character span carries the host element's (p's) own node ID, so it can look up the ::first-letter style.
         assert_eq!(spans[0].node, p);
         assert_eq!(spans[1].text, "ello world");
         assert!(!spans[1].is_first_letter);
-        // 残り部分は元のテキストノードのIDのまま(分割前と変わらない)。
+        // The remainder keeps the original text node's ID (unchanged by the split).
         assert_eq!(spans[1].node, text_node);
     }
 
@@ -2271,8 +2268,8 @@ mod tests {
 
     #[test]
     fn bare_text_in_a_flex_container_becomes_an_anonymous_item() {
-        // 回帰テスト: 以前は要素で包まれていないテキストを捨てていたため、
-        // `<div class="seal">サンプル</div>`のような中身が消えていた。
+        // Regression test: text not wrapped in an element used to be discarded, losing the
+        // contents of something like `<div class="seal">sample</div>`.
         let items = flex_items(r#"<div class="f">bare text</div>"#, ".f { display: flex; }");
 
         assert_eq!(items.len(), 1, "expected one anonymous flex item");
@@ -2293,8 +2290,8 @@ mod tests {
 
     #[test]
     fn a_text_run_next_to_an_element_becomes_a_separate_anonymous_item() {
-        // 要素は必ず独立したアイテムになるので、その前後のテキストは
-        // 別々の無名アイテムへ分かれる。
+        // An element always becomes its own item, so the text either side of it splits into
+        // separate anonymous items.
         let items = flex_items(
             r#"<div class="f">left<p>mid</p>right</div>"#,
             ".f { display: flex; }",
@@ -2308,8 +2305,8 @@ mod tests {
 
     #[test]
     fn contiguous_text_runs_merge_into_one_anonymous_item() {
-        // `display: none`の子はボックスを作らないので、それを挟んだ前後の
-        // テキストは連続しているものとして1つのアイテムにまとまる。
+        // A `display: none` child creates no box, so text either side of one counts as
+        // contiguous and gathers into a single item.
         let items = flex_items(
             r#"<div class="f">before<span class="hide">gone</span>after</div>"#,
             ".f { display: flex; } .hide { display: none; }",
@@ -2322,7 +2319,7 @@ mod tests {
 
     #[test]
     fn bare_text_in_a_grid_container_becomes_an_anonymous_item() {
-        // gridも`build_flex_box`でアイテムを集めるので同じ規則が効く。
+        // grid collects its items with `build_flex_box` too, so the same rules apply.
         let dom = html::parse(r#"<div class="g">cellA<p>cellB</p></div>"#.as_bytes());
         let styles = compute_styles(
             &dom,
@@ -2353,10 +2350,10 @@ mod tests {
         assert_eq!(spans[1].text, "本語のテスト");
     }
 
-    /// 高さのメモはcontent幅とcontaining widthの組で引く。中身のパーセンテージは
-    /// containing widthを基準に解決されるので、content幅が同じでも取り違えては
-    /// いけない(ネストしたflex/gridでは、同じアイテムが違うcontaining widthで
-    /// 何度も測られる)。
+    /// The height memo is keyed on the pair of content width and containing width.
+    /// Percentages inside resolve against the containing width, so the same content width
+    /// must not be confused across different containing widths (in a nested flex/grid the
+    /// same item is measured many times at different containing widths).
     #[test]
     fn the_height_memo_distinguishes_the_containing_width() {
         let memo = MeasureMemo::default();

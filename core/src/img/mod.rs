@@ -1,4 +1,4 @@
-//! `<img>`要素まわりの処理。
+//! Handling of `<img>` elements.
 
 mod attrs;
 mod cache;

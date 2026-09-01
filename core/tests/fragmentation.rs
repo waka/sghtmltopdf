@@ -1,18 +1,17 @@
-//! 改ページパターンごとのゴールデンPDF比較テスト。
+//! Golden PDF comparison tests, one per page-break pattern.
 //!
-//! `paginate.rs`のユニットテストが改ページアルゴリズム自体を
-//! 網羅的に検証しているのに対し、こちらは実際のパイプライン全体
-//! (HTMLパース → スタイルカスケード → ページ分割 → PDFエンコード)を通して、
-//! 各改ページパターンが最終的なPDF出力まで正しく反映されること(および
-//! 将来の回帰)を検知するのが目的。
+//! Where the unit tests in `paginate.rs` cover the page-breaking algorithm itself
+//! exhaustively, these go through the whole real pipeline (HTML parse, style cascade,
+//! pagination, PDF encode) to confirm that each page-break pattern is reflected correctly in
+//! the final PDF output, and to catch future regressions.
 //!
-//! 比較粒度は、PDFバイト列の完全一致(埋め込みフォントやオブジェクト番号の
-//! 割り当てでずれやすく壊れやすい)ではなく、`/MediaBox`の出現数から数えた
-//! ページ数を採用する(`paginate_document`が返すページ数と、実際に書き出した
-//! PDFのページ数が一致することも合わせて確認する)。`break-inside: avoid`の
-//! ように「ページ数自体は変わらないが配置が変わる」パターンの詳細な検証は
-//! `paginate.rs`のユニットテストに譲り、ここではパイプライン全体が
-//! クラッシュせず妥当なページ数のPDFを生成できることの確認に留める。
+//! The comparison granularity is the page count derived from the number of `/MediaBox`
+//! occurrences, rather than a byte-for-byte match of the PDF (which is fragile, easily
+//! shifted by font embedding or object number allocation). It also confirms that the page
+//! count `paginate_document` returns matches the page count of the PDF actually written.
+//! Detailed checks of patterns such as `break-inside: avoid`, where "the page count does not
+//! change but the placement does", are left to the unit tests in `paginate.rs`; here we only
+//! confirm that the whole pipeline does not crash and produces a PDF with a sensible page count.
 
 use std::collections::HashMap;
 
@@ -43,9 +42,9 @@ fn page_count_in_pdf(bytes: &[u8]) -> usize {
     count_occurrences(bytes, b"/MediaBox")
 }
 
-/// HTML+CSSから、実際のパイプライン(パース→カスケード→ページ分割→PDF
-/// エンコード)を一通り実行する。`paginate_document`が返すページ数と、
-/// 実際に書き出したPDFバイト列から数えたページ数の両方を返す。
+/// Run the whole real pipeline (parse, cascade, pagination, PDF encode) from HTML plus CSS.
+/// Returns both the page count `paginate_document` returns and the page count derived from
+/// the PDF bytes actually written.
 fn build_pdf(html_src: &str, css: &str) -> (usize, Vec<u8>) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -110,10 +109,10 @@ fn break_after_always_forces_a_second_page_end_to_end() {
 
 #[test]
 fn break_inside_avoid_renders_a_valid_multi_page_pdf_end_to_end() {
-    // break-inside: avoidは「どのページに何が置かれるか」を変えるだけで
-    // 総ページ数自体は変わらない場合が多い(詳細な検証は`paginate.rs`の
-    // ユニットテスト参照)。ここではパイプライン全体がこのCSSの組み合わせで
-    // 破綻しないこと・想定通りのページ数になることを確認する。
+    // break-inside: avoid usually only changes "what goes on which page" without changing
+    // the total page count (see the unit tests in `paginate.rs` for the detailed checks).
+    // Here we confirm that the whole pipeline does not fall apart on this combination of CSS
+    // and gives the expected page count.
     let settings = PageSettings::default();
     let filler_height = settings.content_height() - 200.0;
     let html_src = r#"<div class="filler"></div>
@@ -134,10 +133,10 @@ fn break_inside_avoid_renders_a_valid_multi_page_pdf_end_to_end() {
     );
 }
 
-/// `word_count`語からなる段落が、明示`width`(px)でどう行分割されるかを
-/// 測定する(行数と、各行の高さが一様であること)。`paginate.rs`のユニット
-/// テストにある同名ヘルパーと同じ考え方: この一様な行高さを基準に`filler`の
-/// 高さを逆算し、ページ内の自然な分割点を狙い撃つ。
+/// Measure how a paragraph of `word_count` words breaks into lines at an explicit `width`
+/// (px): the line count, and that the line heights are uniform. The same idea as the
+/// identically named helper in `paginate.rs`'s unit tests: work back from that uniform line
+/// height to the `filler` height, to aim at a specific natural break point within the page.
 fn measure_paragraph_lines(word_count: usize, width: f32) -> (usize, f32) {
     let words: Vec<String> = (0..word_count).map(|i| format!("word{i}")).collect();
     let html_src = format!(r#"<p class="target">{}</p>"#, words.join(" "));
@@ -192,17 +191,17 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
 
 #[test]
 fn orphans_forces_a_second_page_end_to_end() {
-    // `paginate.rs`のユニットテスト
-    // (`orphans_defers_the_whole_paragraph_when_too_few_lines_would_fit`)と
-    // 同じシナリオ(自然には1行しか収まらず、orphans: 3を満たせない)を
-    // パイプライン全体(PDFエンコードまで)を通して再確認する。
+    // Re-confirm through the whole pipeline (as far as PDF encoding) the same scenario as the
+    // unit test in `paginate.rs`
+    // (`orphans_defers_the_whole_paragraph_when_too_few_lines_would_fit`): naturally only one
+    // line fits, which cannot satisfy orphans: 3.
     //
-    // 総ページ数だけでは「orphansが実際に効いたか」までは証明できない
-    // (行が全く収まらない場合、orphansの有無に関わらずどのみち2ページに
-    // 分かれるため)。ページ内の配置がどう変わったかの詳細な検証は
-    // `paginate.rs`のユニットテスト側に譲り、ここでは「この組み合わせで
-    // パイプライン全体が破綻せず、想定通りのページ数になる」ことの
-    // 回帰検知に留める。
+    // The total page count alone cannot prove that orphans really took effect (with no line
+    // fitting at all it would split into two pages either way). The detailed check of how the
+    // within-page placement changed is left to the unit tests in `paginate.rs`; here we only
+    // catch regressions in "the whole pipeline does not fall apart on this combination and
+    // gives the expected page count".
+
     let word_count = 60;
     let width = 200.0;
     let (n, line_height) = measure_paragraph_lines(word_count, width);
@@ -239,10 +238,10 @@ fn widows_forces_lines_forward_end_to_end() {
     assert!(n >= 8, "expected several wrapped lines, got {n}");
 
     let settings = PageSettings::default();
-    // 自然には(n - 1)行がこのページに収まり、次ページには1行しか残らない想定
-    // (widows: 3を満たせないため、分割点が繰り上がるはず)。orphansのテスト
-    // 同様、ここでは詳細な分割点の検証ではなく、この組み合わせでパイプライン
-    // 全体が破綻せず想定通りのページ数になることの回帰検知に留める。
+    // Naturally (n - 1) lines fit on this page and only one is left for the next (which
+    // cannot satisfy widows: 3, so the break point should be brought forward). As with the
+    // orphans test, this is not a detailed check of the break point but a regression check
+    // that the pipeline does not fall apart and gives the expected page count.
     let target_fit = n - 1;
     let desired_remaining = (target_fit as f32 + 0.5) * line_height;
     let filler_height = settings.content_height() - 8.0 - desired_remaining;

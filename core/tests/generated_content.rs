@@ -1,8 +1,8 @@
-//! `content`(attr()/counter()/counters())/CSSカウンタ/`quotes`/`::first-letter`の
-//! E2Eテスト。
+//! E2E tests for `content` (attr()/counter()/counters()), the CSS counters, `quotes` and
+//! `::first-letter`.
 //!
-//! `list_style.rs`/`box_model.rs`と同じ方針: 実際のパイプライン(HTMLパース→
-//! スタイルカスケード→レイアウト→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `list_style.rs`/`box_model.rs`: catch regressions by going through
+//! the real pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -48,9 +48,9 @@ fn build_pdf(html_src: &str, css: &str) -> (usize, Vec<u8>) {
     (engine_page_count, bytes)
 }
 
-/// レイアウト済みツリーを走査し、行に含まれるテキストを出現順に連結して返す
-/// (マーカーは対象外。生成コンテンツも通常のスパンと同じ行に載るため、
-/// このヘルパーだけで`::before`/`::after`/`::first-letter`いずれも検証できる)。
+/// Walk the laid-out tree and return the text in the lines concatenated in order of
+/// appearance (markers excluded). Generated content sits on the same lines as ordinary
+/// spans, so this one helper covers `::before`, `::after` and `::first-letter` alike.
 fn extract_text(b: &LaidOutBox) -> String {
     fn walk(b: &LaidOutBox, out: &mut String) {
         match &b.content {
@@ -65,10 +65,10 @@ fn extract_text(b: &LaidOutBox) -> String {
                 }
             }
             LaidOutContent::Inline(lines) => {
-                // 同じインラインボックス内で折り返された行同士は、元は空白1つで
-                // 繋がっていたテキストなので、行の間に空白を補う。一方、別々の
-                // ボックス(ブロック境界)の間には補わない(ブロック境界は改行に
-                // 相当し、空白ではないため)。
+                // Lines wrapped within the same inline box were originally joined by a single
+                // space, so a space is put back between them. Between separate boxes (a block
+                // boundary) nothing is added (a block boundary corresponds to a line break,
+                // not a space).
                 for (i, line) in lines.iter().enumerate() {
                     if i > 0 {
                         out.push(' ');
@@ -90,8 +90,8 @@ fn extract_text(b: &LaidOutBox) -> String {
         }
     }
     fn push_line(line: &LineBox, out: &mut String) {
-        // 単語間の空白はラン間の隙間として表現され、`run.text`には含まれない
-        // (`layout::inline`の仕様)。x_offsetの隙間から単語境界の空白を復元する。
+        // Inter-word whitespace is expressed as the gap between runs and is not part of
+        // `run.text` (as `layout::inline` specifies). The word-boundary space is recovered from the x_offset gap.
         let mut prev_end: Option<f32> = None;
         for run in &line.runs {
             if let Some(end) = prev_end {
@@ -134,15 +134,15 @@ fn content_attr_reads_the_element_own_attribute_value() {
 
 #[test]
 fn counter_reset_on_an_element_stays_visible_to_its_following_siblings() {
-    // 回帰テスト: h2のcounter-resetが自分の処理直後にpopされてしまうと、
-    // 2つ目以降のh3が参照するsection値が消えてしまっていた。
+    // Regression test: if h2's counter-reset were popped right after h2's own processing,
+    // the section value referenced by the second and later h3s would disappear.
     let laid = layout(
         r#"<h2>Intro</h2><h3>Background</h3><h3>Motivation</h3>"#,
         "h2 { counter-reset: section; } \
          h3 { counter-increment: section; } \
          h3::before { content: counter(section) \". \"; }",
     );
-    // ::beforeは自身のテキストより前に来るので、"1. Background"の順になる。
+    // ::before comes before its own text, giving the order "1. Background".
     assert_eq!(extract_text(&laid), "Intro1. Background2. Motivation");
 }
 
@@ -166,22 +166,22 @@ fn nested_counters_are_scoped_per_ancestor_and_joined_with_the_separator() {
          ol.custom li ol { counter-reset: item; }",
     );
     let text = extract_text(&laid);
-    // 最初のliは入れ子の<ol>(ブロック要素)を子に持つため、::before自体が
-    // 非対応(box_tree.rsの「ブロック子を持つ要素では::before/::after非対応」
-    // という簡略化)。よってプレフィックスなしの"First"のままになる。
+    // The first li has a nested <ol> (a block element) as a child, so ::before itself is
+    // unsupported (box_tree.rs's simplification that ::before/::after are unsupported on an
+    // element with block children). So it stays "First" with no prefix.
     assert!(text.contains("First"), "text was: {text:?}");
     assert!(!text.contains("1. First"), "text was: {text:?}");
     assert!(text.contains("1.1 Nested A"), "text was: {text:?}");
     assert!(text.contains("1.2 Nested B"), "text was: {text:?}");
-    // 入れ子scopeは"First"を含むliが抜ける時点でpopされるため、Secondは
-    // 外側のitemカウンタ(2)のみを見る。
+    // The nested scope is popped when the li containing "First" is left, so Second sees only
+    // the outer item counter (2).
     assert!(text.contains("2 Second"), "text was: {text:?}");
 }
 
 #[test]
 fn after_content_is_resolved_after_descendants_so_it_reflects_their_counter_changes() {
-    // pにブロック子孫を混ぜると::after自体が非対応になるため、子孫は
-    // インライン要素(span)にする。
+    // Mixing block descendants into the p would make ::after itself unsupported, so the
+    // descendants are inline elements (span).
     let laid = layout(
         r#"<p class="section">Heading <span class="mark">note</span></p>"#,
         "p.section { counter-reset: n; } \

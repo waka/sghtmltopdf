@@ -1,6 +1,6 @@
-//! wkhtmltopdfにあってsghtmltopdfが実装しないオプションは拒否する。
+//! Reject options that wkhtmltopdf has but sghtmltopdf does not implement.
 
-/// 非対応の理由(同じ理由のオプションでまとめる)。
+/// Why an option is unsupported (options sharing a reason are grouped).
 struct Reason {
     message: &'static str,
     options: &'static [&'static str],
@@ -8,8 +8,8 @@ struct Reason {
 
 const REASONS: &[Reason] = &[
     Reason {
-        message: "sghtmltopdfはJavaScriptを実行しません(設計上の非目標)。\n  \
-                  動的に生成される内容は、呼び出し側でHTMLを組み立ててから渡してください",
+        message: "sghtmltopdf does not execute JavaScript (a deliberate non-goal).\n  \
+                  Build dynamically generated content into the HTML before passing it in",
         options: &[
             "--enable-javascript",
             "--disable-javascript",
@@ -25,8 +25,8 @@ const REASONS: &[Reason] = &[
         ],
     },
     Reason {
-        message: "PDFのアウトライン(ブックマーク)は未対応です。\n  \
-                  文書内の見出し一覧が必要な場合は --toc で目次ページを作れます",
+        message: "PDF outlines (bookmarks) are not supported.\n  \
+                  If you need a list of the headings in a document, --toc builds a table of contents page",
         options: &[
             "--outline",
             "--no-outline",
@@ -37,21 +37,21 @@ const REASONS: &[Reason] = &[
         ],
     },
     Reason {
-        message: "XSLTには対応していません。\n  \
-                  目次の見た目は --toc-header-text 等のオプションと、\n  \
-                  --user-style-sheet で渡すCSSで変えられます",
+        message: "XSLT is not supported.\n  \
+                  The look of the table of contents can be changed with options such as\n  \
+                  --toc-header-text and with CSS passed via --user-style-sheet",
         options: &["--xsl-style-sheet", "--dump-default-toc-xsl"],
     },
     Reason {
-        message: "画像の再エンコード・縮小には対応していません\n  \
-                  (JPEGはデコードせずそのまま埋め込む方式のため)。\n  \
-                  必要な場合は、渡す前に画像側を縮小してください",
+        message: "Re-encoding or downscaling images is not supported\n  \
+                  (JPEGs are embedded as-is, without being decoded).\n  \
+                  Resize the images yourself before passing them in",
         options: &["--image-quality", "--image-dpi"],
     },
     Reason {
-        message: "認証・プロキシ付きの取得には対応していません。\n  \
-                  取得が必要なリソースは、呼び出し側で取得してから\n  \
-                  ローカルパスまたはdata:URIで渡してください",
+        message: "Fetching with authentication or through a proxy is not supported.\n  \
+                  Fetch such resources yourself and pass them in as a local path\n  \
+                  or a data: URI",
         options: &[
             "--proxy",
             "--proxy-hostname-lookup",
@@ -71,9 +71,9 @@ const REASONS: &[Reason] = &[
         ],
     },
     Reason {
-        message: "WebKit固有の描画設定には対応していません\n  \
-                  (sghtmltopdfは常に印刷メディアとしてレンダリングし、\n  \
-                  ビューポートという概念を持ちません)",
+        message: "WebKit-specific rendering settings are not supported\n  \
+                  (sghtmltopdf always renders for print media and has no\n  \
+                  concept of a viewport)",
         options: &[
             "--disable-smart-shrinking",
             "--enable-smart-shrinking",
@@ -85,13 +85,13 @@ const REASONS: &[Reason] = &[
         ],
     },
     Reason {
-        message: "PDFフォーム(AcroForm)の生成には対応していません。\n  \
-                  フォーム要素は静的な見た目としてのみ描画されます",
+        message: "Generating PDF forms (AcroForm) is not supported.\n  \
+                  Form elements are drawn as static appearance only",
         options: &["--enable-forms", "--disable-forms"],
     },
     Reason {
-        message: "チェックボックス等の見た目をSVGで差し替えることには対応して\n  \
-                  いません(内蔵の描画が使われます)",
+        message: "Replacing the look of checkboxes and similar controls with SVG is not\n  \
+                  supported (the built-in rendering is always used)",
         options: &[
             "--checkbox-svg",
             "--checkbox-checked-svg",
@@ -100,19 +100,19 @@ const REASONS: &[Reason] = &[
         ],
     },
     Reason {
-        message: "印刷部数の指定はPDF生成では意味を持たないため対応していません",
+        message: "A copy count has no meaning when generating a PDF, so it is not supported",
         options: &["--copies", "--collate", "--no-collate"],
     },
     Reason {
-        message: "標準入力はHTMLの入力に使うため、引数の読み込みには使えません",
+        message: "Standard input is used for the HTML, so it cannot be used to read arguments",
         options: &["--read-args-from-stdin"],
     },
     Reason {
-        message: "取得結果のキャッシュは持ちません",
+        message: "No cache of fetched resources is kept",
         options: &["--cache-dir"],
     },
     Reason {
-        message: "ドキュメントとREADMEを参照してください",
+        message: "See the documentation and the README",
         options: &[
             "--extended-help",
             "--htmldoc",
@@ -123,7 +123,7 @@ const REASONS: &[Reason] = &[
     },
 ];
 
-/// `name`(`--`付きのロングオプション名)が非対応なら、その理由を返す。
+/// If `name` (a long option name, including the leading `--`) is unsupported, return why.
 pub fn unsupported_reason(name: &str) -> Option<&'static str> {
     REASONS
         .iter()
@@ -131,9 +131,9 @@ pub fn unsupported_reason(name: &str) -> Option<&'static str> {
         .map(|reason| reason.message)
 }
 
-/// コマンドライン引数に非対応オプションが含まれていればエラーメッセージを返す。
+/// Return an error message if the command line contains an unsupported option.
 ///
-/// `--foo=bar`の形にも対応する。`--`より後ろは値として扱い、照合しない。
+/// The `--foo=bar` form is handled too. Anything after `--` is treated as a value and not matched.
 pub fn check_arguments(args: &[String]) -> Option<String> {
     for arg in args {
         if arg == "--" {
@@ -141,7 +141,7 @@ pub fn check_arguments(args: &[String]) -> Option<String> {
         }
         let name = arg.split('=').next().unwrap_or(arg);
         if let Some(reason) = unsupported_reason(name) {
-            return Some(format!("{name} は対応していません。\n  {reason}"));
+            return Some(format!("{name} is not supported.\n  {reason}"));
         }
     }
     None
@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn javascript_options_are_rejected_with_a_reason() {
         let message = check_arguments(&["--enable-javascript".to_string()]).unwrap();
-        assert!(message.contains("--enable-javascript は対応していません"));
+        assert!(message.contains("--enable-javascript is not supported"));
         assert!(message.contains("JavaScript"));
     }
 
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn each_reason_mentions_an_alternative_or_the_cause() {
-        // どの理由も「なぜ駄目か」を書いていること(空メッセージを防ぐ)。
+        // Every reason must say why it is unsupported (guards against an empty message).
         for reason in REASONS {
             assert!(reason.message.len() > 10);
             assert!(!reason.options.is_empty());
@@ -190,7 +190,7 @@ mod tests {
 
     #[test]
     fn the_query_side_can_reuse_the_same_table() {
-        // HTTPサーバはクエリキー(`--`なし)を照合するため、`--`を足して引く。
+        // The HTTP server matches query keys (without `--`), so it prepends `--` before looking up.
         assert!(unsupported_reason("--xsl-style-sheet").is_some());
         assert!(unsupported_reason("--page-size").is_none());
     }

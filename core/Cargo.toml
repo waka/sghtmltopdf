@@ -14,13 +14,13 @@ name = "sghtmltopdf"
 path = "src/main.rs"
 required-features = ["cli"]
 
-# HTTPサーバモードのE2Eテストは`server` featureが要る
-# (`--no-default-features --features cli`でのテストから除外するため)。
+# The HTTP server mode E2E tests need the `server` feature
+# (so they are excluded from a `--no-default-features --features cli` test run).
 [[test]]
 name = "server"
 required-features = ["server"]
 
-# SVGのE2Eテストはコンパイル済みバイナリ(=`cli`)を起動する。
+# The SVG E2E tests start the compiled binary (that is, `cli`).
 [[test]]
 name = "svg"
 required-features = ["svg", "cli"]
@@ -29,41 +29,41 @@ required-features = ["svg", "cli"]
 name = "svg_paths"
 required-features = ["svg", "cli"]
 
-# SVG内の`<text>`の描画までを見るテストは`svg-text`が要る。featureが無い場合の
-# 挙動(テキストが描かれないこと)もこのファイルで確認するため、`svg`だけでも
-# 動く(中で`cfg`で分岐する)。
+# The tests that check `<text>` drawing inside an SVG need `svg-text`. The behaviour without
+# the feature (that the text is not drawn) is checked in the same file, so it also runs with
+# just `svg` (branching internally on `cfg`).
 [[test]]
 name = "svg_fonts"
 required-features = ["svg", "cli"]
 
-# CLI(clap)とHTTPサーバ(tiny_http)はfeatureで切り離す。
-# ライブラリとして使う側は`--no-default-features`でこれらを引き込まずに済む。
-# gemはclap(=`cli`)を使うが、HTTPサーバは要らないので `cli` と `server` を分ける。
+# The CLI (clap) and the HTTP server (tiny_http) are split out behind features.
+# Anyone using this as a library can avoid pulling them in with `--no-default-features`.
+# The gem uses clap (`cli`) but not the HTTP server, hence `cli` and `server` being separate.
 [features]
 default = ["cli", "server", "svg"]
 cli = ["dep:clap"]
 server = ["cli", "dep:tiny_http"]
-# `<img src="*.svg">`と`background-image: url(*.svg)`をベクタのまま
-# (ラスタライズせずに)PDFへ埋め込む。svg2pdf経由でusvgを引き込むため、
-# 要らない場合に切れるようfeatureにしている(ライブラリとして使うなら
-# `--no-default-features`、CLIやHTTPサーバは残してSVGだけ外すなら
-# `--no-default-features --features cli,server`)。
+# Embed `<img src="*.svg">` and `background-image: url(*.svg)` into the PDF as vectors
+# (without rasterising). It pulls in usvg by way of svg2pdf, so it is a feature that can be
+# turned off when not needed (`--no-default-features` for library use, or
+# `--no-default-features --features cli,server` to keep the CLI and HTTP server while
+# dropping SVG).
 svg = ["dep:svg2pdf"]
-# SVG内の`<text>`をグリフのまま埋め込む。使うフォントは文書と同じもの
-# (`pdf::svg::SvgFontDb`が`FontCollection`から組む)で、SVGのためにシステム
-# フォントを探し直すことはしない。
+# Embed `<text>` inside an SVG as glyphs. The fonts used are the document's own
+# (`pdf::svg::SvgFontDb` builds them from `FontCollection`); no separate system font search
+# happens for the SVG.
 #
-# 既定で切っているのは依存が重いため。svg2pdfの`text`は`usvg/text`(シェイパの
-# rustybuzz、unicode系テーブル)と`resvg/text`を要求し、後者は`?`が付いていない
-# ので、optionalなresvg本体ごと有効化してtiny-skiaまで引き込む。合わせて25
-# クレート増える。fontdb 0.23(本体が使う0.24とは別インスタンス)も入る。
-# 切っている間、SVG内のテキストは描画されない(パス化もされない)。
+# It is off by default because the dependencies are heavy. svg2pdf's `text` requires
+# `usvg/text` (the rustybuzz shaper and the unicode tables) and `resvg/text`, and the latter
+# has no `?`, so it enables the optional resvg itself and pulls in tiny-skia too. That is 25
+# extra crates in total, plus fontdb 0.23 (a separate instance from the 0.24 the engine uses).
+# While it is off, text inside an SVG is not drawn (not even converted to paths).
 svg-text = ["svg", "svg2pdf?/text"]
 
 [dependencies]
 base64 = "0.22.1"
-# 既定featureとの差はヘルプの色付け(anstream等6クレート)のみで実測差もほぼ
-# 無いため最小構成にし、タイポ時の候補提示(suggestions)だけ足している。
+# The only difference from the default features is colouring the help output (anstream and 5
+# other crates), with no measurable difference, so it uses the minimal set plus `suggestions`.
 clap = { version = "4", default-features = false, features = [
     "std",
     "derive",
@@ -73,44 +73,43 @@ clap = { version = "4", default-features = false, features = [
     "suggestions",
 ], optional = true }
 cssparser = "0.37.0"
-# `--encoding`と`<meta charset>`のデコード用
+# For decoding `--encoding` and `<meta charset>`
 encoding_rs = "0.8"
 cssparser-color = "0.5.0"
 flate2 = "1.1.9"
 fontdb = "0.24"
-# シェイピング(harfrust)とフォントのメトリクス/cmap読み取り(skrifa)。
-# どちらもread-fontsの上に載っており、同じ`FontRef`を再パースなしで共有する。
-# そのためにはread-fontsのバージョンを揃える必要がある: harfrust 0.12は
-# read-fonts 0.41、skrifaは0.44がread-fonts 0.41(0.45は0.42で型が合わない)。
-# 上げるときは両者のread-fontsが一致するかを確認すること。
+# Shaping (harfrust) and reading font metrics and cmaps (skrifa).
+# Both sit on top of read-fonts and share the same `FontRef` without reparsing.
+# For that their read-fonts versions have to match: harfrust 0.12 uses read-fonts 0.41, and
+# skrifa 0.44 uses read-fonts 0.41 (0.45 uses 0.42, whose types do not line up).
+# When bumping them, check that both agree on read-fonts.
 harfrust = "0.12"
 html5ever = "0.39.0"
 image = { version = "0.25.10", default-features = false, features = ["webp"] }
 palette = { version = "0.7.6", default-features = false, features = ["std"] }
-# svg2pdfが`pdf_writer::Chunk`を返す(`to_chunk`)ので、そのチャンクを
-# こちらの文書へ`extend`するにはpdf-writerのバージョンが一致していないと
-# 型が合わない。svg2pdf 0.13.0はpdf-writer ^0.12を要求するため0.12系に
-# 揃えている。0.13以降で入った`Buf`/`Limits`と0.15の`Settings`・
-# `finish_with_xref_stream`はこちらでは使っていないので、揃えるための
-# 変更はこの行だけで済む。svg2pdfがpdf-writerを上げたら一緒に上げること。
+# svg2pdf returns a `pdf_writer::Chunk` (`to_chunk`), so `extend`ing that chunk into our own
+# document needs matching pdf-writer versions or the types do not line up. svg2pdf 0.13.0
+# requires pdf-writer ^0.12, so we stay on the 0.12 series. The `Buf`/`Limits` added in 0.13
+# and 0.15's `Settings` and `finish_with_xref_stream` are unused here, so keeping them in
+# step is this one line. Bump it together with svg2pdf when svg2pdf bumps pdf-writer.
 pdf-writer = "0.12.1"
 png = "0.18.1"
 precomputed-hash = "0.1.1"
 selectors = "0.39.0"
 self_cell = "1.3.0"
-# read-fonts 0.41を使うharfrust 0.12と揃えるため0.44に固定する
-# (0.45はread-fonts 0.42で型が合わない)。
+# Pinned to 0.44 to match harfrust 0.12, which uses read-fonts 0.41
+# (0.45 uses read-fonts 0.42, whose types do not line up).
 skrifa = "0.44"
-# 既定featureの`variable-fonts`はskrifa 0.42(=read-fonts 0.39)とwrite-fonts・
-# kurboを引き込むが、これが効くのは変分座標を渡す`subset_with_variations`と
-# CFF2の変換だけで、こちらが呼ぶ`subset`は座標を渡さないため常に通常の
-# サブセット経路に落ちる。本体のskrifa 0.44(=read-fonts 0.41)と重複させる
-# 理由が無いので切る。可変フォントのインスタンス化に対応する際に戻す。
+# The default `variable-fonts` feature pulls in skrifa 0.42 (read-fonts 0.39), write-fonts
+# and kurbo, but it only matters for `subset_with_variations`, which takes variation
+# coordinates, and for CFF2 conversion. The `subset` we call passes no coordinates and always
+# falls to the ordinary subsetting path. There is no reason to duplicate the engine's skrifa
+# 0.44 (read-fonts 0.41), so it is off. Restore it when instantiating variable fonts.
 subsetter = { version = "0.2.6", default-features = false }
-# 既定featureのうち`filters`はSVGフィルタを解決するためにtiny-skia+resvgを
-# 引き込み、結果をラスタライズしてしまう(ベクタのまま埋め込むという方針に
-# 反する)。`image`はSVG内に埋め込まれたラスタ画像用、`text`は`svg-text`
-# feature側で足すので、ここでは全部切って純粋なベクタ変換だけを使う。
+# Of the default features, `filters` pulls in tiny-skia and resvg to resolve SVG filters and
+# rasterises the result (contrary to the policy of embedding vectors). `image` is for raster
+# images embedded inside an SVG, and `text` is added by the `svg-text` feature, so all of
+# them are off here and only the pure vector conversion is used.
 svg2pdf = { version = "0.13.0", default-features = false, optional = true }
 taffy = "0.12.2"
 tiny_http = { version = "0.12", optional = true }

@@ -25,8 +25,8 @@ Gem::Specification.new do |spec|
   spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
   spec.metadata["rubygems_mfa_required"] = "true"
 
-  # `gem build`はgemspecのあるディレクトリ配下しか集められないため、
-  # LICENSEはリポジトリルートからコピーしたものを置いてある。
+  # `gem build` can only collect files under the directory holding the gemspec,
+  # so LICENSE is a copy of the one at the repository root.
   spec.files = Dir[
     "lib/**/*.rb",
     "ext/**/*.{rb,rs,toml}",

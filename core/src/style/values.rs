@@ -1,43 +1,43 @@
-//! CSSプロパティ値の型。
+//! Types for CSS property values.
 //!
-//! `Length`/`LengthPercentage`/`LengthPercentageOrAuto`は、カスケード解決後の
-//! 計算値(常にpx単位に解決済み)を表す。パース直後の指定値は
-//! `em`/`rem`のような相対単位を区別する必要があるため、代わりに
+//! `Length`/`LengthPercentage`/`LengthPercentageOrAuto` hold computed values after the
+//! cascade (always already resolved to px). Specified values straight from the parser have
+//! to keep relative units such as `em`/`rem` distinct, so they use
 //! `SpecifiedLength`/`SpecifiedLengthPercentage`/`SpecifiedLengthPercentageOrAuto`
-//! を使う(`style::computed`が、要素自身とルート要素の計算済み`font-size`を
-//! 使ってこれらをpxへ解決する)。
+//! instead (`style::computed` resolves those to px using the element's own and the root
+//! element's computed `font-size`).
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Display {
     Block,
     Inline,
-    /// 外側はインラインレベル(親の行に参加する)だが、中身はブロックとして
-    /// レイアウトされる分割不可能な箱。
+    /// Inline-level on the outside (it joins the parent's line) but laid out as a block
+    /// inside: an unbreakable box.
     InlineBlock,
-    /// `table`要素専用。テーブルフォーマッティングコンテキストを確立する
-    /// (`table-row`/`table-cell`の子孫を集めて列幅アルゴリズムでレイアウトする)。
+    /// For `table` elements only. Establishes a table formatting context
+    /// (collects the `table-row`/`table-cell` descendants and lays them out with the column width algorithm).
     Table,
-    /// `tr`要素専用。`Display::Table`の祖先の下でのみ意味を持つ。
+    /// For `tr` elements only. Meaningful only under a `Display::Table` ancestor.
     TableRow,
-    /// `td`/`th`要素専用。`Display::TableRow`の祖先の下でのみ意味を持つ。
+    /// For `td`/`th` elements only. Meaningful only under a `Display::TableRow` ancestor.
     TableCell,
-    /// `caption`要素専用。`Display::Table`の祖先の下でのみ意味を持つ
-    /// (`box_tree.rs::collect_table_rows`が`table-row`と並んで検出する)。
+    /// For `caption` elements only. Meaningful only under a `Display::Table` ancestor
+    /// (`box_tree.rs::collect_table_rows` detects it alongside `table-row`).
     TableCaption,
-    /// `li`要素の既定値。通常のブロックボックスに加えてマーカーボックス
-    /// (箇条書きの記号・番号)を生成する。
-    /// `box_tree.rs::child_kind`では`Block`と同様に扱う。
+    /// The default for `li` elements. Generates a marker box (the bullet or number) in
+    /// addition to an ordinary block box.
+    /// `box_tree.rs::child_kind` treats it the same as `Block`.
     ListItem,
-    /// `flex`要素専用。Flexboxフォーマッティングコンテキストを確立する
-    /// (子要素ごとに1個のflexアイテムを生成し、taffyへレイアウトを委譲する)。
-    /// `inline-flex`は非対応。
+    /// For `flex` elements only. Establishes a flexbox formatting context
+    /// (generates one flex item per child and delegates layout to taffy).
+    /// `inline-flex` is not supported.
     Flex,
-    /// `display: grid`。`inline-grid`は非対応(`inline-flex`と同じ理由)。
+    /// `display: grid`. `inline-grid` is not supported (same reason as `inline-flex`).
     Grid,
     None,
 }
 
-/// `font-weight`。数値指定(`700`等)は600以上を`Bold`として扱う簡略実装。
+/// `font-weight`. A simplified implementation treating any numeric value (`700`, say) of 600 or more as `Bold`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FontWeight {
     #[default]
@@ -45,7 +45,7 @@ pub enum FontWeight {
     Bold,
 }
 
-/// `font-style`。`oblique`は専用の傾斜を持たないため`Italic`と同一視する。
+/// `font-style`. `oblique` has no slant of its own, so it is treated as `Italic`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum FontStyle {
     #[default]
@@ -53,16 +53,16 @@ pub enum FontStyle {
     Italic,
 }
 
-/// `text-decoration-line`。`underline`と`line-through`は同時指定可能
-/// (仕様通り)。`overline`(あまり使われないため)は非対応。
+/// `text-decoration-line`. `underline` and `line-through` can be given together
+/// (as the spec allows). `overline` is not supported (it is rarely used).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct TextDecorationLine {
     pub underline: bool,
     pub line_through: bool,
 }
 
-/// `border-style`。`groove`/`ridge`/`inset`/`outset`(border-colorから2階調の
-/// 疑似立体陰影を算出する)にも対応する。
+/// `border-style`. `groove`/`ridge`/`inset`/`outset` (which derive a two-tone pseudo-3D
+/// shading from border-color) are supported too.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BorderStyle {
     #[default]
@@ -77,10 +77,10 @@ pub enum BorderStyle {
     Outset,
 }
 
-/// `break-before`/`break-after`の値。CSS仕様上`page`は複数ページサイズ/
-/// 名前付きページ対応を見据えた別キーワードだが、単一ページサイズしか
-/// 扱わない現状のスコープでは`always`と同じ「強制的に新しいページへ送る」
-/// 効果として扱う。`left`/`right`/`recto`/`verso`(見開き制御)は非対応。
+/// Values of `break-before`/`break-after`. In the CSS spec `page` is a separate keyword
+/// looking ahead to multiple page sizes and named pages, but within the current scope of a
+/// single page size it has the same effect as `always`: force a break to a new page.
+/// `left`/`right`/`recto`/`verso` (spread control) are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BreakBetween {
     #[default]
@@ -89,7 +89,7 @@ pub enum BreakBetween {
     Always,
 }
 
-/// `break-inside`の値。
+/// Values of `break-inside`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BreakInside {
     #[default]
@@ -97,8 +97,8 @@ pub enum BreakInside {
     Avoid,
 }
 
-/// `float`(CSS2.1 9.5.1)。`inline-start`/`inline-end`論理値はCSS2.1の
-/// スコープ外のため非対応。
+/// `float` (CSS2.1 9.5.1). The logical `inline-start`/`inline-end` values are outside
+/// CSS2.1's scope and are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Float {
     #[default]
@@ -107,7 +107,7 @@ pub enum Float {
     Right,
 }
 
-/// `clear`(CSS2.1 9.5.2)。
+/// `clear` (CSS2.1 9.5.2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Clear {
     #[default]
@@ -117,28 +117,27 @@ pub enum Clear {
     Both,
 }
 
-/// `position`。`absolute`/`fixed`にも対応する(`Mode::Streaming`では
-/// 無視)。
+/// `position`. `absolute`/`fixed` are supported too (ignored under `Mode::Streaming`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Position {
     #[default]
     Static,
     Relative,
-    /// 最も近いpositioned祖先(無ければinitial containing block)を基準に配置。
+    /// Positioned against the nearest positioned ancestor (or the initial containing block if there is none).
     Absolute,
-    /// 各ページのコンテンツ領域を基準に、全ページへ繰り返し配置。
+    /// Repeated on every page, positioned against each page's content area.
     Fixed,
 }
 
 impl Position {
-    /// フロー外に配置される(通常フローのスペースを占めない)positioning か。
+    /// Whether this positioning takes the element out of flow (occupying no space in normal flow).
     pub fn is_out_of_flow(self) -> bool {
         matches!(self, Position::Absolute | Position::Fixed)
     }
 }
 
-/// `text-align`。`start`/`end`(bidi対応)は非対応、`direction`自体が非対応のため
-/// スコープ外。
+/// `text-align`. `start`/`end` (for bidi) are not supported: `direction` itself is not
+/// supported, so they are out of scope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextAlign {
     #[default]
@@ -148,8 +147,8 @@ pub enum TextAlign {
     Justify,
 }
 
-/// `white-space`。`pre-wrap`/`pre-line`/`break-spaces`は非対応(帳票用途で
-/// 必要になるのは`pre`までと判断)。
+/// `white-space`. `pre-wrap`/`pre-line`/`break-spaces` are not supported (`pre` was judged
+/// to be as far as business documents need).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WhiteSpace {
     #[default]
@@ -158,30 +157,30 @@ pub enum WhiteSpace {
     Pre,
 }
 
-/// `<track-breadth>`の計算値。長さはpx解決済み。
+/// The computed value of `<track-breadth>`. Lengths are already resolved to px.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackBreadth {
     Length(f32),
-    /// パーセンテージ(50% = 0.5)。
+    /// A percentage (50% = 0.5).
     Percentage(f32),
-    /// `<flex>`(`1fr`)。トラックの伸長係数。
+    /// `<flex>` (`1fr`). The track's growth factor.
     Fr(f32),
     Auto,
     MinContent,
     MaxContent,
 }
 
-/// `<track-size>`の計算値。
+/// The computed value of `<track-size>`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TrackSize {
     Breadth(TrackBreadth),
-    /// `minmax(min, max)`。CSS仕様上、min側に`fr`は書けない(パースで拒否する)。
+    /// `minmax(min, max)`. The CSS spec forbids `fr` on the min side (the parser rejects it).
     MinMax(TrackBreadth, TrackBreadth),
-    /// `fit-content(<length-percentage>)`。
+    /// `fit-content(<length-percentage>)`.
     FitContent(LengthPercentage),
 }
 
-/// `repeat()`の繰り返し回数。
+/// The repeat count of `repeat()`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepeatCount {
     Count(u16),
@@ -189,42 +188,42 @@ pub enum RepeatCount {
     AutoFit,
 }
 
-/// `<track-list>`の1要素(単一トラック、または`repeat()`)。
+/// One element of a `<track-list>` (a single track, or a `repeat()`).
 #[derive(Debug, Clone, PartialEq)]
 pub enum TrackComponent {
     Single(TrackSize),
     Repeat {
         count: RepeatCount,
         tracks: Vec<TrackSize>,
-        /// 繰り返しトラック間のライン名(`tracks.len() + 1`要素)。
+        /// Line names between the repeated tracks (`tracks.len() + 1` entries).
         line_names: Vec<Vec<String>>,
     },
 }
 
-/// `grid-template-columns`/`grid-template-rows`の計算値。空なら`none`。
+/// The computed value of `grid-template-columns`/`grid-template-rows`. Empty means `none`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TrackList {
     pub components: Vec<TrackComponent>,
-    /// トラックの前後に置かれたライン名(`[name]`)。`components.len() + 1`要素。
+    /// The line names (`[name]`) placed before and after the tracks. `components.len() + 1` entries.
     pub line_names: Vec<Vec<String>>,
 }
 
-/// `grid-row-start`等の配置指定。
+/// A placement value such as `grid-row-start`.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum GridLine {
     #[default]
     Auto,
-    /// 1-indexedのライン番号(負値は末尾からの数え)。
+    /// A 1-indexed line number (a negative value counts from the end).
     Line(i16),
-    /// `span <integer>`。
+    /// `span <integer>`.
     Span(u16),
-    /// 名前付きライン(`grid-template-areas`が暗黙に作る`foo-start`等も含む)。
+    /// A named line (including the implicit `foo-start` and friends created by `grid-template-areas`).
     Named(String),
-    /// `span <custom-ident>`。
+    /// `span <custom-ident>`.
     NamedSpan(String, u16),
 }
 
-/// `grid-auto-flow`。
+/// `grid-auto-flow`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GridAutoFlow {
     #[default]
@@ -234,9 +233,9 @@ pub enum GridAutoFlow {
     ColumnDense,
 }
 
-/// `grid-template-areas`が定義する名前付きエリア1つ分。行・列は1-indexedの
-/// グリッドライン番号(taffyの`GridTemplateArea`と同じ規約で、
-/// `row_end`/`column_end`は終端セルの次のラインを指す)。
+/// One named area defined by `grid-template-areas`. Rows and columns are 1-indexed grid
+/// line numbers (the same convention as taffy's `GridTemplateArea`, where
+/// `row_end`/`column_end` point at the line after the final cell).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GridArea {
     pub name: String,
@@ -246,22 +245,22 @@ pub struct GridArea {
     pub column_end: u16,
 }
 
-/// `word-break`。改行機会そのものを切り替える。
+/// `word-break`. Switches which break opportunities exist at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WordBreak {
-    /// 従来どおり: CJK文字が隣接する境界のみ改行可。
+    /// As before: breaks allowed only at a boundary adjoining a CJK character.
     #[default]
     Normal,
-    /// すべての文字境界で改行可。
+    /// Breaks allowed at every character boundary.
     BreakAll,
-    /// CJK境界でも改行しない(空白のみが改行機会)。
+    /// No break even at a CJK boundary (whitespace is the only opportunity).
     KeepAll,
 }
 
-/// `overflow-wrap`(別名`word-wrap`)。改行機会は増やさず、「行頭に置いてもなお
-/// 収まらない」場合のフォールバックとして働く。`anywhere`は`break-word`と
-/// 同一視する(min-content幅への影響の違いだけで、本エンジンはその区別を
-/// 持たない。
+/// `overflow-wrap` (also known as `word-wrap`). Adds no break opportunities; it acts as a
+/// fallback for when something "still does not fit even at the start of a line". `anywhere`
+/// is treated as `break-word` (they differ only in their effect on min-content width, a
+/// distinction this engine does not make).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OverflowWrap {
     #[default]
@@ -269,18 +268,18 @@ pub enum OverflowWrap {
     BreakWord,
 }
 
-/// `hyphens`。`auto`は辞書を持たないため`manual`と同じ挙動(soft
-/// hyphen(U+00AD)でのみ分割する)。
+/// `hyphens`. `auto` behaves as `manual` because we have no dictionary (breaking only at a
+/// soft hyphen, U+00AD).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Hyphens {
-    /// soft hyphenでも分割しない。
+    /// Never break, not even at a soft hyphen.
     None,
-    /// soft hyphenを改行機会として扱い、分割時にハイフンを表示する。
+    /// Treat a soft hyphen as a break opportunity and show a hyphen when breaking there.
     #[default]
     Manual,
 }
 
-/// `text-overflow`。`<string>`指定は非対応。
+/// `text-overflow`. A `<string>` value is not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextOverflow {
     #[default]
@@ -288,7 +287,7 @@ pub enum TextOverflow {
     Ellipsis,
 }
 
-/// `text-emphasis-style`のマーク形状。
+/// The mark shape of `text-emphasis-style`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmphasisShape {
     #[default]
@@ -299,19 +298,19 @@ pub enum EmphasisShape {
     Sesame,
 }
 
-/// `text-emphasis-style`。`None`はマークなし(初期値)。
+/// `text-emphasis-style`. `None` means no mark (the initial value).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum EmphasisStyle {
     #[default]
     None,
-    /// キーワード指定。`filled`(塗り)か`open`(輪郭のみ)かと形状の組。
+    /// A keyword value: `filled` or `open`, paired with a shape.
     Shape { shape: EmphasisShape, filled: bool },
-    /// `<string>`指定。先頭1文字だけを使う(仕様通り)。
+    /// A `<string>` value. Only the first character is used (as the spec says).
     String(char),
 }
 
-/// `text-emphasis-position`。横書きでは`over`/`under`のみが意味を持つ
-/// (`right`/`left`は読み飛ばす)。
+/// `text-emphasis-position`. In horizontal writing only `over`/`under` mean anything
+/// (`right`/`left` are skipped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmphasisPosition {
     #[default]
@@ -319,14 +318,14 @@ pub enum EmphasisPosition {
     Under,
 }
 
-/// `text-shadow`の1つ分。パース直後の指定値(長さは`em`/`rem`未解決)。
-/// `box-shadow`と違いspread・insetを持たない。
+/// One `text-shadow`. The specified value straight from the parser (lengths still have
+/// unresolved `em`/`rem`). Unlike `box-shadow` it has no spread and no inset.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpecifiedTextShadow {
     pub offset_x: SpecifiedLength,
     pub offset_y: SpecifiedLength,
     pub blur_radius: SpecifiedLength,
-    /// 省略時は`currentcolor`相当(`None`のまま計算スタイル側で解決する)。
+    /// When omitted this means `currentcolor` (left as `None` and resolved by the computed style).
     pub color: Option<Color>,
 }
 
@@ -341,7 +340,7 @@ impl SpecifiedTextShadow {
     }
 }
 
-/// `text-shadow`1つ分の計算値(長さはpx解決済み、色は未解決)。
+/// The computed value of one `text-shadow` (lengths resolved to px, colour still unresolved).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TextShadow {
     pub offset_x: f32,
@@ -350,7 +349,7 @@ pub struct TextShadow {
     pub color: Option<Color>,
 }
 
-/// `text-transform`。`full-width`/`full-size-kana`(日本語組版の特殊変換)は非対応。
+/// `text-transform`. `full-width`/`full-size-kana` (special transforms for Japanese typesetting) are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TextTransform {
     #[default]
@@ -360,20 +359,20 @@ pub enum TextTransform {
     Capitalize,
 }
 
-/// `line-height`のパース直後の指定値。`<number>`/`<percentage>`はCSS仕様上
-/// 「computed valueは指定値の数値そのもの」(親のfont-sizeで先に乗算した絶対値
-/// ではない)という他の継承プロパティとは異なる規則を持つ。
+/// The specified value of `line-height` straight from the parser. Under the CSS spec,
+/// `<number>`/`<percentage>` follow a rule unlike other inherited properties: "the computed
+/// value is the specified number itself", not an absolute value pre-multiplied by the parent's font-size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedLineHeight {
     Normal,
-    /// `<number>`。
+    /// `<number>`.
     Number(f32),
     Length(SpecifiedLength),
-    /// `<percentage>`。`<number>`と同じ意味(50%は0.5と同義)。
+    /// `<percentage>`. The same meaning as `<number>` (50% means 0.5).
     Percentage(f32),
 }
 
-/// `letter-spacing`/`word-spacing`共通の指定値(どちらも`normal | <length>`)。
+/// The specified value shared by `letter-spacing`/`word-spacing` (both `normal | <length>`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedSpacing {
     Normal,
@@ -381,7 +380,7 @@ pub enum SpecifiedSpacing {
 }
 
 impl SpecifiedSpacing {
-    /// `normal`は`0`として解決する(単語間・文字間の追加スペースなし)。
+    /// `normal` resolves to `0` (no extra space between words or characters).
     pub fn resolve(self, font_size: f32, root_font_size: f32) -> f32 {
         match self {
             Self::Normal => 0.0,
@@ -390,8 +389,8 @@ impl SpecifiedSpacing {
     }
 }
 
-/// `border-collapse`。collapse値は見た目の枠線描画のみ統合し、レイアウト計算
-/// (列幅・セル配置)はseparateと完全に同一に保つ。
+/// `border-collapse`. The collapse value only unifies how borders are drawn; layout
+/// (column widths and cell placement) stays exactly as it is for separate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BorderCollapse {
     #[default]
@@ -399,7 +398,7 @@ pub enum BorderCollapse {
     Collapse,
 }
 
-/// `caption-side`。CSS2.1の`left`/`right`(縦書き対応の論理値)は非対応。
+/// `caption-side`. CSS2.1's `left`/`right` (logical values for vertical writing) are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CaptionSide {
     #[default]
@@ -407,7 +406,7 @@ pub enum CaptionSide {
     Bottom,
 }
 
-/// `table-layout`。
+/// `table-layout`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TableLayout {
     #[default]
@@ -415,7 +414,7 @@ pub enum TableLayout {
     Fixed,
 }
 
-/// `empty-cells`。`border-collapse: separate`でのみ意味を持つ(CSS仕様通り)。
+/// `empty-cells`. Meaningful only with `border-collapse: separate` (as the CSS spec says).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EmptyCells {
     #[default]
@@ -423,11 +422,11 @@ pub enum EmptyCells {
     Hide,
 }
 
-/// `vertical-align`。CSS2.1の初期値は`baseline`。
+/// `vertical-align`. The initial value in CSS2.1 is `baseline`.
 ///
-/// インライン文脈とテーブルセル文脈で値の集合を共有する。テーブルセルに
-/// 適用できるのはCSS2.1どおり`top`/`middle`/`bottom`/`baseline`のみで、それ
-/// 以外の値を指定した場合は`baseline`として扱う。
+/// The set of values is shared between the inline context and the table-cell context. As
+/// CSS2.1 requires, only `top`/`middle`/`bottom`/`baseline` apply to a table cell; any other
+/// value is treated as `baseline`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum VerticalAlign {
     Top,
@@ -435,21 +434,21 @@ pub enum VerticalAlign {
     Bottom,
     #[default]
     Baseline,
-    /// 下付き。フォントサイズは変えない(縮小は
-    /// UAスタイルシートの`sub`規則が担う)。
+    /// Subscript. The font size is unchanged (the shrinking is done by the UA stylesheet's
+    /// `sub` rule).
     Sub,
-    /// 上付き(同上)。
+    /// Superscript (likewise).
     Super,
-    /// 親(行の基準ラン)の文字上端に揃える。
+    /// Aligned with the top of the parent's text (the line's reference run).
     TextTop,
-    /// 同じく文字下端に揃える。
+    /// Likewise with the bottom of the text.
     TextBottom,
-    /// 長さ・パーセンテージ(正で上方向)。パーセンテージはそのランの
-    /// `line-height`基準。
+    /// A length or percentage (positive is upwards). A percentage is relative to that run's
+    /// `line-height`.
     LengthPercentage(LengthPercentage),
 }
 
-/// パース直後の`vertical-align`の指定値。
+/// The specified value of `vertical-align` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedVerticalAlign {
     Top,
@@ -481,8 +480,8 @@ impl SpecifiedVerticalAlign {
     }
 }
 
-/// `list-style-type`。`disc`/`circle`/`square`は固定記号、それ以外はカウンタ
-/// 値から生成する(数値・アルファベット系は「本体+`.`」形式、既知の簡略化)。
+/// `list-style-type`. `disc`/`circle`/`square` are fixed symbols; the rest are generated
+/// from the counter value (numeric and alphabetic ones as "body plus `.`", a known simplification).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ListStyleType {
     #[default]
@@ -498,17 +497,17 @@ pub enum ListStyleType {
     None,
 }
 
-/// `content`の1パーツ(パース時点、まだ解決されていない値)。複数パーツを
-/// 連結できる(`content: "Chapter " counter(chapter) ": "`等)。
+/// One part of `content` (at parse time, not yet resolved). Several parts can be
+/// concatenated (`content: "Chapter " counter(chapter) ": "` and so on).
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContentPart {
     String(String),
-    /// `attr(name)`。HTML属性値。
+    /// `attr(name)`. An HTML attribute value.
     Attr(String),
-    /// `counter(name [, style])`。`style`は[`ListStyleType`]を再利用する
-    /// (`disc`/`circle`/`square`/`none`は空文字列を生成する、仕様通り)。
+    /// `counter(name [, style])`. `style` reuses [`ListStyleType`]
+    /// (`disc`/`circle`/`square`/`none` generate an empty string, as the spec says).
     Counter(String, ListStyleType),
-    /// `counters(name, separator [, style])`。
+    /// `counters(name, separator [, style])`.
     Counters(String, String, ListStyleType),
     OpenQuote,
     CloseQuote,
@@ -516,14 +515,14 @@ pub enum ContentPart {
     NoCloseQuote,
 }
 
-/// `quotes`の1階層分(開き引用符, 閉じ引用符)。
+/// One nesting level of `quotes` (the open quote and the close quote).
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuotePair {
     pub open: String,
     pub close: String,
 }
 
-/// `list-style-position`。
+/// `list-style-position`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ListStylePosition {
     #[default]
@@ -531,8 +530,8 @@ pub enum ListStylePosition {
     Inside,
 }
 
-/// `overflow`。`scroll`/`auto`は`hidden`と区別せず同じクリップ処理として扱う
-/// (印刷にスクロールの概念が無いため)。
+/// `overflow`. `scroll`/`auto` are not distinguished from `hidden` and get the same
+/// clipping (print has no concept of scrolling).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Overflow {
     #[default]
@@ -543,14 +542,14 @@ pub enum Overflow {
 }
 
 impl Overflow {
-    /// `visible`以外は全て同じクリップ処理の対象になる。
+    /// Everything but `visible` is subject to the same clipping.
     pub fn clips(self) -> bool {
         self != Overflow::Visible
     }
 }
 
-/// `visibility`。`collapse`は`hidden`と同一視する
-/// (テーブル行/列の高さ再計算は非対応)。
+/// `visibility`. `collapse` is treated as `hidden`
+/// (recomputing table row/column heights is not supported).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Visibility {
     #[default]
@@ -565,7 +564,7 @@ impl Visibility {
     }
 }
 
-/// `box-sizing`。`padding-box`(標準外)は非対応。
+/// `box-sizing`. `padding-box` (non-standard) is not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BoxSizing {
     #[default]
@@ -573,8 +572,8 @@ pub enum BoxSizing {
     BorderBox,
 }
 
-/// `z-index`。`position: static`の要素には効果を
-/// 持たない(仕様通り、呼び出し側が判定する)。
+/// `z-index`. It has no effect on a `position: static` element
+/// (as the spec says; the caller checks that).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ZIndex {
     #[default]
@@ -583,7 +582,7 @@ pub enum ZIndex {
 }
 
 impl ZIndex {
-    /// 描画順のソートキーとして使う実効値(`auto`は`0`と同義、仕様通り)。
+    /// The effective value used as the sort key for drawing order (`auto` means `0`, as the spec says).
     pub fn sort_key(self) -> i32 {
         match self {
             ZIndex::Auto => 0,
@@ -592,13 +591,13 @@ impl ZIndex {
     }
 }
 
-/// 長さ(px)またはパーセンテージ。カスケード解決済みの計算値。
+/// A length (px) or a percentage. A computed value, after the cascade.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LengthPercentage {
     Length(f32),
     Percentage(f32),
-    /// `calc`の解決済み複合値。使用値は
-    /// `px + percent * basis`(`percent`は割合、50% = 0.5)。
+    /// A resolved compound `calc` value. The used value is
+    /// `px + percent * basis` (`percent` is a ratio, 50% = 0.5).
     Calc {
         px: f32,
         percent: f32,
@@ -614,9 +613,9 @@ pub enum LengthPercentageOrAuto {
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Length(pub f32);
 
-/// パース直後の長さの指定値。`em`は基準フォントサイズ(呼び出し側が要素自身の
-/// ものか親のものかを選ぶ)に対する相対値、`rem`はルート要素のフォントサイズに
-/// 対する相対値。
+/// The specified value of a length straight from the parser. `em` is relative to the
+/// reference font size (the caller chooses whether that is the element's own or its
+/// parent's), and `rem` is relative to the root element's font size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedLength {
     Px(f32),
@@ -625,15 +624,15 @@ pub enum SpecifiedLength {
 }
 
 impl SpecifiedLength {
-    /// 負の長さか。
+    /// Whether the length is negative.
     pub fn is_negative(self) -> bool {
         match self {
             Self::Px(v) | Self::Em(v) | Self::Rem(v) => v < 0.0,
         }
     }
 
-    /// `font_size`(em基準、px)と`root_font_size`(rem基準、px)を使って
-    /// 計算値の[`Length`]へ解決する。
+    /// Resolve to a computed [`Length`] using `font_size` (the em basis, px) and
+    /// `root_font_size` (the rem basis, px).
     pub fn resolve(self, font_size: f32, root_font_size: f32) -> Length {
         match self {
             Self::Px(px) => Length(px),
@@ -643,15 +642,15 @@ impl SpecifiedLength {
     }
 }
 
-/// `border-radius`の1コーナー分の計算値(水平半径, 垂直半径)。真円は
-/// 水平=垂直。
+/// The computed value of one corner of `border-radius` (horizontal radius, vertical
+/// radius). A true circle has horizontal = vertical.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct CornerRadius {
     pub horizontal: Length,
     pub vertical: Length,
 }
 
-/// パース直後の`border-radius`1コーナー分の指定値。
+/// The specified value of one corner of `border-radius` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpecifiedCornerRadius {
     pub horizontal: SpecifiedLength,
@@ -667,14 +666,14 @@ impl SpecifiedCornerRadius {
     }
 }
 
-/// `calc`の指定値。`em`/`rem`はパース時点で
-/// 未解決なので4成分で保持し、`resolve`でpxへ畳む。
+/// The specified value of a `calc`. `em`/`rem` are unresolved at parse time, so it is held
+/// as four components and folded into px by `resolve`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SpecifiedCalc {
     pub px: f32,
     pub em: f32,
     pub rem: f32,
-    /// パーセンテージの割合(50% = 0.5)。
+    /// The percentage as a ratio (50% = 0.5).
     pub percent: f32,
 }
 
@@ -687,17 +686,17 @@ impl SpecifiedCalc {
     }
 }
 
-/// パース直後の「長さまたはパーセンテージ」の指定値。
+/// The specified value of "a length or a percentage" straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedLengthPercentage {
     Length(SpecifiedLength),
     Percentage(f32),
-    /// `calc`。
+    /// `calc`.
     Calc(SpecifiedCalc),
 }
 
 impl SpecifiedLengthPercentage {
-    /// 書かれた値が負か。`calc()`は解決するまで符号が決まらないので`false`。
+    /// Whether the written value is negative. `calc()` is `false`, its sign being unknown until resolved.
     pub fn is_negative(self) -> bool {
         match self {
             Self::Length(length) => length.is_negative(),
@@ -717,7 +716,7 @@ impl SpecifiedLengthPercentage {
     }
 }
 
-/// パース直後の「長さ・パーセンテージまたはauto」の指定値。
+/// The specified value of "a length, a percentage, or auto" straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedLengthPercentageOrAuto {
     LengthPercentage(SpecifiedLengthPercentage),
@@ -735,9 +734,9 @@ impl SpecifiedLengthPercentageOrAuto {
     }
 }
 
-/// `max-width`/`max-height`の計算値。`none`(上限なし)を表現する必要があるため
-/// `LengthPercentage`とは別の型を持つ。`min-width`/`min-height`は初期値が
-/// `0`なので`LengthPercentage`をそのまま使う。
+/// The computed value of `max-width`/`max-height`. It needs a type distinct from
+/// `LengthPercentage` in order to express `none` (no upper bound). `min-width`/`min-height`
+/// have an initial value of `0`, so they use `LengthPercentage` directly.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum MaxSize {
     #[default]
@@ -745,7 +744,7 @@ pub enum MaxSize {
     LengthPercentage(LengthPercentage),
 }
 
-/// パース直後の`<track-breadth>`。長さは`em`/`rem`未解決。
+/// A `<track-breadth>` straight from the parser. Lengths still have unresolved `em`/`rem`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedTrackBreadth {
     Length(SpecifiedLength),
@@ -771,7 +770,7 @@ impl SpecifiedTrackBreadth {
     }
 }
 
-/// パース直後の`<track-size>`。
+/// A `<track-size>` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedTrackSize {
     Breadth(SpecifiedTrackBreadth),
@@ -792,7 +791,7 @@ impl SpecifiedTrackSize {
     }
 }
 
-/// パース直後の`<track-list>`の1要素。
+/// One element of a `<track-list>` straight from the parser.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpecifiedTrackComponent {
     Single(SpecifiedTrackSize),
@@ -803,7 +802,7 @@ pub enum SpecifiedTrackComponent {
     },
 }
 
-/// パース直後の`grid-template-columns`/`-rows`。
+/// `grid-template-columns`/`-rows` straight from the parser.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct SpecifiedTrackList {
     pub components: Vec<SpecifiedTrackComponent>,
@@ -839,18 +838,18 @@ impl SpecifiedTrackList {
     }
 }
 
-/// `aspect-ratio: auto || <ratio>`。長さを
-/// 含まないため指定値と計算値を分ける必要がない。
+/// `aspect-ratio: auto || <ratio>`. It contains no length, so specified and computed values
+/// need not be distinguished.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AspectRatio {
-    /// `auto`キーワードの有無。置換要素(`<img>`)では内在比を優先する。
+    /// Whether the `auto` keyword is present. For a replaced element (`<img>`) the intrinsic ratio wins.
     pub auto: bool,
-    /// 指定された比(`width / height`)。`None`は比の指定なし。
+    /// The specified ratio (`width / height`). `None` means no ratio was given.
     pub ratio: Option<f32>,
 }
 
 impl Default for AspectRatio {
-    /// 初期値`auto`。
+    /// The initial value, `auto`.
     fn default() -> Self {
         Self {
             auto: true,
@@ -859,7 +858,7 @@ impl Default for AspectRatio {
     }
 }
 
-/// パース直後の`max-width`/`max-height`の指定値。
+/// The specified value of `max-width`/`max-height` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedMaxSize {
     None,
@@ -877,9 +876,9 @@ impl SpecifiedMaxSize {
     }
 }
 
-/// `background-position`の計算値(水平/垂直、border-box基準の長さまたは
-/// パーセンテージ)。キーワード(`left`/`center`/`right`/`top`/`bottom`)は
-/// パース時点で対応するパーセンテージへ解決済み。
+/// The computed value of `background-position` (horizontal/vertical, a length or percentage
+/// relative to the border box). The keywords (`left`/`center`/`right`/`top`/`bottom`) are
+/// already resolved to the corresponding percentages at parse time.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BackgroundPosition {
     pub horizontal: LengthPercentage,
@@ -887,7 +886,7 @@ pub struct BackgroundPosition {
 }
 
 impl Default for BackgroundPosition {
-    /// 初期値`0% 0%`(左上)。
+    /// The initial value, `0% 0%` (top left).
     fn default() -> Self {
         Self {
             horizontal: LengthPercentage::Percentage(0.0),
@@ -896,7 +895,7 @@ impl Default for BackgroundPosition {
     }
 }
 
-/// パース直後の`background-position`の指定値。
+/// The specified value of `background-position` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpecifiedBackgroundPosition {
     pub horizontal: SpecifiedLengthPercentage,
@@ -912,8 +911,8 @@ impl SpecifiedBackgroundPosition {
     }
 }
 
-/// `background-size`の計算値。`Cover`/`Contain`はintrinsicサイズに基づき
-/// 描画時に矩形へ変換する。
+/// The computed value of `background-size`. `Cover`/`Contain` are converted to a rectangle
+/// at drawing time, based on the intrinsic size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BackgroundSize {
     WidthHeight(LengthPercentageOrAuto, LengthPercentageOrAuto),
@@ -922,13 +921,13 @@ pub enum BackgroundSize {
 }
 
 impl Default for BackgroundSize {
-    /// 初期値`auto auto`。
+    /// The initial value, `auto auto`.
     fn default() -> Self {
         Self::WidthHeight(LengthPercentageOrAuto::Auto, LengthPercentageOrAuto::Auto)
     }
 }
 
-/// パース直後の`background-size`の指定値。
+/// The specified value of `background-size` straight from the parser.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedBackgroundSize {
     WidthHeight(
@@ -952,8 +951,8 @@ impl SpecifiedBackgroundSize {
     }
 }
 
-/// `background-repeat`。CSS2.1の値集合(repeat/repeat-x/repeat-y/no-repeat)
-/// のみ対応(複数背景のカンマ区切り記法・`round`/`space`はCSS3スコープ外)。
+/// `background-repeat`. Only the CSS2.1 value set (repeat/repeat-x/repeat-y/no-repeat) is
+/// supported (comma-separated multiple backgrounds and `round`/`space` are outside CSS3 scope).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BackgroundRepeat {
     #[default]
@@ -963,7 +962,7 @@ pub enum BackgroundRepeat {
     NoRepeat,
 }
 
-/// `background-attachment`。`fixed`は`scroll`と同一視して描画する。
+/// `background-attachment`. `fixed` is drawn the same as `scroll`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BackgroundAttachment {
     #[default]
@@ -971,8 +970,8 @@ pub enum BackgroundAttachment {
     Fixed,
 }
 
-/// 色。`currentcolor`の解決や継承は計算スタイルの役割なので、
-/// ここではパース結果をそのまま保持する。
+/// A colour. Resolving `currentcolor` and inheritance is the computed style's job, so this
+/// holds the parse result as-is.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Color {
     CurrentColor,
@@ -984,11 +983,11 @@ pub enum Color {
     },
 }
 
-/// `object-fit`。`<img>`(置換要素)専用、非継承プロパティ。
+/// `object-fit`. For `<img>` (replaced elements) only; not inherited.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ObjectFit {
-    /// 初期値。intrinsicアスペクト比を無視してcontent-box全体に引き伸ばす
-    /// (`object-fit`未対応時の既存の`<img>`描画と同じ挙動)。
+    /// The initial value. Stretches to fill the whole content box, ignoring the intrinsic
+    /// aspect ratio (the same as the existing `<img>` drawing before `object-fit` support).
     #[default]
     Fill,
     Contain,
@@ -997,17 +996,17 @@ pub enum ObjectFit {
     ScaleDown,
 }
 
-/// `box-shadow`の1つ分。パース直後の指定値(長さは`em`/`rem`未解決)。
-/// カンマ区切りの複数指定は`Vec<SpecifiedBoxShadow>`で保持する。
+/// One `box-shadow`. The specified value straight from the parser (lengths still have
+/// unresolved `em`/`rem`). Comma-separated multiples are held as `Vec<SpecifiedBoxShadow>`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpecifiedBoxShadow {
     pub offset_x: SpecifiedLength,
     pub offset_y: SpecifiedLength,
     pub blur_radius: SpecifiedLength,
     pub spread_radius: SpecifiedLength,
-    /// 省略時は`currentcolor`相当(`None`のまま計算スタイル側で解決する)。
+    /// When omitted this means `currentcolor` (left as `None` and resolved by the computed style).
     pub color: Option<Color>,
-    /// `inset`キーワード。パースはするが描画は非対応。
+    /// The `inset` keyword. It parses, but drawing it is not supported.
     pub inset: bool,
 }
 
@@ -1024,8 +1023,8 @@ impl SpecifiedBoxShadow {
     }
 }
 
-/// `box-shadow`の1つ分。長さはpx解決済みだが、`color`は`currentcolor`が
-/// 未解決のまま(`RgbaColor`への解決は計算スタイルの役割)。
+/// One `box-shadow`. Lengths are resolved to px, but `color` may still be an unresolved
+/// `currentcolor` (resolving to `RgbaColor` is the computed style's job).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoxShadow {
     pub offset_x: f32,
@@ -1036,7 +1035,7 @@ pub struct BoxShadow {
     pub inset: bool,
 }
 
-/// `flex-direction`。
+/// `flex-direction`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexDirection {
     #[default]
@@ -1046,7 +1045,7 @@ pub enum FlexDirection {
     ColumnReverse,
 }
 
-/// `flex-wrap`。
+/// `flex-wrap`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FlexWrap {
     #[default]
@@ -1055,11 +1054,11 @@ pub enum FlexWrap {
     WrapReverse,
 }
 
-/// `justify-content`。CSS Box Alignment仕様の`safe`/`unsafe`オーバーフローは非対応。
+/// `justify-content`. The `safe`/`unsafe` overflow keywords from CSS Box Alignment are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum JustifyContent {
-    /// 初期値。flexコンテナでは`flex-start`と同じ振る舞いになるが、gridでは
-    /// 意味が違う(余った幅を`auto`トラックが吸って伸びる)ため区別する。
+    /// The initial value. It behaves like `flex-start` in a flex container, but means
+    /// something different in grid (`auto` tracks absorb the leftover width and grow), so it is distinct.
     #[default]
     Normal,
     FlexStart,
@@ -1070,7 +1069,7 @@ pub enum JustifyContent {
     SpaceEvenly,
 }
 
-/// `align-items`。
+/// `align-items`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignItems {
     FlexStart,
@@ -1081,7 +1080,7 @@ pub enum AlignItems {
     Stretch,
 }
 
-/// `align-content`。
+/// `align-content`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignContent {
     FlexStart,
@@ -1094,7 +1093,7 @@ pub enum AlignContent {
     SpaceEvenly,
 }
 
-/// `align-self`。`Auto`(初期値)は親の`align-items`をそのまま使う(仕様通り)。
+/// `align-self`. `Auto` (the initial value) uses the parent's `align-items` as-is (as the spec says).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AlignSelf {
     #[default]
@@ -1106,11 +1105,11 @@ pub enum AlignSelf {
     Stretch,
 }
 
-/// `flex-basis`のパース直後の指定値(`em`/`rem`未解決)。
+/// The specified value of `flex-basis` straight from the parser (`em`/`rem` unresolved).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedFlexBasis {
     Auto,
-    /// `content`キーワード。`Auto`と同一視する。
+    /// The `content` keyword. Treated the same as `Auto`.
     Content,
     LengthPercentage(SpecifiedLengthPercentage),
 }
@@ -1126,7 +1125,7 @@ impl SpecifiedFlexBasis {
     }
 }
 
-/// `flex-basis`の計算値。
+/// The computed value of `flex-basis`.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FlexBasis {
     #[default]
@@ -1134,9 +1133,9 @@ pub enum FlexBasis {
     LengthPercentage(LengthPercentage),
 }
 
-/// `transform`関数1つ分のパース直後の指定値(`em`/`rem`未解決)。
-/// 角度は度数(`deg`)以外(`rad`/`grad`/`turn`)も含めてパース時点で
-/// ラジアンへ正規化する。
+/// One `transform` function, as the specified value straight from the parser (`em`/`rem`
+/// unresolved). Angles are normalised to radians at parse time, including units other than
+/// degrees (`rad`/`grad`/`turn`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SpecifiedTransformFunction {
     Translate(SpecifiedLengthPercentage, SpecifiedLengthPercentage),
@@ -1145,9 +1144,9 @@ pub enum SpecifiedTransformFunction {
     Scale(f32, f32),
     ScaleX(f32),
     ScaleY(f32),
-    /// ラジアン単位。
+    /// In radians.
     Rotate(f32),
-    /// ラジアン単位(水平, 垂直)。
+    /// In radians (horizontal, vertical).
     Skew(f32, f32),
     SkewX(f32),
     SkewY(f32),
@@ -1179,9 +1178,9 @@ impl SpecifiedTransformFunction {
     }
 }
 
-/// `transform`関数1つ分の計算値。`translate`系のパーセンテージは要素自身の
-/// border-box幅/高さが確定してから解決するため`LengthPercentage`のまま
-/// 保持する(`background-position`と同じ考え方)。
+/// The computed value of one `transform` function. Percentages on the `translate` family
+/// stay as `LengthPercentage`, since they resolve only once the element's own border-box
+/// width/height is final (the same idea as `background-position`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TransformFunction {
     Translate(LengthPercentage, LengthPercentage),
@@ -1206,11 +1205,11 @@ fn resolve_lp_against(lp: LengthPercentage, basis: f32) -> f32 {
 }
 
 impl TransformFunction {
-    /// この関数1つ分の変形行列。CSSの`matrix(a, b, c, d, e, f)`と同じ規約
-    /// (`x' = a*x + c*y + e`, `y' = b*x + d*y + f`)、CSS座標系(Y下向き正)
-    /// のまま返す(PDF座標系への変換は[`compose_transform`]の呼び出し側が
-    /// 行う)。`box_width`/`box_height`は`translate`系のパーセンテージ解決に
-    /// 使う要素自身のborder-boxサイズ。
+    /// The transform matrix for this one function. It follows the same convention as CSS's
+    /// `matrix(a, b, c, d, e, f)` (`x' = a*x + c*y + e`, `y' = b*x + d*y + f`) and is
+    /// returned in CSS coordinates (Y positive downwards); converting to PDF coordinates is
+    /// the caller of [`compose_transform`]'s job. `box_width`/`box_height` are the element's
+    /// own border-box size, used to resolve percentages on the `translate` family.
     pub fn to_matrix(self, box_width: f32, box_height: f32) -> [f32; 6] {
         match self {
             Self::Translate(x, y) => [
@@ -1238,8 +1237,8 @@ impl TransformFunction {
     }
 }
 
-/// `a`を先に適用し、その結果へ`b`を適用する合成行列(`b ∘ a`、`matrix(...)`と
-/// 同じ規約)。`transform`の複数関数を記述順に合成するために使う。
+/// The composition applying `a` first and then `b` to the result (`b` after `a`, the same
+/// convention as `matrix(...)`). Used to compose several `transform` functions in written order.
 pub fn compose_transform_matrices(a: [f32; 6], b: [f32; 6]) -> [f32; 6] {
     let [a1, b1, c1, d1, e1, f1] = b;
     let [a2, b2, c2, d2, e2, f2] = a;
@@ -1253,7 +1252,7 @@ pub fn compose_transform_matrices(a: [f32; 6], b: [f32; 6]) -> [f32; 6] {
     ]
 }
 
-/// `functions`を記述順に合成した1つの変形行列(CSS座標系のまま)。
+/// A single transform matrix composing `functions` in written order (still in CSS coordinates).
 pub fn compose_transform(
     functions: &[TransformFunction],
     box_width: f32,
@@ -1297,8 +1296,8 @@ mod transform_tests {
 
     #[test]
     fn composing_translate_then_scale_applies_translate_first() {
-        // translate(10px, 0) してからscale(2)すると、原点は(10,0)→(20,0)になる
-        // (先に平行移動、その結果を拡大するので平行移動量も2倍になる)。
+        // translate(10px, 0) then scale(2) moves the origin from (10,0) to (20,0)
+        // (translating first and scaling the result doubles the translation too).
         let translate = TransformFunction::TranslateX(LengthPercentage::Length(10.0));
         let scale = TransformFunction::Scale(2.0, 2.0);
         let total = compose_transform(&[translate, scale], 0.0, 0.0);

@@ -1,14 +1,14 @@
-//! ヒープの割り当てを呼び出し元ごとに集計する。ピークメモリの犯人探し用。
+//! Aggregate heap allocations by their caller. For hunting down what creates the peak memory.
 //!
-//! 実行: `cargo run --release --example heap_profile [要素数] [table]`
+//! Run with: `cargo run --release --example heap_profile [element count] [table]`
 //!
-//! `dhat`(dev-dependency)がグローバルアロケータを差し替え、終了時に
-//! `dhat-heap.json`を書き出す。同梱の`heap_report.py`に食わせると、
-//! ピーク時点でメモリを持っていた箇所を多い順に表示できる。
+//! `dhat` (a dev-dependency) replaces the global allocator and writes `dhat-heap.json` on
+//! exit. Feeding that to the bundled `heap_report.py` lists, largest first, what was holding
+//! memory at the peak.
 //!
-//! `phase_bench`が「どの段が重いか」を見るのに対し、こちらは
-//! 「どのコードが確保しているか」を見る。dhatは全割り当てを記録するので
-//! 実行は数倍遅くなる。時間の計測には使わないこと。
+//! Where `phase_bench` shows which stage is expensive, this shows which code is allocating.
+//! dhat records every allocation, so it runs several times slower. Do not use it to measure
+//! time.
 
 use std::collections::HashMap;
 use std::env;
@@ -47,13 +47,13 @@ fn main() {
     let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
 
     println!(
-        "ページ数 {} / PDF {:.1}KB",
+        "pages {} / PDF {:.1}KB",
         pages.len(),
         bytes.len() as f64 / 1024.0
     );
-    // ここでdrop すると dhat-heap.json が書かれる。
+    // Dropping here is what writes dhat-heap.json.
     drop(profiler);
-    println!("dhat-heap.json を書き出しました");
+    println!("wrote dhat-heap.json");
 }
 
 fn build_html(count: usize, table_mode: bool) -> String {
@@ -82,7 +82,7 @@ fn build_html(count: usize, table_mode: bool) -> String {
 
 fn load_fonts() -> FontCollection {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts/DejaVuSans.ttf");
-    let data = std::fs::read(path).expect("フォントを読めません");
-    let font = Font::from_bytes(data, 0).expect("フォントを解釈できません");
+    let data = std::fs::read(path).expect("cannot read the font");
+    let font = Font::from_bytes(data, 0).expect("cannot interpret the font");
     FontCollection::new(vec![font])
 }

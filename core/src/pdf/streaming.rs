@@ -1,17 +1,15 @@
-//! PDFバイト列をページ確定のそばから逐次[`Sink`]へ書き出すストリーミング
-//! ライター。
+//! A streaming writer that emits the PDF bytes to a [`Sink`] as each page is settled.
 //!
-//! 各ページのコンテンツストリームは、そのページの[`Page`]が確定した時点で
-//! 即座に構築し`Sink`へ書き出す(CIDは常に元のグリフID、
-//! `render_box`/`render_line`に`remaps: None`を渡す)。フォント埋め込み
-//! (サブセット化・`/CIDToGIDMap`ストリームの構築)は、
-//! [`StreamingPdfWriter::finish`]が呼ばれた
-//! 時点(全ページ処理後)にまとめて行う。
+//! Each page's content stream is built and written to the `Sink` the moment that page's
+//! [`Page`] is settled (CIDs are always the original glyph IDs; `render_box`/`render_line`
+//! are passed `remaps: None`). Font embedding (subsetting and building the `/CIDToGIDMap`
+//! stream) is done all at once when [`StreamingPdfWriter::finish`] is called,
+//! after every page has been processed.
 //!
-//! `pdf_writer::Pdf`はxref/trailerの構築を非公開実装に持つため、`Chunk`
-//! (1オブジェクトごとの自己完結したバイト列)単位で`Sink`へ逐次書き出しつつ、
-//! `(Ref, 書き込み済みオフセット)`を自前で記録し、[`StreamingPdfWriter::finish`]
-//! でxref/trailerを組み立てる。
+//! `pdf_writer::Pdf` keeps the xref and trailer construction in a private implementation, so
+//! we write to the `Sink` a `Chunk` (a self-contained byte string per object) at a time,
+//! record `(Ref, the offset it was written at)` ourselves, and assemble the xref and trailer
+//! in [`StreamingPdfWriter::finish`].
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -38,11 +36,10 @@ use super::options::PdfOutputOptions;
 
 const PDF_HEADER: &[u8] = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n";
 
-/// ページ確定のそばから逐次`Sink`へPDFバイト列を書き出すライター。
+/// A writer emitting the PDF bytes to a `Sink` as each page is settled.
 ///
-/// `new`でファイルヘッダを即座に書き出し、`write_page`をページ確定のたびに
-/// 呼び、最後に`finish`でフォント埋め込み・xref/trailerを書いて`sink`を
-/// 締める。
+/// `new` writes the file header immediately, `write_page` is called as each page is settled,
+/// and finally `finish` writes the font embedding, xref and trailer and closes the `sink`.
 pub struct StreamingPdfWriter<S: Sink> {
     sink: S,
     output_len: usize,
@@ -55,44 +52,44 @@ pub struct StreamingPdfWriter<S: Sink> {
     usages: Vec<FontUsage>,
     page_ids: Vec<Ref>,
     settings: PageSettings,
-    /// `Rc::as_ptr`(デコード結果の同一性)をキーにした、文書全体で共有する
-    /// 画像Refのマップ。フォントと違い画像はページをまたいだ使用状況の
-    /// 集計(サブセット化)が不要なため、`finish`まで待たずページごとに
-    /// 「初出なら書き出す」形で埋めていく。
+    /// The document-wide map of image Refs, keyed on `Rc::as_ptr` (the identity of the decode
+    /// result). Unlike fonts, images need no cross-page usage tally (subsetting), so this is
+    /// filled in per page on a "write it if this is its first appearance" basis, rather than
+    /// waiting for `finish`.
     image_ids: HashMap<usize, ImageIds>,
-    /// `ids_for_image`が振り直しに失敗したSVGのキー。同じSVGが何度使われても
-    /// 警告を1回で済ませるためのキャッシュ(ラスタ画像はデコード段階で失敗する
-    /// のでここには来ない)。
+    /// The keys of SVGs whose Ref renumbering failed in `ids_for_image`. A cache so the same
+    /// SVG used many times warns only once (a raster image fails at the decode stage and
+    /// never reaches here).
     failed_svg_ids: HashSet<usize>,
-    /// `@page`ルール(margin box描画用)。
+    /// The `@page` rules (for drawing margin boxes).
     page_rules: Vec<PageRule>,
-    /// `background-color`/`box-shadow`の半透明描画用ExtGState(0.05刻み・
-    /// 21段階)。バッチモード(`encode_pdf`)と同じく文書全体で1回だけ確保する。
+    /// The ExtGStates for semi-transparent drawing of `background-color`/`box-shadow`
+    /// (21 steps of 0.05). Allocated once for the whole document, as in batch mode (`encode_pdf`).
     alpha_gs_ids: Vec<Ref>,
     alpha_gs_names: Vec<String>,
-    /// リンク注釈の生成設定。
+    /// The settings for generating link annotations.
     links: LinkSettings,
-    /// これまでに書いたページで見つかったアンカーの位置
-    /// (名前, ページのRef, x, y)。`finish`で`/Dests`辞書として書き出す。
+    /// The positions of the anchors found on the pages written so far
+    /// (name, page Ref, x, y). Written out as the `/Dests` dictionary in `finish`.
     destinations: Vec<(String, Ref, f32, f32)>,
-    /// メタデータ・圧縮・スケール・グレースケール。
+    /// Metadata, compression, scale and grayscale.
     output: PdfOutputOptions,
-    /// 次に書くページへ重ねるサブドキュメント
-    /// (`--header-html`/`--footer-html`)。`write_page`で消費される。
+    /// The subdocument to composite onto the next page written
+    /// (`--header-html`/`--footer-html`). Consumed by `write_page`.
     pending_overlays: Vec<PageOverlay>,
-    /// 次に書くページのページ番号。
+    /// The page number of the next page written.
     ///
-    /// * `Some(Some(n))`: 番号`n`のページとして扱う
-    /// * `Some(None)`: 番号を持たないページ(cover)。margin boxも
-    ///   ヘッダー/フッターも描かない
-    /// * `None`: 明示指定なし(これまでに書いたページ数+1を使う)
+    /// * `Some(Some(n))`: treat it as page number `n`
+    /// * `Some(None)`: a page with no number (a cover). Neither margin boxes nor
+    ///   headers/footers are drawn
+    /// * `None`: not specified (the number of pages written so far, plus 1)
     pending_page_number: Option<Option<usize>>,
 }
 
 impl<S: Sink> StreamingPdfWriter<S> {
-    /// 新しいライターを作り、PDFファイルヘッダを即座に`sink`へ書き出す。
-    /// `links`は内部アンカーの対応表と`<base href>`([`LinkSettings`])。
-    /// 既定値なら外部リンクの注釈だけを生成する。
+    /// Create a new writer, writing the PDF file header to `sink` immediately.
+    /// `links` is the internal anchor table plus `<base href>` ([`LinkSettings`]).
+    /// With the default value, only external link annotations are generated.
     pub fn new(
         fonts: &FontCollection,
         settings: PageSettings,
@@ -110,7 +107,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
         )
     }
 
-    /// [`PdfOutputOptions`]を明示して作る版。
+    /// The version taking an explicit [`PdfOutputOptions`].
     pub fn with_options(
         fonts: &FontCollection,
         settings: PageSettings,
@@ -174,12 +171,11 @@ impl<S: Sink> StreamingPdfWriter<S> {
         Ok(writer)
     }
 
-    /// 次に`write_page`で書くページへ重ねるサブドキュメントを設定する。
+    /// Set the subdocument to composite onto the page `write_page` writes next.
     ///
-    /// `write_page`のシグネチャを変えずにヘッダー/フッターHTMLを
-    /// 合成するための入口。ページごとに内容が変わりうる(`[page]`)ため、呼び
-    /// 出し側がページ単位で設定する。これまでに
-    /// 書き出したページ数(次のページ番号は`+1`)。
+    /// The entry point for compositing the header/footer HTML without changing `write_page`'s
+    /// signature. The content can vary per page (`[page]`), so the caller sets it per page.
+    /// The number of pages written so far (the next page number being `+1`).
     pub fn page_count(&self) -> usize {
         self.page_ids.len()
     }
@@ -188,21 +184,21 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.pending_overlays = overlays;
     }
 
-    /// 次に書くページのページ番号を明示する。
+    /// Set the page number of the next page written explicitly.
     ///
-    /// `Some(n)`でその番号として扱い、`None`を渡すと番号を持たないページ
-    /// (cover)としてmargin box・ヘッダー/フッターを描かない。
+    /// `Some(n)` treats it as that number; `None` makes it a page with no number (a cover),
+    /// drawing neither margin boxes nor headers/footers.
     pub fn set_next_page_number(&mut self, number: Option<usize>) {
         self.pending_page_number = Some(number);
     }
 
-    /// 確定した1ページを即座にコンテンツストリームへエンコードし、`sink`へ
-    /// 書き出す。使用したグリフは内部に軽量な[`FontUsage`]として蓄積する
-    /// だけなので、呼び出し後は`page`(レイアウト結果)を破棄してよい。
+    /// Encode one settled page into a content stream immediately and write it to `sink`. The
+    /// glyphs used are only accumulated internally as a lightweight [`FontUsage`], so `page`
+    /// (the layout result) may be discarded after the call.
     ///
-    /// `total_pages`は`counter(pages)`用の総ページ数(`Mode::Streaming`では
-    /// 原理的に決まらないため常に`None`、`Mode::Batch`で`@page`が
-    /// `counter(pages)`を使う場合のみ事前カウント済みの値を渡す)。
+    /// `total_pages` is the total page count for `counter(pages)` (always `None` under
+    /// `Mode::Streaming`, where it cannot be known in principle; a pre-counted value is
+    /// passed only under `Mode::Batch` when `@page` uses `counter(pages)`).
     pub fn write_page(
         &mut self,
         page: &Page,
@@ -211,9 +207,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
         fonts: &FontCollection,
         total_pages: Option<usize>,
     ) -> Result<(), S::Error> {
-        // ページ番号は既定では「これまでに書いたページ数+1」(1始まり)だが、
-        // cover/TOCのために明示指定できる。`None`は「番号を持たないページ」
-        // で、margin box・ヘッダー/フッターを描かない。
+        // By default the page number is "the number of pages written so far, plus 1"
+        // (1-based), but it can be given explicitly for a cover or a table of contents.
+        // `None` means "a page with no number", drawing no margin boxes and no header/footer.
         let explicit = self.pending_page_number.take();
         let numbered = explicit.map(|n| n.is_some()).unwrap_or(true);
         let page_number = explicit
@@ -245,17 +241,17 @@ impl<S: Sink> StreamingPdfWriter<S> {
             );
         }
 
-        // 画像はフォントと違いページをまたいだ使用状況集計(サブセット化)が
-        // 不要なため、このページで初出のものはこの時点で即座にXObjectとして
-        // 書き出し切る。`<img>`本体と`background-image`の
-        // 両方をここで一括して集める。
+        // Unlike fonts, images need no cross-page usage tally (subsetting), so anything
+        // appearing for the first time on this page is written out as an XObject right here.
+        // Both `<img>` itself and `background-image` are collected together at this point.
+
         let mut used_images = Vec::new();
         for b in &page.boxes {
             collect_image_uses(b, background_images, &mut used_images);
         }
         let mut page_image_refs = Vec::with_capacity(used_images.len());
         for image in &used_images {
-            // `Ref`の振り直しに失敗したSVGは`None`になる(描画されない)。
+            // An SVG whose `Ref` renumbering failed becomes `None` (and is not drawn).
             let Some((ids, is_new)) = ids_for_image(
                 &mut self.alloc,
                 &mut self.image_ids,
@@ -265,8 +261,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 continue;
             };
             let root = ids.root;
-            // 書き出しは`self`を可変で借りるため、`self.image_ids`から借りた
-            // `ids`をここで手放してから`write_objects`へ進む。
+            // Writing borrows `self` mutably, so the `ids` borrowed from `self.image_ids` are
+            // released here before moving on to `write_objects`.
             let embedded = if is_new {
                 embed_image_streaming_chunks(image, ids, self.output.grayscale)
             } else {
@@ -278,8 +274,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
             page_image_refs.push(root);
         }
 
-        // `opacity < 1`の要素を先に集めてRefを払い出す(バッチモード
-        // `encode_pdf`と同じ構造)。
+        // Collect the elements with `opacity < 1` first and allocate their Refs (the same
+        // structure as batch mode's `encode_pdf`).
         let mut opacity_nodes = Vec::new();
         for b in &page.boxes {
             collect_opacity_uses(b, styles, &mut opacity_nodes);
@@ -295,14 +291,14 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.page_ids.push(page_id);
 
         let mut content = Content::new();
-        // CSS px → PDF ptの換算はページ全体のCTMで行う。これ以降のcontent
-        // stream内の座標はすべてCSS pxのままでよい。
+        // The CSS px to PDF pt conversion is done by the page's overall CTM. Every coordinate
+        // in the content stream from here on can stay in CSS px.
         let scale = self.output.scale;
         content.transform([scale, 0.0, 0.0, scale, 0.0, 0.0]);
-        // 色変換を挟むラッパー。
+        // A wrapper interposing the colour conversion.
         let mut target = RenderTarget::new(&mut content, self.output.grayscale);
         for b in &page.boxes {
-            // `remaps: None` — CIDは常に元のグリフIDのまま使う。
+            // `remaps: None` - CIDs are always used as the original glyph IDs.
             render_box(
                 &mut target,
                 b,
@@ -360,9 +356,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
         content_stream.finish();
         self.write_chunk(content_id, &chunk)?;
 
-        // `<a href>`の注釈と、このページに落ちたアンカーの位置。注釈は
-        // 名前付き宛先を参照するだけなので、後方のページを指すリンクもこの
-        // ページの時点で書き切れる。
+        // The `<a href>` annotations, and the positions of the anchors landing on this page.
+        // An annotation only references a named destination, so even a link pointing at a
+        // later page can be written out fully at this point.
         let mut page_links = Vec::new();
         let mut page_anchors = Vec::new();
         for b in &page.boxes {
@@ -426,8 +422,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
         }
         self.write_chunk(page_id, &chunk)?;
 
-        // opacityグループのForm XObjectを実際に
-        // 書き出す(バッチモードと同じ方針)。
+        // Write out the Form XObjects of the opacity groups for real
+        // (the same policy as batch mode).
         for (form_ref, bytes) in &pending_forms {
             let mut chunk = Chunk::new();
             {
@@ -455,8 +451,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
         Ok(())
     }
 
-    /// 残りのオブジェクト(フォント埋め込み・ページツリー・カタログ・
-    /// xref/trailer)をすべて書き出し、`sink.finish()`を呼ぶ。
+    /// Write out every remaining object (font embedding, the page tree, the catalog, the xref
+    /// and the trailer) and call `sink.finish()`.
     pub fn finish(mut self, fonts: &FontCollection) -> Result<S::Output, S::Error> {
         let font_ids = self.font_ids.clone();
         let usages = std::mem::take(&mut self.usages);
@@ -473,8 +469,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
             .count(self.page_ids.len() as i32);
         self.write_chunk(self.pages_tree_id, &chunk)?;
 
-        // 名前付き宛先はすべてのページを書き終えたこの時点で解決する。
-        // 前方参照のリンクもここで初めて宛先が定まる。
+        // The named destinations are resolved here, once every page has been written.
+        // A forward-referencing link only gets its destination at this point.
         let destinations = std::mem::take(&mut self.destinations);
         let dests_id = (!destinations.is_empty()).then(|| self.alloc.next());
         if let Some(dests_id) = dests_id {
@@ -516,15 +512,15 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.sink.finish()
     }
 
-    /// `chunk`(単一の間接オブジェクトを含む前提)のバイト列を`sink`へ書き出し、
-    /// 開始オフセットをxref用に記録する。
+    /// Write `chunk`'s bytes (assumed to hold a single indirect object) to `sink` and record
+    /// its starting offset for the xref.
     fn write_chunk(&mut self, id: Ref, chunk: &Chunk) -> Result<(), S::Error> {
         self.write_objects(chunk, &[(id, 0)])
     }
 
-    /// 複数のオブジェクトが入ったチャンクを書き出す。`offsets`はチャンク内の
-    /// 各オブジェクトの開始位置(SVGのForm XObject群のように1チャンクに
-    /// 複数オブジェクトが入る場合に使う)。
+    /// Write a chunk containing several objects. `offsets` are the starting positions of each
+    /// object within the chunk (used where one chunk holds several objects, as with an SVG's
+    /// Form XObjects).
     fn write_objects(&mut self, chunk: &Chunk, offsets: &[(Ref, usize)]) -> Result<(), S::Error> {
         for &(id, offset) in offsets {
             self.offsets.push((id, self.output_len + offset));
@@ -552,9 +548,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
         for (_, offset) in &self.offsets {
             buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
         }
-        // `/ID`(ファイル識別子)はバッチ書き出しと同じ作り方をする。
-        // ここは`pdf_writer::Pdf`を通さず自前でtrailerを書くので、
-        // 16進文字列として直接書く(バイト列としては同じ値)。
+        // `/ID` (the file identifier) is built the same way as in the batch writer.
+        // We write the trailer ourselves here rather than through `pdf_writer::Pdf`, so it is
+        // written directly as a hex string (the same value as a byte string).
         let id: String = file_identifier(&self.output.metadata, self.page_ids.len())
             .iter()
             .map(|b| format!("{b:02x}"))
@@ -661,8 +657,8 @@ mod tests {
 
     #[test]
     fn streaming_writer_output_is_readable_by_pdf_parsing_via_pymupdf_equivalent_checks() {
-        // 複数ページ・複数フォント(ページをまたいでグリフ集合が変わるケース)でも構造的に妥当な
-        // PDFになることを確認する。
+        // Check that even with several pages and several fonts (where the glyph set changes
+        // from page to page) the PDF comes out structurally valid.
         let mut html_src = String::from("<div>");
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -736,10 +732,10 @@ mod tests {
 
     #[test]
     fn streaming_writer_handles_glyphs_that_only_appear_on_a_later_page() {
-        // ページ1に登場しない文字("Q"/"z")がページ2にのみ現れるケース。
-        // フォント埋め込み(サブセット化+CIDToGIDMap)は全ページ処理後に
-        // まとめて行われるため、ページ1のコンテンツストリーム構築時点では
-        // これらのグリフの使用状況はまだ確定していない。
+        // The case where characters absent from page 1 ("Q"/"z") appear only on page 2.
+        // Font embedding (subsetting plus CIDToGIDMap) happens all at once after every page
+        // is processed, so the usage of those glyphs is not yet settled when page 1's content
+        // stream is built.
         let dom1 = html::parse(b"<p>Hello, world!</p>");
         let dom2 = html::parse(b"<p>Quick zebra jumps.</p>");
         let ua = user_agent_stylesheet();
@@ -820,11 +816,11 @@ mod tests {
 
     #[test]
     fn streaming_writer_works_through_a_buffered_s3_style_sink() {
-        // `StreamingPdfWriter`が`BufferedSink`(S3マルチパート
-        // アップロード想定)を通しても、`Sink::write`が細切れ・多数回に
-        // 分けて呼ばれることに正しく対応できることを確認する。実際の
-        // S3向けバッファ付きSinkと同じ`crate::sink::BufferedSink`をここでも
-        // 使い、小さめの閾値でパート分割を強制する。
+        // Check that `StreamingPdfWriter` copes correctly with `Sink::write` being called
+        // many times in small pieces, even through a `BufferedSink` (as intended for S3
+        // multipart uploads). It uses the same `crate::sink::BufferedSink` as the real
+        // S3-bound buffering sink, with a small threshold to force splitting into parts.
+
         use crate::sink::BufferedSink;
 
         let mut html_src = String::from("<div>");
@@ -843,8 +839,8 @@ mod tests {
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
         assert!(pages.len() > 1, "expected multiple pages");
 
-        // 実運用では`MULTIPART_MIN_PART_SIZE`(5MB)を使うが、テストでは
-        // 複数パートへの分割を確実に起こすため小さい閾値にする。
+        // Production would use `MULTIPART_MIN_PART_SIZE` (5MB), but the test uses a small
+        // threshold to guarantee a split across several parts.
         let mut uploaded_parts: Vec<usize> = Vec::new();
         let sink: BufferedSink<(), std::io::Error, _> = BufferedSink::new(2048, |part| {
             uploaded_parts.push(part.len());
@@ -866,8 +862,8 @@ mod tests {
             "expected the PDF to be split into multiple upload parts, got {}",
             uploaded_parts.len()
         );
-        // 最後のパート以外はちょうど閾値サイズであるはず(S3の制約通り、
-        // 最後のパートのみ閾値未満が許される)。
+        // Every part but the last should be exactly the threshold size (as S3 requires, only
+        // the last part may be under it).
         for &len in &uploaded_parts[..uploaded_parts.len() - 1] {
             assert_eq!(len, 2048);
         }

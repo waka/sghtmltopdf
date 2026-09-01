@@ -1,4 +1,4 @@
-//! html5everの`TreeSink`実装。パース結果を[`Dom`]に組み立てる。
+//! The html5ever `TreeSink` implementation. Assembles the parse result into a [`Dom`].
 
 use std::cell::{Cell, Ref, RefCell, RefMut};
 
@@ -11,29 +11,27 @@ use html5ever::{parse_document, Attribute, LocalName, Namespace, Parser, QualNam
 
 use super::dom::{append, detach, insert_before, Dom, Node, NodeData, NodeId};
 
-/// HTMLバイト列をパースして[`Dom`]を構築する(一括変換)。
+/// Parse HTML bytes into a [`Dom`] (whole-document conversion).
 ///
-/// 内部的には[`StreamingParser`]に全バイト列を1回で`feed`するだけの
-/// 薄いラッパー。一括処理APIとチャンク投入APIでロジックを
-/// 共有するための構成。
+/// Internally a thin wrapper that `feed`s all the bytes to [`StreamingParser`] in one go,
+/// so the batch API and the chunked API share the same logic.
 pub fn parse(html: &[u8]) -> Dom {
     let mut parser = StreamingParser::new();
     parser.feed(html);
     parser.finish()
 }
 
-/// HTMLをチャンク単位で逐次投入できるパーサ。
+/// A parser that accepts HTML chunk by chunk.
 ///
-/// html5everのトークナイザ自体がストリーミング設計であることに加え、
-/// [`Utf8LossyDecoder`](html5ever::driver::Utf8LossyDecoder)は`feed`の
-/// 呼び出し境界がUTF-8のマルチバイト文字の途中で分割されても、続きの
-/// バイト列と結合してから正しくデコードする(`tendril`クレートの
-/// インクリメンタルデコード機構)。そのためチャンクの区切り位置を
-/// 呼び出し側がUTF-8境界に合わせる必要はない。
+/// html5ever's tokenizer is itself designed for streaming, and
+/// [`Utf8LossyDecoder`](html5ever::driver::Utf8LossyDecoder) joins a `feed` boundary that
+/// falls in the middle of a multi-byte UTF-8 character with the following bytes before
+/// decoding (the `tendril` crate's incremental decoding). Callers therefore do not need
+/// to align chunk boundaries to UTF-8 character boundaries.
 pub struct StreamingParser {
     inner: Utf8LossyDecoder<Parser<Sink>>,
-    /// [`Self::take_completed_top_level_children`]がこれまでに返却済みの、
-    /// `<body>`直下の最後の子要素。次回呼び出し時、この続きから探索する。
+    /// The last child directly under `<body>` that
+    /// [`Self::take_completed_top_level_children`] has already returned. The next call resumes from there.
     last_yielded_top_level_child: Option<NodeId>,
 }
 
@@ -44,7 +42,7 @@ impl StreamingParser {
                 nodes: vec![Node::new(NodeData::Document)],
                 document: NodeId(0),
                 max_depth: 0,
-                // documentノードのぶん。
+                // For the document node itself.
                 live_nodes: 1,
             }),
             quirks_mode: Cell::new(QuirksMode::NoQuirks),
@@ -58,52 +56,50 @@ impl StreamingParser {
         }
     }
 
-    /// HTMLバイト列のチャンクを1つ投入する。何度でも呼べる。
+    /// Feed one chunk of HTML bytes. May be called any number of times.
     pub fn feed(&mut self, chunk: &[u8]) {
         self.inner.process(ByteTendril::from_slice(chunk));
     }
 
-    /// `<body>`より後にCSSソース(`<style>`または`rel="stylesheet"`の
-    /// `<link>`)が出現したかどうか。
+    /// Whether a CSS source (a `<style>`, or a `<link>` with `rel="stylesheet"`) appeared
+    /// after `<body>`.
     ///
-    /// `Engine`の`Mode::Streaming`がエラーを返すかどうかの判定に使う
-    /// (`Mode::Batch`ではこの値を無視してよい)。`<body>`の開始タグを見た
-    /// 時点以降に生成された`<style>`/`<link rel=stylesheet>`要素が
-    /// 1つでもあれば`true`になる。
+    /// Used to decide whether `Engine`'s `Mode::Streaming` returns an error
+    /// (`Mode::Batch` may ignore it). It becomes `true` if even one
+    /// `<style>`/`<link rel=stylesheet>` element was created at or after the point the
+    /// `<body>` start tag was seen.
     pub fn has_late_css_source(&self) -> bool {
         self.sink().late_css_source_detected.get()
     }
 
-    /// `<body>`要素の`NodeId`(まだパースされていなければ`None`)。
+    /// The `NodeId` of the `<body>` element (`None` if it has not been parsed yet).
     pub fn body_node(&self) -> Option<NodeId> {
         self.sink().body_id.get()
     }
 
-    /// パース中の(まだ`finish`されていない)[`Dom`]への読み取り専用アクセス。
+    /// Read-only access to the [`Dom`] while it is still being parsed (before `finish`).
     ///
-    /// `Engine`の真のストリーミング処理が、`<body>`直下のトップレベル要素が
-    /// 確定するたびに、`finish`を待たずにそのサブツリーのスタイル計算・
-    /// ボックスツリー構築を行うために使う。
+    /// Used by `Engine`'s true streaming path, which computes styles and builds the box
+    /// tree for each top-level element directly under `<body>` as soon as it is final,
+    /// without waiting for `finish`.
     pub fn dom(&self) -> Ref<'_, Dom> {
         self.sink().dom.borrow()
     }
 
-    /// [`Self::dom`]の書き込み可能版。`Engine`が
-    /// [`crate::html::Dom::release_subtree`]でトップレベル要素のサブツリーを
-    /// 解放するために使う。
+    /// The writable version of [`Self::dom`]. `Engine` uses it to free a top-level
+    /// element's subtree via [`crate::html::Dom::release_subtree`].
     pub fn dom_mut(&self) -> RefMut<'_, Dom> {
         self.sink().dom.borrow_mut()
     }
 
-    /// `<body>`直下の子要素のうち、「もう変更されない」と判断できる
-    /// (=直後に別の兄弟が既に追加されている)ものの`NodeId`を、出現順に
-    /// 切り出して返す。呼び出しのたびに返却済み位置を進めるため、同じ
-    /// 要素が2回返されることはない。`<body>`がまだ存在しない、または
-    /// 対象がなければ空のベクタを返す。
+    /// Return, in document order, the `NodeId`s of the children directly under `<body>`
+    /// that can be considered final (that is, a later sibling has already been added).
+    /// Each call advances the position already returned, so the same element is never
+    /// returned twice. Returns an empty vector if `<body>` does not exist yet, or if
+    /// there is nothing to return.
     ///
-    /// 末尾の要素は「まだ子要素が追加され続けている可能性がある」ため、
-    /// 対象に含めない(次回以降の呼び出し、または[`Self::finish`]まで
-    /// 待つ)。
+    /// The last element is excluded, since children may still be being added to it
+    /// (it waits for a later call, or for [`Self::finish`]).
     pub fn take_completed_top_level_children(&mut self) -> Vec<NodeId> {
         let Some(body) = self.body_node() else {
             return Vec::new();
@@ -114,7 +110,7 @@ impl StreamingParser {
         drop(dom);
 
         if children.len() < 2 {
-            // 末尾以外に確定した要素がない(0〜1個しかない)。
+            // Nothing but the last one is final (there are only 0 or 1 elements).
             return Vec::new();
         }
 
@@ -125,7 +121,7 @@ impl StreamingParser {
             },
             None => 0,
         };
-        // 最後の1要素は「まだ子要素が追加中かもしれない」ため除外する。
+        // Exclude the last element, since children may still be being added to it.
         let end = children.len() - 1;
         if start >= end {
             return Vec::new();
@@ -139,9 +135,9 @@ impl StreamingParser {
         result
     }
 
-    /// [`Self::take_completed_top_level_children`]と同様だが、末尾の要素も
-    /// 保留せずすべて返す。「これ以上`<body>`に子要素が追加されない」ことが
-    /// 確定した状況(`Engine::finish`が呼ばれる直前)で使う。
+    /// Like [`Self::take_completed_top_level_children`], but returns everything including
+    /// the last element. Used once it is certain that no more children will be added to
+    /// `<body>` (immediately before `Engine::finish` is called).
     pub fn take_all_remaining_top_level_children(&mut self) -> Vec<NodeId> {
         let Some(body) = self.body_node() else {
             return Vec::new();
@@ -167,7 +163,7 @@ impl StreamingParser {
         &self.inner.inner_sink.tokenizer.sink.sink
     }
 
-    /// これ以上チャンクがないことを伝え、パース済みの[`Dom`]を得る。
+    /// Signal that there are no more chunks and take the parsed [`Dom`].
     pub fn finish(self) -> Dom {
         self.inner.finish()
     }
@@ -182,26 +178,26 @@ impl Default for StreamingParser {
 struct Sink {
     dom: RefCell<Dom>,
     quirks_mode: Cell<QuirksMode>,
-    /// `<body>`要素の開始タグを見たかどうか
+    /// Whether the `<body>` start tag has been seen
     seen_body: Cell<bool>,
-    /// `<body>`より後にCSSソース(`<style>`または`<link rel=stylesheet>`)が
-    /// 出現したかどうか。
+    /// Whether a CSS source (a `<style>` or a `<link rel=stylesheet>`) appeared after
+    /// `<body>`.
     late_css_source_detected: Cell<bool>,
-    /// `<body>`要素の`NodeId`
+    /// The `NodeId` of the `<body>` element
     body_id: Cell<Option<NodeId>>,
 }
 
-/// `name`/`attrs`が「CSSソースとして扱う要素」(`<style>`または
-/// `rel="stylesheet"`の`<link>`)かどうかを判定する(`<body>`より後の出現を
-/// `<style>`と同様にエラーにするため)。
+/// Whether `name`/`attrs` describe an element treated as a CSS source (a `<style>`, or a
+/// `<link>` with `rel="stylesheet"`), so that an appearance after `<body>` is an error
+/// just as it is for `<style>`.
 fn is_late_css_source(local_name: &str, attrs: &[Attribute]) -> bool {
     local_name == "style" || (local_name == "link" && super::dom::is_stylesheet_link(attrs))
 }
 
-/// [`TreeSink::elem_name`]が返す、貸し出し元から独立した要素名。
+/// The element name returned by [`TreeSink::elem_name`], independent of what lent it.
 ///
-/// アリーナは1つの`RefCell`にまとめているため、`&'a QualName`のように
-/// 借用をそのまま返すことができない(borrowガードの寿命が合わない)。
+/// The arena lives behind a single `RefCell`, so a borrow cannot be returned directly as
+/// `&'a QualName` (the borrow guard's lifetime does not line up).
 #[derive(Debug)]
 struct OwnedElemName(QualName);
 
@@ -220,10 +216,10 @@ impl Sink {
         self.dom.borrow_mut().push_node(data)
     }
 
-    /// テキストは直前の兄弟がTextノードであれば連結する(html5everの規約通り)。
+    /// Text is concatenated onto the preceding sibling when that is a Text node (as html5ever specifies).
     ///
-    /// `do_append`は繋いだ部分木の最大深さを返す。木に繋ぐ経路をここ1箇所に
-    /// 集約しているので、[`Dom::max_depth`]の更新もここだけで済む。
+    /// `do_append` returns the greatest depth of the attached subtree. Attaching to the
+    /// tree is funnelled through here, so [`Dom::max_depth`] only needs updating here too.
     fn append_common(
         &self,
         child: NodeOrText<NodeId>,
@@ -404,7 +400,7 @@ impl TreeSink for Sink {
         let mut next_child = dom.nodes[node.0].first_child;
         while let Some(child) = next_child {
             next_child = dom.nodes[child.0].next_sibling;
-            // 部分木ごと別の親へ移るので、深さは`append`の中で振り直される。
+            // The whole subtree moves to a different parent, so `append` recomputes the depths.
             let depth = append(&mut dom.nodes, *new_parent, child);
             dom.max_depth = dom.max_depth.max(depth);
         }
@@ -415,7 +411,7 @@ impl TreeSink for Sink {
 mod tests {
     use super::*;
 
-    /// 木を先行順(pre-order)に探索し、最初に見つかったタグ名の要素を返す。
+    /// Walk the tree in pre-order and return the first element with the given tag name.
     fn find(dom: &Dom, id: NodeId, tag: &str) -> Option<NodeId> {
         if let NodeData::Element { name, .. } = &dom.node(id).data {
             if &*name.local == tag {
@@ -461,8 +457,8 @@ mod tests {
 
     #[test]
     fn merges_adjacent_text_into_a_single_node() {
-        // "&amp;"はトークナイザ内で文字参照として個別に処理されるため、
-        // 素朴に実装すると隣接テキストノードが分裂しやすい典型ケース。
+        // "&amp;" is handled separately inside the tokenizer as a character reference, so
+        // this is the classic case where a naive implementation splits adjacent text nodes.
         let dom = parse(br#"<p>AT&amp;T</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
 
@@ -487,7 +483,7 @@ mod tests {
         assert_eq!(text_of(&dom, lis[2]), "three");
     }
 
-    /// バイト列を1バイトずつ`feed`しても、一括`parse`と同じDOMになることを確認する。
+    /// Feeding the bytes one at a time must produce the same DOM as a whole-input `parse`.
     #[test]
     fn streaming_parser_byte_by_byte_matches_one_shot_parse() {
         let html = br#"<div class="a"><p>Hello <b>world</b></p></div>"#;
@@ -510,9 +506,9 @@ mod tests {
         assert_eq!(&*attrs[0].value, "a");
     }
 
-    /// マルチバイトなUTF-8文字("日本語"の各文字は3バイト)がチャンク境界を
-    /// またいで分割されても、`Utf8LossyDecoder`のインクリメンタルデコードに
-    /// より文字化けせず正しく結合されることを確認する。
+    /// A multi-byte UTF-8 character split across a chunk boundary (each character of
+    /// "nihongo" is three bytes) must still be joined correctly by `Utf8LossyDecoder`'s
+    /// incremental decoding, rather than turning into mojibake.
     #[test]
     fn streaming_parser_handles_utf8_multibyte_char_split_across_chunks() {
         let html = "<p>日本語のテスト</p>".as_bytes();
@@ -527,9 +523,9 @@ mod tests {
         assert_eq!(text_of(&dom, p), "日本語のテスト");
     }
 
-    /// 複数回に分けて`feed`したテキストは、一括`parse`と同様に隣接テキスト
-    /// ノードとして1つに結合されることを確認する(`html::dom`側の結合ロジックが
-    /// チャンク分割の影響を受けないことの確認)。
+    /// Text fed over several calls must be merged into a single adjacent text node just as
+    /// a whole-input `parse` does (confirming the merging logic in `html::dom` is not
+    /// affected by how the input is chunked).
     #[test]
     fn streaming_parser_merges_text_fed_across_multiple_chunks() {
         let mut parser = StreamingParser::new();
@@ -602,8 +598,8 @@ mod tests {
 
     #[test]
     fn has_late_css_source_detects_stylesheet_among_multiple_rel_tokens() {
-        // relは空白区切りのトークン列(rel="preload stylesheet"のような
-        // 書き方も有効)。
+        // rel is a whitespace-separated token list (a form such as
+        // rel="preload stylesheet" is valid too).
         let mut parser = StreamingParser::new();
         parser.feed(br#"<body><p>x</p><link rel="preload stylesheet" href="a.css"></body>"#);
         assert!(parser.has_late_css_source());
@@ -642,7 +638,7 @@ mod tests {
         assert_eq!(completed.len(), 1);
         assert_eq!(tag_of(&parser, completed[0]), "div");
 
-        // まだ2つ目(p)はheldされたまま。
+        // The second one (p) is still held back.
         assert!(parser.take_completed_top_level_children().is_empty());
     }
 

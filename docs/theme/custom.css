@@ -1,4 +1,4 @@
-/* 言語切替リンク(theme/lang-switch.js が差し込む)。 */
+/* The language-switch link (injected by theme/lang-switch.js). */
 .right-buttons .lang-switch {
   margin-left: 0.75em;
   font-size: 0.9em;
@@ -10,7 +10,7 @@
   color: var(--icons-hover);
 }
 
-/* 対応表が横に長いので、はみ出す場合は表だけ横スクロールさせる。 */
+/* The support tables are wide, so scroll just the table horizontally when it overflows. */
 .content table {
   display: block;
   max-width: 100%;

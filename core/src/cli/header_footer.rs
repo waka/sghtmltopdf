@@ -1,27 +1,27 @@
-//! ヘッダー/フッターの簡易オプションを`@page`ルールへ変換する。
+//! Translation of the simple header/footer options into `@page` rules.
 //!
-//! `--header-center "Page [page]"`のような指定を
-//! `@page { @top-center { content: "Page " counter(page); } }`というCSSテキスト
-//! へ組み立て、既存の`parse_stylesheet`に通す。margin boxの解決・シェイピング・
-//! 描画の経路をそのまま再利用できる。
+//! A setting like `--header-center "Page [page]"` is assembled into the CSS text
+//! `@page { @top-center { content: "Page " counter(page); } }` and fed through the
+//! existing `parse_stylesheet`. That reuses the whole margin-box resolution, shaping
+//! and drawing path as is.
 
 use std::fmt::Write as _;
 
-/// プレースホルダの展開に必要な、文書単位で決まる値。
+/// Document-level values needed to expand the placeholders.
 #[derive(Debug, Clone, Default)]
 pub struct PlaceholderValues {
-    /// `[title]`/`[doctitle]`。
+    /// `[title]`/`[doctitle]`.
     pub title: Option<String>,
-    /// `[date]`(`YYYY-MM-DD`)。
+    /// `[date]` (`YYYY-MM-DD`).
     pub date: String,
-    /// `[time]`(`HH:MM:SS`)。
+    /// `[time]` (`HH:MM:SS`).
     pub time: String,
-    /// `--replace <name> <value>`で追加された任意の`[name]`。
+    /// Any `[name]` added via `--replace <name> <value>`.
     pub replacements: Vec<(String, String)>,
 }
 
 impl PlaceholderValues {
-    /// 現在時刻から`[date]`/`[time]`を埋めた値を作る。
+    /// Build the values with `[date]`/`[time]` filled in from the current time.
     pub fn new(title: Option<String>, replacements: Vec<(String, String)>) -> Self {
         let (year, month, day, hour, minute, second) = crate::pdf::current_datetime();
         Self {
@@ -32,9 +32,9 @@ impl PlaceholderValues {
         }
     }
 
-    /// 文字列中のプレースホルダのうち、ページ番号以外を展開する。
-    /// `[page]`/`[topage]`は呼び出し側の文脈(CSSのcounter()かページ番号の
-    /// 直接埋め込みか)で扱いが変わるため、ここでは触らない。
+    /// Expand every placeholder in the string except the page numbers.
+    /// `[page]`/`[topage]` are handled differently depending on the caller's context
+    /// (a CSS counter() versus a literal page number), so they are left alone here.
     fn expand_document_level(&self, text: &str) -> String {
         let mut out = text.to_string();
         if let Some(title) = &self.title {
@@ -52,13 +52,13 @@ impl PlaceholderValues {
         out
     }
 
-    /// `--header-html`向け: `[page]`/`[topage]`だけを残して他を展開する。
-    /// 残りはエンジンがページごとに差し込む。
+    /// For `--header-html`: expand everything but leave `[page]`/`[topage]` in place.
+    /// The engine fills those in per page.
     pub fn expand_keeping_page_tokens(&self, text: &str) -> String {
         self.expand_document_level(text)
     }
 
-    /// `--header-html`向け: ページ番号も含めてすべて展開する。
+    /// For `--header-html`: expand everything, page numbers included.
     pub fn expand_all(&self, text: &str, page: usize, total_pages: Option<usize>) -> String {
         let mut out = self.expand_document_level(text);
         out = out.replace("[page]", &page.to_string());
@@ -67,15 +67,15 @@ impl PlaceholderValues {
     }
 }
 
-/// margin boxに置くテキスト1つ分の指定。
+/// One piece of text to place in a margin box.
 #[derive(Debug, Clone)]
 pub struct MarginBoxText {
-    /// `@top-left`等のat-rule名(先頭の`@`は含まない)。
+    /// The at-rule name such as `@top-left` (without the leading `@`).
     pub area: &'static str,
     pub text: String,
 }
 
-/// ヘッダー/フッターの簡易オプション一式。
+/// The full set of simple header/footer options.
 #[derive(Debug, Clone, Default)]
 pub struct SimpleHeaderFooter {
     pub boxes: Vec<MarginBoxText>,
@@ -90,10 +90,10 @@ impl SimpleHeaderFooter {
         self.boxes.is_empty()
     }
 
-    /// `@page`ルールのCSSテキストを組み立てる。何も指定が無ければ`None`。
+    /// Build the CSS text of the `@page` rule, or `None` if nothing was specified.
     ///
-    /// `[page]`/`[topage]`は`counter(page)`/`counter(pages)`へ、それ以外の
-    /// プレースホルダは文字列へ展開する。
+    /// `[page]`/`[topage]` become `counter(page)`/`counter(pages)`; other placeholders
+    /// expand to strings.
     pub fn to_page_css(&self, values: &PlaceholderValues) -> Option<String> {
         if self.is_empty() {
             return None;
@@ -124,8 +124,8 @@ impl SimpleHeaderFooter {
     }
 }
 
-/// プレースホルダ入りテキストをCSSの`content`値へ変換する。
-/// `[page]`/`[topage]`は`counter()`になるため、テキスト片と交互に並べる。
+/// Convert text containing placeholders into a CSS `content` value.
+/// `[page]`/`[topage]` become `counter()`, so text fragments and counters alternate.
 fn content_value(text: &str) -> String {
     let mut parts: Vec<String> = Vec::new();
     let mut buffer = String::new();
@@ -153,7 +153,7 @@ fn content_value(text: &str) -> String {
                 rest = &from_bracket[len..];
             }
             None => {
-                // 未知の`[...]`はそのままテキストとして扱う。
+                // An unknown `[...]` is kept as literal text.
                 buffer.push('[');
                 rest = &from_bracket[1..];
             }
@@ -171,7 +171,7 @@ fn content_value(text: &str) -> String {
     }
 }
 
-/// CSS文字列リテラルの中身をエスケープする。
+/// Escape the contents of a CSS string literal.
 fn escape_css_string(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
@@ -182,10 +182,10 @@ mod tests {
 
     fn values() -> PlaceholderValues {
         PlaceholderValues {
-            title: Some("請求書".to_string()),
+            title: Some("Invoice".to_string()),
             date: "2026-07-25".to_string(),
             time: "12:34:56".to_string(),
-            replacements: vec![("customer".to_string(), "わか商店".to_string())],
+            replacements: vec![("customer".to_string(), "Waka Store".to_string())],
         }
     }
 
@@ -227,7 +227,7 @@ mod tests {
             .to_page_css(&values())
             .unwrap();
         assert!(
-            css.contains(r#"content: "請求書 / 2026-07-25 / 12:34:56 / わか商店";"#),
+            css.contains(r#"content: "Invoice / 2026-07-25 / 12:34:56 / Waka Store";"#),
             "got: {css}"
         );
     }
@@ -287,6 +287,6 @@ mod tests {
     fn expand_all_fills_page_numbers_for_header_html() {
         let text = "[title] [page]/[topage] [date]";
         let out = values().expand_all(text, 3, Some(10));
-        assert_eq!(out, "請求書 3/10 2026-07-25");
+        assert_eq!(out, "Invoice 3/10 2026-07-25");
     }
 }

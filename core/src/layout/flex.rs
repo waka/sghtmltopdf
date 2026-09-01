@@ -1,16 +1,15 @@
-//! Flexbox(`display: flex`)を、既存box treeのサブツリーとしてtaffyへ
-//! ブリッジする。
+//! Bridging Flexbox (`display: flex`) to taffy, as a subtree of the existing box tree.
 //!
-//! taffyは自前でノードツリー(`TaffyTree`)を持つ設計のため、flexコンテナ・
-//! 各アイテムに対応するtaffyのリーフノードを都度組み立て、`compute_layout_with_measure`
-//! で1回だけレイアウトを計算する。テキスト等の内在サイズが必要なリーフには
-//! 採寸(measure)コールバックを渡し、その中で既存のブロック/インライン/テーブル
-//! レイアウト関数を呼んで実測する。計算結果(各アイテムの確定した位置・サイズ)
-//! は、`layout_box_with_forced_size`でもう一度実際のレイアウトを行うことで
-//! `LaidOutBox`へ変換する(2パス方式)。
+//! taffy is designed around its own node tree (`TaffyTree`), so we build taffy leaf nodes
+//! for the flex container and each item on the fly and compute the layout once with
+//! `compute_layout_with_measure`. Leaves needing an intrinsic size, such as text, get a
+//! measure callback that calls the existing block/inline/table layout functions to measure
+//! them for real. The result (each item's settled position and size) is then converted into
+//! `LaidOutBox` by running the real layout once more through
+//! `layout_box_with_forced_size` (the two-pass approach).
 //!
-//! taffyの型は自前の同名CSS型(`crate::style::FlexDirection`等)と衝突するため
-//! `tf`という別名で参照する。
+//! taffy's types clash with our identically named CSS types (`crate::style::FlexDirection`
+//! and friends), so they are referred to under the alias `tf`.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -32,10 +31,10 @@ use super::box_tree::{FlexBox, LayoutBox};
 use super::float_ctx::FloatContext;
 use super::table::measure_natural_content_width;
 
-/// flexコンテナのcontent box内(`content_x`/`content_y`起点、幅`content_width`)
-/// でflexアイテム群をレイアウトする。返り値はレイアウト済みの各アイテムと、
-/// コンテナの自然な(内容に基づく)content-box高さ(呼び出し側`block.rs`が
-/// 明示`height`指定で上書きする前の値、`layout_table`と同じ役割分担)。
+/// Lay the flex items out inside the flex container's content box (starting at
+/// `content_x`/`content_y`, with width `content_width`). Returns each laid-out item plus
+/// the container's natural (content-based) content-box height, before the caller in
+/// `block.rs` overrides it with an explicit `height` (the same division of labour as `layout_table`).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn layout_flex(
     flex: &FlexBox,
@@ -61,32 +60,32 @@ pub(super) fn layout_flex(
     (result.items, result.container_height)
 }
 
-/// taffyへ委譲するレイアウトの種類。コンテナ/アイテムへ渡す`Style`だけが
-/// 変わり、採寸ブリッジと座標変換は共通。
+/// Which kind of layout is delegated to taffy. Only the `Style` handed to the container and
+/// the items differs; the measure bridge and the coordinate conversion are shared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TaffyMode {
     Flex,
     Grid,
 }
 
-/// [`layout_taffy_subtree`]の結果。
+/// The result of [`layout_taffy_subtree`].
 pub(super) struct TaffySubtreeLayout {
     pub items: Vec<LaidOutBox>,
-    /// コンテナの自然な(内容に基づく)content-box高さ。
+    /// The container's natural (content-based) content-box height.
     pub container_height: f32,
-    /// Gridのときのみ、行トラックの使用サイズとガター(ページ分割用)。
+    /// For Grid only: the row tracks' used sizes and gutters (for pagination).
     pub row_tracks: Option<GridRowTracks>,
 }
 
-/// グリッドの行トラック情報(taffyの`DetailedGridInfo`由来)。
-/// `gutters`はトラックの前後に1つずつ入るため`sizes.len() + 1`要素。
+/// Row track information for a grid (from taffy's `DetailedGridInfo`).
+/// `gutters` has `sizes.len() + 1` entries, one going before and after each track.
 pub(super) struct GridRowTracks {
     pub sizes: Vec<f32>,
     pub gutters: Vec<f32>,
 }
 
-/// flex/gridのアイテム群をtaffyでレイアウトし、既存の`LaidOutBox`へ変換する
-/// (2パス方式)。
+/// Lay flex/grid items out with taffy and convert them into the existing `LaidOutBox`
+/// (the two-pass approach).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn layout_taffy_subtree(
     flex_items: &[LayoutBox],
@@ -108,14 +107,14 @@ pub(super) fn layout_taffy_subtree(
     }
 
     let mut tree: tf::TaffyTree<usize> = tf::TaffyTree::new();
-    // taffyは既定で最終レイアウトを整数へ丸める。整数ピクセルのラスタライズで
-    // 隙間や重なりを出さないための処理だが、出力先がPDF(浮動小数座標)のこちらでは
-    // 利点が無く、採寸で得た自然幅が切り捨てられてアイテムが内容より狭くなり、
-    // 収まるはずのテキストが折り返される。丸めは行わない。
+    // taffy rounds the final layout to integers by default. That keeps gaps and overlaps out
+    // of integer-pixel rasterisation, but it gains us nothing here, where the destination is
+    // a PDF with floating-point coordinates: the natural width from measuring gets truncated,
+    // items end up narrower than their content, and text that should fit wraps. So no rounding.
     tree.disable_rounding();
 
-    // `box_style`は`ComputedStyle`(1KB超)を複製するので、アイテムごとに1回だけ
-    // 作って以降は使い回す(採寸コールバックは1アイテムにつき何度も呼ばれる)。
+    // `box_style` clones a `ComputedStyle` (over 1KB), so it is built once per item and
+    // reused (the measure callback is called many times per item).
     let item_styles: Vec<std::borrow::Cow<'_, ComputedStyle>> = flex_items
         .iter()
         .map(|item| box_style(item, styles))
@@ -130,7 +129,7 @@ pub(super) fn layout_taffy_subtree(
                 TaffyMode::Grid => super::grid::item_taffy_style(item_style),
             };
             tree.new_leaf_with_context(leaf_style, index)
-                .expect("taffyへのリーフノード追加は失敗しない")
+                .expect("adding a leaf node to taffy cannot fail")
         })
         .collect();
 
@@ -140,16 +139,16 @@ pub(super) fn layout_taffy_subtree(
     };
     let root = tree
         .new_with_children(root_style, &leaves)
-        .expect("taffyへのルートノード追加は失敗しない");
+        .expect("adding the root node to taffy cannot fail");
 
-    // 採寸コールバックはtaffyの各パスから同じアイテムに対して何度も呼ばれる。
-    // 中身は`(アイテム, 幅)`が決まれば一意に決まる純粋な計算なので、結果を
-    // 覚えておいて2回目以降を省く。受領書1通で採寸内のフルレイアウトが188回
-    // 走り、そのうち最終レイアウトへ活きるのは52回だけ、という状態だった。
+    // The measure callback is called many times for the same item, from each of taffy's
+    // passes. Its body is a pure computation determined entirely by `(item, width)`, so we
+    // remember the result and skip the repeats. For one receipt, the full layout inside
+    // measuring ran 188 times, of which only 52 fed into the final layout.
     //
-    // メモはアイテムの`LayoutBox`側に置く。ここにローカルで持つと、ネストした
-    // flex/gridで祖先の段ごとにメモが作り直され、同じ部分木の採寸が段数分だけ
-    // 掛け算になるため。
+    // The memo lives on the item's `LayoutBox`. Keeping it local here would rebuild it at
+    // every ancestor level of a nested flex/grid, multiplying the measuring of the same
+    // subtree by the nesting depth.
     tree.compute_layout_with_measure(
         root,
         tf::Size {
@@ -163,31 +162,31 @@ pub(super) fn layout_taffy_subtree(
             let item = &flex_items[index];
             let item_style = &item_styles[index];
 
-            // パディング/ボーダーはCSS仕様通り常に「containing blockの幅」
-            // (=flexコンテナのcontent_width)基準で解決する(水平・垂直とも)。
+            // Padding and border always resolve against "the containing block's width"
+            // (that is, the flex container's content_width), per the CSS spec, horizontally and vertically alike.
             let padding = resolve_padding(item_style, content_width);
             let border = resolve_border(item_style);
             let pb_x = padding.left + padding.right + border.left + border.right;
             let pb_y = padding.top + padding.bottom + border.top + border.bottom;
 
-            // measureが返すのはcontent-box基準のサイズ(taffy自身がpadding/borderを
-            // 加算する、`compute::leaf::compute_leaf_layout`で実測済みの規約)。
-            // 一方`known_dimensions`はborder-box基準(taffyは内部を一貫して
-            // border-boxで計算する)なので、そのまま使わずpadding/borderを引いて
-            // content-box基準へ揃える。`available_space`はtaffy側で既に
-            // padding/borderが引かれているため変換不要。
+            // What measure returns is a content-box size (taffy adds padding/border itself;
+            // a convention confirmed by measurement in `compute::leaf::compute_leaf_layout`).
+            // `known_dimensions`, on the other hand, is border-box based (taffy computes
+            // internally in border-box throughout), so rather than use it directly we
+            // subtract padding/border to bring it to content-box. `available_space` needs no
+            // conversion, taffy having already subtracted padding/border.
             let width = known_dimensions
                 .width
                 .map(|w| (w - pb_x).max(0.0))
                 .unwrap_or_else(|| {
                     let natural = measure_natural_content_width(item, styles, fonts);
                     match available_space.width {
-                        // 「使える幅」が確定していても、内容がそれより狭ければ
-                        // 内容幅を返す。ここで常に`w`を返すと、内容幅に縮むべき
-                        // ケース(Gridの`justify-items: start`等)で常にトラック
-                        // 幅いっぱいになってしまう。
+                        // Even with a definite "available width", return the content width
+                        // when the content is narrower. Always returning `w` here would fill
+                        // the whole track in cases that should shrink to the content width
+                        // (Grid's `justify-items: start`, say).
                         tf::AvailableSpace::Definite(w) => natural.min(w),
-                        // min-contentとmax-contentは区別しない(既知の簡略化)。
+                        // min-content and max-content are not distinguished (a known simplification).
                         tf::AvailableSpace::MinContent | tf::AvailableSpace::MaxContent => natural,
                     }
                 });
@@ -220,18 +219,18 @@ pub(super) fn layout_taffy_subtree(
             tf::Size { width, height }
         },
     )
-    .expect("compute_layout_with_measureは失敗しない");
+    .expect("compute_layout_with_measure cannot fail");
 
     let mut result = Vec::with_capacity(flex_items.len());
     for (index, item) in flex_items.iter().enumerate() {
         let leaf = leaves[index];
         let item_layout = tree
             .layout(leaf)
-            .expect("直前にcompute_layout_with_measureで計算済み");
+            .expect("just computed by compute_layout_with_measure");
         let item_style = &item_styles[index];
 
-        // taffyのLayout.size/padding/borderはborder-box前提(スパイクで実測確認
-        // 済み)。content-box幅・高さへ変換する。
+        // taffy's Layout.size/padding/border assume border-box (confirmed by measurement in a
+        // spike). Convert to content-box width and height.
         let content_w = (item_layout.size.width
             - item_layout.padding.left
             - item_layout.padding.right
@@ -245,23 +244,23 @@ pub(super) fn layout_taffy_subtree(
             - item_layout.border.bottom)
             .max(0.0);
 
-        // taffyのlocationはborder-box原点(marginは既に位置に織り込み済み、
-        // スパイクで実測確認済み: margin-left: 10pxのリーフはlocation.x=10)。
-        // `layout_box_with_forced_size`のx/yは「marginを足す前」の位置を
-        // 期待するため、ここでmargin分を差し引く。
+        // taffy's location has the border-box origin (margins are already folded into the
+        // position; confirmed by measurement in a spike: a leaf with margin-left: 10px has
+        // location.x=10). `layout_box_with_forced_size` expects an x/y from before margins
+        // are added, so the margins are subtracted back off here.
         let margin_left = super::block::resolve_lpa_or_zero(item_style.margin_left, content_width);
         let margin_top = super::block::resolve_lpa_or_zero(item_style.margin_top, content_width);
 
         let x = content_x + item_layout.location.x - margin_left;
         let y = content_y + item_layout.location.y - margin_top;
 
-        // flexアイテムは新しいフォーマッティングコンテキストを確立する
-        // (`float`はアイテム自身には効果を持たない、CSS仕様通り)ため、
-        // アイテムごとに独立した`FloatContext`を使う(`table.rs`のセルと同じ
-        // 方針)。
-        // 最終レイアウトパスなので、アイテムの子孫にある`absolute`/`fixed`は
-        // 本物の`PosCtx`へ集める(採寸パスと違い、ここは1アイテムにつき1回
-        // しか通らない)。
+        // A flex item establishes a new formatting context (`float` has no effect on the item
+        // itself, per the CSS spec), so each item uses its own independent `FloatContext`
+        // (the same policy as cells in `table.rs`).
+        //
+        // This is the final layout pass, so any `absolute`/`fixed` among the item's
+        // descendants is collected into the real `PosCtx` (unlike the measuring pass, this
+        // runs only once per item).
         let mut item_float_ctx = FloatContext::new();
         let laid = layout_box_with_forced_size(
             item,
@@ -280,9 +279,9 @@ pub(super) fn layout_taffy_subtree(
 
     let root_layout = tree
         .layout(root)
-        .expect("直前にcompute_layout_with_measureで計算済み");
+        .expect("just computed by compute_layout_with_measure");
 
-    // Gridのページ分割に使う行トラック情報を取り出す。
+    // Extract the row track information used for grid pagination.
     let row_tracks = match (mode, tree.detailed_layout_info(root)) {
         (TaffyMode::Grid, tf::DetailedLayoutInfo::Grid(info)) => Some(GridRowTracks {
             sizes: info.rows.sizes.clone(),
@@ -310,18 +309,18 @@ fn container_taffy_style(style: &ComputedStyle, content_width: f32) -> tf::Style
             width: map_length_percentage(style.column_gap),
             height: map_length_percentage(style.row_gap),
         },
-        // 高さは明示指定(`height: 100px`等)があればそれをtaffyへ伝える
-        // (`align-items`/`align-content`がコンテナの実際の高さを基準に
-        // 揃えられるようにするため)。`auto`ならtaffyが内容に基づく自然な
-        // 高さを計算する(呼び出し側`block.rs`の`resolve_height`が明示
-        // `height`の場合に上書きする、`layout_table`と同じ役割分担)。
+        // An explicit height (`height: 100px`, say) is passed on to taffy so that
+        // `align-items`/`align-content` can align against the container's real height.
+        // With `auto`, taffy computes the natural content-based height (the caller's
+        // `resolve_height` in `block.rs` overrides it for an explicit `height`; the same
+        // division of labour as `layout_table`).
         size: tf::Size {
             width: tf::Dimension::length(content_width),
             height: map_dimension(style.height),
         },
-        // `min-*`/`max-*`はtaffyへそのまま委譲する。flex文脈ではtaffyが
-        // コンテナ基準でパーセンテージを解決できるため、ブロック側と違い
-        // 高さのパーセンテージも有効になる(既存の`height`と同じ非対称性)。
+        // `min-*`/`max-*` are delegated to taffy as-is. In a flex context taffy can resolve
+        // percentages against the container, so unlike the block side a percentage height
+        // works too (the same asymmetry as the existing `height`).
         min_size: tf::Size {
             width: map_length_percentage_dimension(style.min_width),
             height: map_length_percentage_dimension(style.min_height),
@@ -330,7 +329,7 @@ fn container_taffy_style(style: &ComputedStyle, content_width: f32) -> tf::Style
             width: map_max_size(style.max_width),
             height: map_max_size(style.max_height),
         },
-        // `aspect-ratio`もtaffyへ委譲する。
+        // `aspect-ratio` is delegated to taffy too.
         aspect_ratio: style.aspect_ratio.ratio,
         ..Default::default()
     }
@@ -396,9 +395,9 @@ fn map_flex_wrap(v: FlexWrap) -> tf::FlexWrap {
     }
 }
 
-/// 初期値の`normal`はtaffyへ`None`として渡す。flexでは`flex-start`と同じに
-/// なるが、gridでは`auto`トラックが余った幅を吸って伸びる(明示的に
-/// `flex-start`と書いた場合は伸びない)。
+/// The initial value `normal` is passed to taffy as `None`. In flex that is the same as
+/// `flex-start`, but in grid an `auto` track absorbs the leftover width and grows (writing
+/// `flex-start` explicitly does not).
 pub(super) fn map_justify_content(v: JustifyContent) -> Option<tf::JustifyContent> {
     match v {
         JustifyContent::Normal => None,
@@ -433,7 +432,7 @@ pub(super) fn map_align_content(v: AlignContent) -> tf::AlignContent {
     }
 }
 
-/// `align-self: auto`(初期値)は`None`にする(taffyが親の`align-items`を使う)。
+/// `align-self: auto` (the initial value) becomes `None` (taffy then uses the parent's `align-items`).
 pub(super) fn map_align_self(v: AlignSelf) -> Option<tf::AlignSelf> {
     match v {
         AlignSelf::Auto => None,
@@ -456,8 +455,8 @@ pub(super) fn map_length_percentage(v: LengthPercentage) -> tf::LengthPercentage
     match v {
         LengthPercentage::Length(px) => tf::LengthPercentage::length(px),
         LengthPercentage::Percentage(p) => tf::LengthPercentage::percent(p),
-        // taffyはpx+%の複合を表現できないため、gap等のcalcはpx成分のみ渡す
-        // (calcの主用途はflex外のwidth/margin。既知の簡略化)。
+        // taffy cannot express a px+% compound, so only the px component of a calc is passed
+        // for gap and the like (calc is mainly used on width/margin outside flex; a known simplification).
         LengthPercentage::Calc { px, .. } => tf::LengthPercentage::length(px),
     }
 }
@@ -477,18 +476,18 @@ pub(super) fn map_dimension(v: LengthPercentageOrAuto) -> tf::Dimension {
     }
 }
 
-/// `min-width`/`min-height`(初期値`0`)をtaffyの`Dimension`へ。
+/// Map `min-width`/`min-height` (initial value `0`) to taffy's `Dimension`.
 pub(super) fn map_length_percentage_dimension(v: LengthPercentage) -> tf::Dimension {
     match v {
         LengthPercentage::Length(px) => tf::Dimension::length(px),
         LengthPercentage::Percentage(p) => tf::Dimension::percent(p),
-        // taffyはpx+%の複合を表現できないためpx成分のみ渡す
-        // (`map_length_percentage`と同じ簡略化)。
+        // taffy cannot express a px+% compound, so only the px component is passed
+        // (the same simplification as `map_length_percentage`).
         LengthPercentage::Calc { px, .. } => tf::Dimension::length(px),
     }
 }
 
-/// `max-width`/`max-height`をtaffyの`Dimension`へ。`none`は`auto`(上限なし)。
+/// Map `max-width`/`max-height` to taffy's `Dimension`. `none` becomes `auto` (no upper bound).
 pub(super) fn map_max_size(v: MaxSize) -> tf::Dimension {
     match v {
         MaxSize::None => tf::Dimension::auto(),

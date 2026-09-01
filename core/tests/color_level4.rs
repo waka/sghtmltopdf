@@ -1,7 +1,7 @@
-//! Color Level 4(`lab()`/`lch()`/`oklab()`/`oklch()`)のE2Eテスト。
+//! E2E tests for Color Level 4 (`lab()`/`lch()`/`oklab()`/`oklch()`).
 //!
-//! `box_sizing.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイルカスケード
-//! →ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `box_sizing.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, pagination, PDF encode).
 
 use std::collections::HashMap;
 
@@ -60,12 +60,12 @@ fn oklab_background_color_renders_a_valid_pdf_end_to_end() {
     assert!(count_occurrences(&bytes, b"%%EOF") > 0);
 }
 
-/// `/CreationDate`の値を伏せる。
+/// Mask out the `/CreationDate` value.
 ///
-/// PDFのInfo辞書には生成時刻が必ず入るので、別々に生成した2つのPDFを
-/// そのまま比較すると、2回の生成が秒境界をまたいだときだけ落ちる。
-/// 値は固定長(`D:YYYYMMDDHHMMSSZ`)なので、同じ長さで埋めればそれ以降の
-/// バイト位置(相互参照テーブルのオフセット)はずれない。
+/// A PDF's Info dictionary always carries the creation time, so comparing two separately
+/// generated PDFs directly would fail only when the two generations straddled a second
+/// boundary. The value is fixed-length (`D:YYYYMMDDHHMMSSZ`), so padding it to the same
+/// length leaves every later byte position (the cross-reference table offsets) unchanged.
 fn mask_creation_date(bytes: &[u8]) -> Vec<u8> {
     const KEY: &[u8] = b"/CreationDate (";
     let mut out = bytes.to_vec();
@@ -80,10 +80,10 @@ fn mask_creation_date(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// 生成時刻を除いて2つのPDFが同一であることを確かめる。
+/// Check that two PDFs are identical apart from the creation time.
 ///
-/// 食い違う場合は最初の位置と周辺だけを出す。数万バイトの配列を
-/// `assert_eq!`に渡すと、差分ではなく両方の中身が丸ごと出力されて読めない。
+/// On a mismatch it prints only the first position and its surroundings. Passing arrays of
+/// tens of thousands of bytes to `assert_eq!` dumps both in full rather than the difference.
 fn assert_same_pdf(left: &[u8], right: &[u8]) {
     let (left, right) = (mask_creation_date(left), mask_creation_date(right));
     let first_diff = left
@@ -100,7 +100,7 @@ fn assert_same_pdf(left: &[u8], right: &[u8]) {
         String::from_utf8_lossy(&bytes[from..to]).to_string()
     };
     panic!(
-        "PDFが{at}バイト目から食い違います({}バイト vs {}バイト)\n  left : {:?}\n  right: {:?}",
+        "the PDFs differ from byte {at} ({} bytes vs {} bytes)\n  left : {:?}\n  right: {:?}",
         left.len(),
         right.len(),
         window(&left),
@@ -108,9 +108,9 @@ fn assert_same_pdf(left: &[u8], right: &[u8]) {
     );
 }
 
-// oklch(59.686% 0.15619 49.7694deg)はrgb(198, 93, 6)相当。色空間変換が
-// パイプライン全体(スタイルカスケード→PDFエンコード)を通して正しく
-// RgbaColorへ落ちることを、同じRGB値を直接指定した場合とのバイト列一致で確認する。
+// oklch(59.686% 0.15619 49.7694deg) is the equivalent of rgb(198, 93, 6). This confirms the
+// colour space conversion falls correctly to a RgbaColor through the whole pipeline (style
+// cascade, PDF encode), by matching the bytes against giving the same RGB values directly.
 #[test]
 fn oklch_background_color_matches_equivalent_rgb_byte_for_byte() {
     let oklch_bytes = build_pdf(".box { background-color: oklch(59.686% 0.15619 49.7694deg); }");
@@ -118,10 +118,10 @@ fn oklch_background_color_matches_equivalent_rgb_byte_for_byte() {
     assert_same_pdf(&oklch_bytes, &rgb_bytes);
 }
 
-/// 上の比較が生成時刻の違いを無視していること。
+/// That the comparison above really does ignore a difference in the creation time.
 ///
-/// 秒境界をまたいで生成された2つのPDFを模して、日付の秒の桁だけを書き換える。
-/// この扱いが無いと、2回の生成がたまたま別の秒に入ったときだけ落ちる。
+/// It models two PDFs generated across a second boundary by rewriting only the seconds digit
+/// of the date. Without it, this would fail only when the two generations landed in different seconds.
 #[test]
 fn the_comparison_ignores_the_creation_timestamp() {
     const KEY: &[u8] = b"/CreationDate (";
@@ -129,7 +129,7 @@ fn the_comparison_ignores_the_creation_timestamp() {
 
     let mut later = bytes.clone();
     let value_at = later.windows(KEY.len()).position(|w| w == KEY).unwrap() + KEY.len();
-    // `D:YYYYMMDDHHMMSSZ`の秒の下1桁。
+    // The last digit of the seconds in `D:YYYYMMDDHHMMSSZ`.
     let seconds_ones = value_at + 15;
     later[seconds_ones] = if later[seconds_ones] == b'9' {
         b'0'
@@ -137,6 +137,9 @@ fn the_comparison_ignores_the_creation_timestamp() {
         b'9'
     };
 
-    assert_ne!(bytes, later, "前提: 日付だけが違うバイト列になっている");
+    assert_ne!(
+        bytes, later,
+        "premise: only the date differs between the byte strings"
+    );
     assert_same_pdf(&bytes, &later);
 }

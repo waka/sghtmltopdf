@@ -1,30 +1,30 @@
-//! スパイク: フォントサブセット化とページ単位のストリーミング出力を両立できるか検証するPoC。
+//! Spike: a PoC checking whether font subsetting and per-page streaming output can coexist.
 //!
-//! 現状の`pdf::document::encode_pdf`は「Pass 1で全ページを走査してグリフ使用状況を
-//! 集計 → サブセット化(グリフIDを詰め直す)→ Pass 2でコンテンツストリームを書く」
-//! という2パス構成で、コンテンツストリーム自体がサブセット結果(元GID→CID変換表)に
-//! 依存している。これは全ページ走査が終わるまでどのページのコンテンツストリームも
-//! 書けないことを意味し、「ページ確定のそばから逐次書き出す」ストリーミング出力と
-//! 相容れない。
+//! Today's `pdf::document::encode_pdf` is a two-pass design: "pass 1 walks every page and
+//! tallies glyph usage, subsets (repacking the glyph IDs), and pass 2 writes the content
+//! streams". The content stream itself depends on the subsetting result (the original GID to
+//! CID table). That means no page's content stream can be written until the whole-document
+//! walk is done, which is incompatible with streaming output that writes each page as it is
+//! settled.
 //!
-//! ここで検証するのは、次の設計でこの依存を切れるかどうか:
-//! - コンテンツストリームでは常に元のグリフIDをそのままCIDとして使う
-//!   (`/Encoding /Identity-H`のまま、CIDを詰め直さない)。これによりページの
-//!   コンテンツストリームは、そのページのシェイピングが終わった時点で(=他ページの
-//!   状況を待たずに)即座に確定・書き出しできる
-//! - フォント埋め込み(`/FontFile2`本体)は従来通りサブセット化する。ただし
-//!   `/CIDToGIDMap`を`/Identity`ではなく、CID(=元GID)→サブセット後GIDの対応表を
-//!   持つ明示的なストリーム(`cid_to_gid_map_stream`)にすることで、コンテンツ
-//!   ストリーム側のCID(元GID)とサブセット後のフォントの整合を取る
+//! What is checked here is whether the following design breaks that dependency:
+//! - The content stream always uses the original glyph IDs as CIDs
+//!   (still `/Encoding /Identity-H`, with no repacking). That lets a page's content stream
+//!   be settled and written the moment that page's shaping is done, without waiting on any
+//!   other page
+//! - Font embedding (the `/FontFile2` itself) is still subsetted, but `/CIDToGIDMap` becomes
+//!   an explicit stream (`cid_to_gid_map_stream`) holding the CID (= original GID) to
+//!   subsetted GID mapping rather than `/Identity`, reconciling the content stream's CIDs
+//!   (original GIDs) with the subsetted font
 //!
-//! この方式なら、ページ確定ごとに保持し続ける必要があるのは軽量な`FontUsage`
-//! (グリフIDと幅・代表Unicode文字の集計)のみになり、レイアウト結果やコンテンツ
-//! ストリームのバイト列自体は都度破棄できる。フォント埋め込みオブジェクト自体は
-//! 従来通り全ページ処理後に1回だけ書く(Chunkとして最後に追記する)。
+//! With that, all that has to be kept as each page is settled is the lightweight `FontUsage`
+//! (a tally of glyph IDs, widths and representative Unicode characters); the layout result
+//! and the content stream bytes themselves can be discarded each time. The font embedding
+//! objects are still written once after every page (appended as a Chunk at the end).
 //!
-//! 実行: `cargo run --example spike_streaming_font_subset`
-//! 検証: `python3 -c "import fitz; d=fitz.open('target/spike_streaming_font_subset.pdf'); \
-//!   print([p.get_text() for p in d])"` でテキスト抽出、目視でグリフも確認する。
+//! Run with: `cargo run --example spike_streaming_font_subset`
+//! Check with: `python3 -c "import fitz; d=fitz.open('target/spike_streaming_font_subset.pdf'); \
+//!   print([p.get_text() for p in d])"` for text extraction, plus a visual check of the glyphs.
 
 use std::collections::BTreeMap;
 
@@ -36,7 +36,7 @@ use subsetter::GlyphRemapper;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
-/// ページ確定ごとに即座にバイト列を書き出す疑似Sink(spike_pdf_writer.rsと同様)。
+/// A fake Sink writing the bytes out the moment each page is settled (as in spike_pdf_writer.rs).
 struct FakeSink {
     output: Vec<u8>,
     offsets: Vec<(Ref, usize)>,
@@ -84,10 +84,10 @@ impl FakeSink {
     }
 }
 
-/// 文書全体で使われたグリフの軽量な集計(実際のコンテンツストリームは保持しない)。
+/// A lightweight tally of the glyphs used across the document (the content streams themselves are not kept).
 #[derive(Default)]
 struct FontUsage {
-    /// 元のグリフID -> (幅[1000unit/emグリフ空間], 代表Unicode文字)。
+    /// Original glyph ID -> (width in 1000-unit/em glyph space, a representative Unicode character).
     glyphs: BTreeMap<u16, (f32, char)>,
 }
 
@@ -96,8 +96,8 @@ fn main() {
     let units_per_em = font.units_per_em() as f32;
     let to_1000 = |font_units: f32| font_units * 1000.0 / units_per_em;
 
-    // 2ページ分、それぞれ異なるテキスト(=異なるグリフ集合)を用意する。
-    // ページ2はページ1と一部グリフが重複しつつ、ページ1には出てこない文字("Q", "Z"等)も含む。
+    // Two pages, each with different text (that is, a different glyph set).
+    // Page 2 shares some glyphs with page 1 while also containing characters absent from page 1 ("Q", "Z" and so on).
     let page_texts = ["Hello, world!", "Quick zebra jumps."];
 
     let mut ids = 0..;
@@ -115,8 +115,8 @@ fn main() {
     let mut usage = FontUsage::default();
     let mut page_ids = Vec::new();
 
-    // --- ページごとの逐次処理: 他ページの状況を一切待たず、シェイピング直後に
-    //     コンテンツストリームをChunkとして確定・書き出す ---
+    // --- Per-page incremental processing: the content stream is settled and written as a
+    //     Chunk right after shaping, without waiting on any other page ---
     for text in page_texts {
         let page_id = next_id();
         let content_id = next_id();
@@ -124,7 +124,7 @@ fn main() {
 
         let shaped = shape_text(&font, text, 24.0);
 
-        // CIDはリマップせず、常に元のグリフIDをそのまま使う。
+        // CIDs are not remapped; the original glyph IDs are always used as-is.
         let mut glyph_bytes = Vec::with_capacity(shaped.glyphs.len() * 2);
         for g in &shaped.glyphs {
             glyph_bytes.extend_from_slice(&g.glyph_id.to_be_bytes());
@@ -158,9 +158,9 @@ fn main() {
         sink.write_chunk(page_id, &chunk);
     }
 
-    // --- ここから先は全ページ処理後の1回きりの後処理。保持していたのは
-    //     軽量な`usage`(グリフID集合)のみで、コンテンツストリームの生データや
-    //     レイアウト結果は一切保持していない ---
+    // --- From here on is the one-off post-processing after every page. All that was kept is
+    //     the lightweight `usage` (the glyph ID set); no raw content stream data and no
+    //     layout result was retained ---
 
     let mut remapper = GlyphRemapper::new();
     remapper.remap(0); // .notdef
@@ -170,14 +170,14 @@ fn main() {
     let subset_data = subsetter::subset(font.data(), font.face_index(), &remapper)
         .expect("subsetting should succeed for the bundled test font");
 
-    // CIDToGIDMap: CID(=元GID)でインデックスした2バイトのGID値のテーブル。
-    // 未使用のCIDは0(.notdef)のままにする。
+    // CIDToGIDMap: a table of two-byte GID values indexed by CID (= the original GID).
+    // Unused CIDs stay 0 (.notdef).
     let max_gid = usage.glyphs.keys().copied().max().unwrap_or(0);
     let mut cid_to_gid_bytes = vec![0u8; (max_gid as usize + 1) * 2];
     for &old_gid in usage.glyphs.keys() {
         let new_gid = remapper
             .get(old_gid)
-            .expect("usageに記録済みのグリフは必ずremapされている");
+            .expect("a glyph recorded in usage is always remapped");
         let idx = old_gid as usize * 2;
         cid_to_gid_bytes[idx..idx + 2].copy_from_slice(&new_gid.to_be_bytes());
     }
@@ -231,15 +231,15 @@ fn main() {
     cid_font.font_descriptor(descriptor_id);
     cid_font.default_width(0.0);
     {
-        // /Wは元のグリフID(=CID)をキーに、サブセット前と同じ値をそのまま書ける
-        // (幅はusage収集時点で元GIDベースに記録済みのため変換不要)。
+        // `/W` can be keyed on the original glyph ID (= CID) and written with the same values
+        // as before subsetting (widths were recorded against original GIDs, so no conversion).
         let mut w = cid_font.widths();
         for (&old_gid, &(width, _)) in &usage.glyphs {
             w.same(old_gid, old_gid, width);
         }
         w.finish();
     }
-    // Identityではなく、サブセット後の実グリフ位置への明示マップを使う。
+    // Rather than Identity, use an explicit map to the real subsetted glyph positions.
     cid_font.cid_to_gid_map_stream(cid_to_gid_id);
     cid_font.finish();
     sink.write_chunk(cid_font_id, &chunk);

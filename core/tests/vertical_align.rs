@@ -1,7 +1,7 @@
-//! インライン文脈の`vertical-align`のE2Eテスト。
+//! E2E tests for `vertical-align` in an inline context.
 //!
-//! `H<sub>2</sub>O`・上付き注番号のように、実務で使われる形がレイアウト結果と
-//! PDF出力の両方で意図どおりになることを確認する。
+//! They confirm that the forms used in practice, such as `H<sub>2</sub>O` and a superscript
+//! footnote number, come out as intended in both the layout result and the PDF output.
 
 use std::collections::HashMap;
 
@@ -63,8 +63,8 @@ fn first_line(laid: &LaidOutBox) -> LineBox {
     walk(laid).expect("no line box found")
 }
 
-/// 行内の`text`に一致するランの、PDF上のベースライン(行の上端からの距離、
-/// 下向きが正)を返す。`baseline_shift`は上向きが正なので符号を反転して足す。
+/// Return the PDF baseline (the distance from the top of the line, positive downwards) of
+/// the run matching `text` in the line. `baseline_shift` is positive upwards, so it is added with the sign flipped.
 fn run_baseline(line: &LineBox, text: &str) -> f32 {
     let run = line
         .runs
@@ -129,8 +129,8 @@ fn a_superscript_grows_the_line_box_like_a_browser_does() {
 
 #[test]
 fn a_document_without_vertical_align_keeps_its_line_geometry() {
-    // 回帰確認: `vertical-align`を使わない文書の行の高さ・ベースラインは
-    // 従来と同じ。
+    // Regression check: the line heights and baselines of a document not using
+    // `vertical-align` are as they were.
     let (dom, laid) = layout("<p>plain text only</p>", "p { line-height: 24px; }");
     let p = find_tag(&dom, dom.document(), "p").expect("p not found");
     let _ = p;
@@ -159,7 +159,7 @@ fn a_document_using_vertical_align_encodes_to_a_valid_pdf() {
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
 
-// ===== インライン要素の背景 =====
+// ===== Inline element backgrounds =====
 
 #[test]
 fn mark_paints_an_inline_background_behind_its_text() {
@@ -190,9 +190,9 @@ fn mark_paints_an_inline_background_behind_its_text() {
 
 #[test]
 fn a_block_background_does_not_leak_onto_its_text_runs() {
-    // 回帰テスト: テキストノードの計算スタイルは親の非継承プロパティまで
-    // クローンしているため、素朴に実装するとブロックの背景がインライン背景
-    // として二重に塗られてしまう。
+    // Regression test: a text node's computed style clones even the parent's non-inherited
+    // properties, so a naive implementation paints the block's background a second time as
+    // an inline background.
     let (_, laid) = layout("<p>text</p>", "p { background-color: rgb(0, 128, 0); }");
     let line = first_line(&laid);
     assert_eq!(line.runs[0].background_color.alpha, 0.0);
@@ -208,7 +208,7 @@ fn an_inline_background_moves_with_a_raised_run() {
     let raised = line.runs.iter().find(|r| r.text == "up").unwrap();
     assert_eq!(raised.baseline_shift, 10.0);
     assert!(raised.background_color.alpha > 0.0);
-    // 背景の矩形はランのascent/descentから作られるため、メトリクスが要る。
+    // The background rectangle is built from the run's ascent and descent, so the metrics are needed.
     assert!(raised.ascent > 0.0 && raised.descent > 0.0);
 }
 

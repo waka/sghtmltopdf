@@ -5,9 +5,9 @@ require_relative "sghtmltopdf/options"
 require_relative "sghtmltopdf/configuration"
 require_relative "sghtmltopdf/renderer"
 
-# precompiled gemはRubyのマイナーバージョンごとのディレクトリへ`.so`を置く
-# (rake-compilerのクロスビルドの慣習)。開発中の`rake compile`は
-# `lib/sghtmltopdf/sghtmltopdf.so`に置くので、両方を試す。
+# A precompiled gem puts the `.so` in a directory per Ruby minor version
+# (rake-compiler's cross-build convention). During development `rake compile` puts it in
+# `lib/sghtmltopdf/sghtmltopdf.so`, so both are tried.
 begin
   RUBY_VERSION =~ /(\d+\.\d+)/
   require "sghtmltopdf/#{Regexp.last_match(1)}/sghtmltopdf"
@@ -15,37 +15,36 @@ rescue LoadError
   require "sghtmltopdf/sghtmltopdf"
 end
 
-# `Error`(ネイティブ拡張が定義)を継承するため、拡張の読み込みより後に書く。
+# It inherits `Error` (defined by the native extension), so it comes after the extension is loaded.
 require_relative "sghtmltopdf/server_client"
 
 module Sghtmltopdf
-  # ブロック付き`render`で1回に渡すバイト数の目安(ローカル変換のみ)。
-  # ページ確定ごとにブロックを呼ぶとGVLの取り直しが増えるため、ここまで
-  # 溜めてから渡す。
+  # The rough number of bytes handed over per call to a block-taking `render` (local conversion only).
+  # Calling the block on every settled page would mean reacquiring the GVL too often, so this
+  # much is accumulated first.
   DEFAULT_CHUNK_SIZE = 64 * 1024
 
   class << self
-    # HTMLを変換してPDFのバイト列(ASCII-8BITのString)を返す。
+    # Convert HTML and return the PDF bytes (an ASCII-8BIT String).
     #
-    # ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとに
-    # ブロックを呼ぶ(返り値はnil)。Rackの`response.stream`へ流したり、S3の
-    # マルチパートアップロードへ繋いだりするための口(エンジン側は出力先(sink)
-    # を意識しない設計に対応する)。
+    # Given a block, it calls the block per chunk rather than assembling the whole PDF first
+    # (returning nil). It is the hook for streaming into Rack's `response.stream` or into an
+    # S3 multipart upload (matching the engine's design, which is unaware of the output sink).
     #
     #   Sghtmltopdf.render(html) { |bytes| response.stream.write(bytes) }
     #
-    # ローカル・サーバ委譲のどちらでも、PDF全体が組み上がるのを待たずに
-    # 書き出せる(ローカルは確定したページから順に、サーバは`?stream=1`の
-    # chunked transfer encodingをそのまま渡す)。
+    # Both locally and when delegating to a server, it can be written out without waiting for
+    # the whole PDF to be assembled (locally page by page as they settle; from a server, the
+    # `?stream=1` chunked transfer encoding passed straight through).
     #
-    # ただし逐次になるのはPDFの書き出しだけで、HTMLのパースとレイアウトは
-    # 文書全体に対して先に行う。最初のチャンクが届くのは変換の終盤で、
-    # ピークメモリもブロック無しの場合と変わらない。HTMLを読みながら
-    # ページを確定させたい場合は`streaming: true`と併せて使う
-    # (制約と引き換えにメモリが大きく減る)。
+    # Only the PDF writing is incremental, though: HTML parsing and layout still happen for
+    # the whole document first. The first chunk arrives late in the conversion, and the peak
+    # memory is no different from the block-less case. To settle pages while the HTML is being
+    # read, use it together with `streaming: true`
+    # (which trades constraints for a large reduction in memory).
     #
-    # 1回に渡すバイト数の目安は`chunk_size:`で変えられる(既定64KiB。
-    # ローカル変換のみ。小さくするとGVLの取り直しが増える)。
+    # The rough bytes per call can be changed with `chunk_size:` (64KiB by default; local
+    # conversion only; a smaller value means reacquiring the GVL more often).
     def render(html, **options, &block)
       client = server_client(options)
       return client.render(html.to_s, server_options(options), &block) if client
@@ -55,10 +54,10 @@ module Sghtmltopdf
       nil
     end
 
-    # HTMLを変換して`path`へ書き出す。
+    # Convert HTML and write it to `path`.
     #
-    # 一時ファイルへ書いて成功時だけrenameするため、途中で失敗しても
-    # 壊れたPDFが出力先に残らない(サーバへ委譲する場合も同じ)。
+    # It writes to a temporary file and renames only on success, so a failure part-way through
+    # leaves no broken PDF at the destination (the same when delegating to a server).
     def render_to_file(html, path, **options)
       client = server_client(options)
       return client.render_to_file(html.to_s, server_options(options), path.to_s) if client
@@ -67,7 +66,7 @@ module Sghtmltopdf
       nil
     end
 
-    # グローバルな既定オプション。
+    # The global default options.
     def configure
       yield config
       config
@@ -77,19 +76,19 @@ module Sghtmltopdf
       @config ||= Configuration.new
     end
 
-    # 主にテスト用。設定を空に戻す。
+    # Mainly for tests. Resets the configuration to empty.
     def reset_config!
       @config = Configuration.new
     end
 
     private
 
-    # グローバル設定 → 呼び出し時オプションの順にマージしてargvにする。
+    # Merge in the order global settings, then call-time options, and turn that into argv.
     def argv_for(options)
       Options.to_argv(config.to_h.merge(options))
     end
 
-    # `server_url`があればサーバへ委譲する。タイムアウトも同じ順でマージする。
+    # With a `server_url` it delegates to the server. The timeout merges in the same order.
     def server_client(options)
       merged = config.to_h.merge(options)
       url = merged[:server_url]
@@ -102,16 +101,16 @@ module Sghtmltopdf
       )
     end
 
-    # ブロックへ1回に渡すバイト数の目安(ローカル変換のみ)。
+    # The rough bytes handed to the block per call (local conversion only).
     def chunk_size(options)
       value = config.to_h.merge(options)[:chunk_size]
       value.nil? ? DEFAULT_CHUNK_SIZE : Integer(value)
     end
 
-    # サーバへ渡すオプション。流し込まれた既定値は外す
-    # (Rails向けの`base_url`・`allow`はローカルのファイル解決のための
-    # 既定値で、サーバモードではリクエストから指定できず400になる。
-    # 明示的に設定した値はそのまま送り、可否はサーバに判断させる)。
+    # The options passed to the server. The injected defaults are removed
+    # (the Rails-oriented `base_url` and `allow` are defaults for local file resolution, and
+    # server mode cannot take them from a request, giving a 400.
+    # An explicitly set value is sent as-is and the server decides whether to accept it).
     def server_options(options)
       config.to_h(with_defaults: false).merge(options)
     end

@@ -1,18 +1,18 @@
-//! 単位付き数値(`10mm`/`0.5in`/`72pt`/`96px`/`1cm`)のパース。
+//! Parsing of numbers with units (`10mm`/`0.5in`/`72pt`/`96px`/`1cm`).
 //!
-//! wkhtmltopdfの`<unitreal>`に相当する。単位を省略した場合はmmとして
-//! 解釈する(wkhtmltopdf互換)。
+//! Equivalent to wkhtmltopdf's `<unitreal>`. A missing unit is read as mm,
+//! matching wkhtmltopdf.
 //!
-//! 返す値はエンジンの内部単位であるCSS px(96dpi基準)。
+//! The value returned is CSS px (based on 96dpi), the engine's internal unit.
 
-/// 1インチ = 96 CSS px。
+/// 1 inch = 96 CSS px.
 const PX_PER_IN: f32 = 96.0;
-/// 1インチ = 25.4mm。
+/// 1 inch = 25.4mm.
 const MM_PER_IN: f32 = 25.4;
-/// 1インチ = 72pt。
+/// 1 inch = 72pt.
 const PT_PER_IN: f32 = 72.0;
 
-/// 単位付きの長さをCSS pxへ変換する。
+/// Convert a length with a unit to CSS px.
 ///
 /// ```text
 /// "10mm" -> 37.795 (10 / 25.4 * 96)
@@ -20,12 +20,12 @@ const PT_PER_IN: f32 = 72.0;
 /// "72pt" -> 96
 /// "96px" -> 96
 /// "1cm"  -> 37.795
-/// "20"   -> 75.59  (単位省略はmm)
+/// "20"   -> 75.59  (no unit means mm)
 /// ```
 pub fn parse_length_px(input: &str) -> Result<f32, String> {
     let text = input.trim();
     if text.is_empty() {
-        return Err("長さが空です".to_string());
+        return Err("length is empty".to_string());
     }
 
     let lower = text.to_ascii_lowercase();
@@ -34,32 +34,28 @@ pub fn parse_length_px(input: &str) -> Result<f32, String> {
     let value: f32 = number_part
         .trim()
         .parse()
-        .map_err(|_| format!("長さとして解釈できません: {input}"))?;
+        .map_err(|_| format!("cannot be read as a length: {input}"))?;
     if !value.is_finite() {
-        return Err(format!("長さとして解釈できません: {input}"));
+        return Err(format!("cannot be read as a length: {input}"));
     }
 
     let px = match unit {
-        // 単位省略はwkhtmltopdf互換でmm扱い。
+        // A missing unit means mm, matching wkhtmltopdf.
         "" | "mm" => value / MM_PER_IN * PX_PER_IN,
         "cm" => value * 10.0 / MM_PER_IN * PX_PER_IN,
         "in" => value * PX_PER_IN,
         "pt" => value / PT_PER_IN * PX_PER_IN,
         "px" => value,
-        other => {
-            return Err(format!(
-                "未知の単位です: {other}(mm/cm/in/pt/pxのいずれかを使ってください)"
-            ))
-        }
+        other => return Err(format!("unknown unit: {other} (use one of mm/cm/in/pt/px)")),
     };
 
     if px < 0.0 {
-        return Err(format!("長さに負の値は指定できません: {input}"));
+        return Err(format!("a length cannot be negative: {input}"));
     }
     Ok(px)
 }
 
-/// 末尾の連続したアルファベット列を単位として切り出す。
+/// Split off the trailing run of letters as the unit.
 fn split_unit(lower: &str) -> (&str, &str) {
     let unit_len = lower
         .chars()

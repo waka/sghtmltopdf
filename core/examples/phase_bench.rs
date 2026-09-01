@@ -1,9 +1,9 @@
-//! パイプラインの各段(パース → スタイル → box tree → レイアウト →
-//! ページ分割 → PDFエンコード)にかかる時間を測って内訳を出す。
+//! Measure the time each stage of the pipeline takes (parsing, styles, box tree, layout,
+//! pagination, PDF encoding) and print the breakdown.
 //!
-//! 実行: `cargo run --release --example phase_bench [要素数]`
+//! Run with: `cargo run --release --example phase_bench [element count]`
 //!
-//! `mem_bench`が全体の数字を出すのに対し、こちらは「どの段が重いか」を見る。
+//! Where `mem_bench` gives the overall numbers, this shows which stage is expensive.
 
 use std::collections::HashMap;
 use std::env;
@@ -17,24 +17,24 @@ use sghtmltopdf_core::layout::{build_box_tree, layout_document, paginate_documen
 use sghtmltopdf_core::pdf::encode_pdf;
 use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
-/// 割り当てを数えるだけのアロケータ。どのサイズ帯がメモリを占めているかを見る。
+/// An allocator that merely counts allocations, to see which size class dominates the memory.
 struct CountingAlloc;
 
 static LIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 static PEAK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-/// サイズ帯(2の冪)ごとの、現在生きている割り当てのバイト数。
+/// The bytes of currently live allocations per size class (a power of two).
 static BUCKETS: [std::sync::atomic::AtomicUsize; 24] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 24];
-/// ピークを更新した瞬間のサイズ帯別内訳(どの構造がピークを作っているかを見る)。
+/// The per-size-class breakdown at the moment a peak was set (to see which structure creates the peak).
 static PEAK_BUCKETS: [std::sync::atomic::AtomicUsize; 24] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 24];
-/// サイズ帯ごとの、現在生きている割り当ての件数。
+/// The count of currently live allocations per size class.
 static COUNTS: [std::sync::atomic::AtomicUsize; 24] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 24];
-/// ピーク時点の件数。
+/// The counts at the peak.
 static PEAK_COUNTS: [std::sync::atomic::AtomicUsize; 24] =
     [const { std::sync::atomic::AtomicUsize::new(0) }; 24];
-/// 次に内訳を控える生存量のしきい値。
+/// The live-bytes threshold at which the next breakdown is recorded.
 static NEXT_SNAPSHOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 fn bucket_of(size: usize) -> usize {
@@ -51,7 +51,7 @@ unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
             BUCKETS[bucket_of(layout.size())]
                 .fetch_add(layout.size(), std::sync::atomic::Ordering::Relaxed);
             COUNTS[bucket_of(layout.size())].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            // 生存量が8MB伸びるごとに、その時点のサイズ帯別内訳を控える。
+            // Record the per-size-class breakdown every time the live total grows by 8MB.
             if now > NEXT_SNAPSHOT.load(std::sync::atomic::Ordering::Relaxed) {
                 NEXT_SNAPSHOT.store(now + 8 * 1024 * 1024, std::sync::atomic::Ordering::Relaxed);
                 for (dst, src) in PEAK_BUCKETS.iter().zip(BUCKETS.iter()) {
@@ -83,7 +83,7 @@ unsafe impl std::alloc::GlobalAlloc for CountingAlloc {
 #[global_allocator]
 static ALLOC: CountingAlloc = CountingAlloc;
 
-/// ピークをこの時点の生存量まで戻す(段ごとのピークを見るため)。
+/// Reset the peak to the live total at this point (to see the peak of each stage).
 fn reset_peak() {
     use std::sync::atomic::Ordering::Relaxed;
     let live = LIVE.load(Relaxed);
@@ -94,21 +94,21 @@ fn reset_peak() {
     }
 }
 
-/// 生きている割り当てをサイズ帯ごとに表示する。
+/// Print the live allocations per size class.
 fn dump_live_allocations(label: &str) {
     use std::sync::atomic::Ordering::Relaxed;
     let live = LIVE.load(Relaxed) as f64 / 1024.0 / 1024.0;
     println!(
-        "{label}: 生存 {live:.0}MB (ピーク {:.0}MB)",
+        "{label}: live {live:.0}MB (peak {:.0}MB)",
         PEAK.load(Relaxed) as f64 / 1024.0 / 1024.0
     );
-    println!("  ピーク時点の内訳:");
+    println!("  breakdown at the peak:");
     for (i, b) in PEAK_BUCKETS.iter().enumerate() {
         let mb = b.load(Relaxed) as f64 / 1024.0 / 1024.0;
         let n = PEAK_COUNTS[i].load(Relaxed);
         if mb >= 5.0 {
             println!(
-                "    ~{:>8}B  {:>6.0}MB  {:>9}件  平均{:>6.0}B",
+                "    ~{:>8}B  {:>6.0}MB  {:>9} allocs  avg {:>6.0}B",
                 1usize << i,
                 mb,
                 n,
@@ -128,7 +128,7 @@ fn main() {
         use sghtmltopdf_core::style::ComputedStyle;
         use std::mem::size_of;
         println!(
-            "型サイズ: ComputedStyle {}B / LayoutBox {}B / LaidOutBox {}B",
+            "type sizes: ComputedStyle {}B / LayoutBox {}B / LaidOutBox {}B",
             size_of::<ComputedStyle>(),
             size_of::<LayoutBox>(),
             size_of::<LaidOutBox>(),
@@ -149,14 +149,14 @@ fn main() {
             size_of::<ShapedGlyph>(),
         );
     }
-    println!("開始時RSS {:.0}MB", rss_mb());
+    println!("RSS at start {:.0}MB", rss_mb());
     let count: usize = env::args()
         .nth(1)
         .and_then(|v| v.parse().ok())
         .unwrap_or(20_000);
     let html_src = build_html(count);
     println!(
-        "要素数 {count} / HTML {:.1}KB",
+        "elements {count} / HTML {:.1}KB",
         html_src.len() as f64 / 1024.0
     );
 
@@ -167,8 +167,8 @@ fn main() {
     reset_peak();
     let t = Instant::now();
     let dom = html::parse(html_src.as_bytes());
-    phases.push(("HTMLパース", t.elapsed().as_secs_f64(), rss_mb()));
-    dump_live_allocations("HTMLパース");
+    phases.push(("HTML parse", t.elapsed().as_secs_f64(), rss_mb()));
+    dump_live_allocations("HTML parse");
     reset_peak();
 
     let ua = user_agent_stylesheet();
@@ -176,25 +176,25 @@ fn main() {
 
     let t = Instant::now();
     let styles = compute_styles(&dom, &ua, &author);
-    phases.push(("スタイル計算", t.elapsed().as_secs_f64(), rss_mb()));
-    dump_live_allocations("スタイル計算");
+    phases.push(("style computation", t.elapsed().as_secs_f64(), rss_mb()));
+    dump_live_allocations("style computation");
     reset_peak();
 
     let t = Instant::now();
     let tree = build_box_tree(&dom, &styles);
-    phases.push(("box tree構築", t.elapsed().as_secs_f64(), rss_mb()));
-    dump_live_allocations("box tree構築");
+    phases.push(("box tree build", t.elapsed().as_secs_f64(), rss_mb()));
+    dump_live_allocations("box tree build");
     reset_peak();
 
     let t = Instant::now();
     let laid = layout_document(&tree, &styles, &fonts, settings.content_width());
-    phases.push(("レイアウト", t.elapsed().as_secs_f64(), rss_mb()));
-    dump_live_allocations("レイアウト");
+    phases.push(("layout", t.elapsed().as_secs_f64(), rss_mb()));
+    dump_live_allocations("layout");
     reset_peak();
     let mut c = Counts::default();
     count_boxes(&laid, &mut c);
     println!(
-        "レイアウト結果: box {} / 行 {} / ラン {} / グリフ {} (1段落あたり ラン{:.1} グリフ{:.1})",
+        "layout result: boxes {} / lines {} / runs {} / glyphs {} (per paragraph: runs {:.1}, glyphs {:.1})",
         c.boxes,
         c.lines,
         c.runs,
@@ -211,55 +211,58 @@ fn main() {
             + c.runs * size_of::<TextRun>()
             + c.glyphs * size_of::<ShapedGlyph>();
         println!(
-            "  実データ {:.0}MB / Vecの余剰容量 {:.0}MB",
+            "  real data {:.0}MB / Vec spare capacity {:.0}MB",
             real as f64 / 1024.0 / 1024.0,
             c.slack as f64 / 1024.0 / 1024.0
         );
     }
-    dump_live_allocations("レイアウト後");
+    dump_live_allocations("after layout");
     drop(laid);
 
-    // ページ分割はレイアウトを内部でやり直すため、上の計測とは別に丸ごと測る。
+    // Pagination redoes layout internally, so it is measured whole, separately from the above.
     let t = Instant::now();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
     phases.push((
-        "ページ分割(レイアウト込み)",
+        "pagination (layout included)",
         t.elapsed().as_secs_f64(),
         rss_mb(),
     ));
-    dump_live_allocations("ページ分割後");
+    dump_live_allocations("after pagination");
 
     let t = Instant::now();
     let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
-    phases.push(("PDFエンコード", t.elapsed().as_secs_f64(), rss_mb()));
+    phases.push(("PDF encode", t.elapsed().as_secs_f64(), rss_mb()));
 
     println!(
-        "ページ数 {} / PDF {:.1}KB\n",
+        "pages {} / PDF {:.1}KB\n",
         pages.len(),
         bytes.len() as f64 / 1024.0
     );
 
-    // 「パース + スタイル + ページ分割 + エンコード」が実際の総処理時間にあたる。
+    // "parse + styles + pagination + encode" is what the real total running time amounts to.
     let total: f64 = phases
         .iter()
-        .filter(|(name, _, _)| *name != "レイアウト" && *name != "box tree構築")
+        .filter(|(name, _, _)| *name != "layout" && *name != "box tree build")
         .map(|(_, secs, _)| secs)
         .sum();
-    println!("{:<28} {:>8}  {:>6}  {:>10}", "段", "秒", "割合", "常駐RSS");
+    println!(
+        "{:<28} {:>8}  {:>6}  {:>10}",
+        "stage", "secs", "share", "resident RSS"
+    );
     for (name, secs, rss) in &phases {
-        let share = if *name == "レイアウト" || *name == "box tree構築" {
-            "(内訳)".to_string()
+        let share = if *name == "layout" || *name == "box tree build" {
+            "(breakdown)".to_string()
         } else {
             format!("{:.0}%", secs / total * 100.0)
         };
         println!("{name:<28} {secs:>8.2}  {share:>6}  {rss:>8.0}MB");
     }
-    println!("{:<28} {total:>8.2}", "合計(実処理)");
+    println!("{:<28} {total:>8.2}", "total (real work)");
 }
 
 fn build_html(count: usize) -> String {
-    // 第2引数に`empty`を渡すとテキストを持たない`<p>`にする。
-    // テキスト処理(シェイピング・行分割)の寄与を切り分けるため。
+    // Passing `empty` as the second argument makes the `<p>` elements carry no text,
+    // to separate out the contribution of text processing (shaping and line breaking).
     let mode = env::args().nth(2).unwrap_or_default();
     let empty = mode == "empty";
     if mode == "table" {
@@ -296,12 +299,12 @@ fn build_html(count: usize) -> String {
 
 fn load_fonts() -> FontCollection {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts/DejaVuSans.ttf");
-    let data = std::fs::read(path).expect("フォントを読めません");
-    let font = Font::from_bytes(data, 0).expect("フォントを解釈できません");
+    let data = std::fs::read(path).expect("cannot read the font");
+    let font = Font::from_bytes(data, 0).expect("cannot interpret the font");
     FontCollection::new(vec![font])
 }
 
-/// 現在の常駐メモリ(MB)。Linux以外では0。
+/// The current resident memory (MB). 0 outside Linux.
 fn rss_mb() -> f64 {
     std::fs::read_to_string("/proc/self/status")
         .ok()
@@ -324,7 +327,7 @@ struct Counts {
     slack: usize,
 }
 
-/// レイアウト結果を走査して、保持している要素数を数える。
+/// Walk the layout result and count the elements it holds.
 fn count_boxes(b: &sghtmltopdf_core::layout::LaidOutBox, c: &mut Counts) {
     use sghtmltopdf_core::layout::LaidOutContent;
     c.boxes += 1;

@@ -1,4 +1,4 @@
-//! フォント読み込みとシェイピング(harfrust/skrifa)。
+//! Font loading and shaping (harfrust/skrifa).
 
 mod collection;
 mod face;

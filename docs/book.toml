@@ -1,21 +1,21 @@
 [book]
 title = "sghtmltopdf"
 authors = ["waka"]
-# 原文の言語。英語版は `MDBOOK_BOOK__LANGUAGE=en mdbook build -d book/en` で po/en.po を当てて出す
+# The source language. The English edition is produced by applying po/en.po with `MDBOOK_BOOK__LANGUAGE=en mdbook build -d book/en`
 language = "ja"
 src = "src"
 
 [build]
-# po を直すと `mdbook serve` が再ビルドするようにする
+# Make `mdbook serve` rebuild when a po file is edited
 extra-watch-dirs = ["po"]
 
 [preprocessor.gettext]
-# links(={{#include}}等の展開)の後に翻訳を当てる
+# Apply the translations after links (the expansion of {{#include}} and the like)
 after = ["links"]
 
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
-# 図のラベルを翻訳できるよう、gettextが訳を当てた後に変換する
+# Convert after gettext has applied the translations, so diagram labels can be translated
 after = ["gettext"]
 
 [output.html]

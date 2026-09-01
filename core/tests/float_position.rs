@@ -1,11 +1,10 @@
-//! `float`/`clear`/`position:relative`のE2Eテスト。
+//! E2E tests for `float`/`clear`/`position:relative`.
 //!
-//! `fragmentation.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイル
-//! カスケード→ページ分割→PDFエンコード)を通して回帰を検知する。テキスト
-//! 回り込み・複数float配置・改ページ跨ぎといった座標の詳細な検証は
-//! `layout_document`(ページ分割前)の結果に対して行い、PDFエンコードまでの
-//! パイプライン全体がクラッシュせず妥当な出力になることは`build_pdf`で
-//! 別途確認する。
+//! The same approach as `fragmentation.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, pagination, PDF encode). The detailed coordinate
+//! checks (text flow-around, placing several floats, crossing a page break) run against the
+//! result of `layout_document` (before pagination), and `build_pdf` separately confirms that
+//! the whole pipeline through to PDF encoding does not crash and produces valid output.
 
 use std::collections::HashMap;
 
@@ -36,8 +35,8 @@ fn page_count_in_pdf(bytes: &[u8]) -> usize {
     count_occurrences(bytes, b"/MediaBox")
 }
 
-/// HTML+CSSから、実際のパイプライン(パース→カスケード→ページ分割→PDF
-/// エンコード)を一通り実行する(`fragmentation.rs::build_pdf`と同じ)。
+/// Run the whole real pipeline (parse, cascade, pagination, PDF encode) from HTML plus CSS
+/// (the same as `fragmentation.rs::build_pdf`).
 fn build_pdf(html_src: &str, css: &str) -> (usize, Vec<u8>) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -107,7 +106,7 @@ fn box_contains_node(b: &LaidOutBox, target: NodeId) -> bool {
     false
 }
 
-/// `layout_document`まで(ページ分割前)を実行する共通ヘルパー。
+/// The shared helper running as far as `layout_document` (before pagination).
 fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -147,16 +146,16 @@ fn left_float_with_text_wrap_narrows_the_first_line_and_renders_a_valid_pdf() {
         lines[0].rect.x, 100.0,
         "first line should be pushed to the right of the 100px-wide float"
     );
-    // floatの高さ(15px、1行の高さ19.2pxより低い)を過ぎた行は元の左端
-    // (pのcontent.x)に戻るはず。
+    // A line past the float's height (15px, below the 19.2px line height) should return to
+    // the original left edge (the p's content.x).
     let below_float_line = lines
         .iter()
         .find(|l| l.rect.y >= 15.0)
         .expect("expected at least one line below the float");
     assert_eq!(below_float_line.rect.x, p_box.layout.content.x);
 
-    // pのボックス自体(ブロックレベル)はfloatの回り込み対象ではない
-    // (CSS2.1: floatが影響するのはinlineコンテンツのみ)。
+    // The p's box itself (being block-level) does not flow around the float
+    // (CSS2.1: a float affects only inline content).
     assert_eq!(p_box.layout.content.x, 0.0);
 
     let (page_count, _) = build_pdf(html_src, css);
@@ -165,11 +164,11 @@ fn left_float_with_text_wrap_narrows_the_first_line_and_renders_a_valid_pdf() {
 
 #[test]
 fn right_float_with_text_wrap_narrows_the_first_line() {
-    // floatとテキストを同じcontaining width(親divのwidth:300px)基準にする。
-    // `.text`側だけにwidthを指定すると、floatは親divのcontent_width
-    // (ページ全体の幅)基準で配置されてしまい、`.text`のより狭いwidthの
-    // 範囲外にfloatが来てしまう(right floatの内側エッジは配置先の
-    // containing widthに依存するため、leftの0固定とは違いこの非対称が起きる)。
+    // Put the float and the text on the same containing width (the parent div's width:300px).
+    // Setting a width only on `.text` would place the float against the parent div's
+    // content_width (the whole page width), putting it outside `.text`'s narrower width
+    // (a right float's inner edge depends on the containing width where it is placed, so
+    // unlike a left float's fixed 0 this asymmetry arises).
     let html_src = r#"<div class="outer"><div class="f"></div>
         <p class="text">hello world foo bar baz qux quux corge grault garply</p></div>"#;
     let css = "body { margin: 0; } \
@@ -214,7 +213,7 @@ fn two_left_floats_pack_side_by_side_and_text_flows_around_both() {
     let b_box = find_laid_out(&laid, divs[2]).expect("b not found");
     let _ = a;
 
-    // 2つの左floatは横に並ぶはず(a: 0-100, b: 100-180)。
+    // The two left floats should sit side by side (a: 0-100, b: 100-180).
     assert_eq!(a_box.layout.content.x, 0.0);
     assert_eq!(b_box.layout.content.x, 100.0);
 
@@ -259,7 +258,7 @@ fn float_taller_than_a_page_spans_multiple_pages_end_to_end() {
     assert!(
         page_count > 1,
         "a float containing 20 items of 100px should overflow a single page \
-         (floatのページ跨ぎを許容する)"
+         (a float is allowed to cross a page boundary)"
     );
     assert!(bytes.starts_with(b"%PDF-"));
 }
@@ -281,7 +280,7 @@ fn position_relative_offset_does_not_shift_subsequent_siblings_end_to_end() {
 
     assert_eq!(rel_box.layout.content.x, 7.0);
     assert_eq!(rel_box.layout.content.y, 15.0);
-    // cはrel要素の(オフセット前の)通常の下端(10+20=30)を基準に配置される。
+    // c is placed against the rel element's ordinary (pre-offset) bottom edge (10+20=30).
     assert_eq!(c_box.layout.content.y, 30.0);
 
     let (page_count, bytes) = build_pdf(html_src, css);
@@ -313,8 +312,8 @@ fn float_none_regression_keeps_ordinary_block_flow_unaffected() {
 
 #[test]
 fn float_content_is_reachable_on_the_page_it_spans() {
-    // 折り返しではなくページ分割後の到達性(`box_contains_node`)を、
-    // `fragmentation.rs`と同じ方式で確認する。
+    // Reachability after pagination (`box_contains_node`) rather than wrapping is checked the
+    // same way as in `fragmentation.rs`.
     let html_src = r#"<div><div class="f"><p class="item">inside float</p></div></div>"#;
     let css = "body { margin: 0; } .f { float: left; width: 100px; height: 30px; }";
 
@@ -335,8 +334,8 @@ fn float_content_is_reachable_on_the_page_it_spans() {
 
 #[test]
 fn a_float_without_width_shrinks_to_its_content() {
-    // `width: auto`のfloatは内容(短いテキスト)に合わせて縮む。containing
-    // widthいっぱいには広がらない。
+    // A `width: auto` float shrinks to its content (the short text). It does not stretch to
+    // the containing width.
     let (dom, laid) = layout(
         r#"<div class="f">hi</div><p>body text that wraps beside the float</p>"#,
         "body { margin: 0; } .f { float: left; }",
@@ -380,7 +379,7 @@ fn a_wider_content_float_is_wider_than_a_narrow_one() {
 
 #[test]
 fn an_auto_width_float_is_clamped_to_the_available_width() {
-    // 内容が使える幅を超える場合はクランプされる(はみ出さない)。
+    // Content exceeding the available width is clamped (it does not overflow).
     let (dom, laid) = layout(
         r#"<div class="f">wordwordwordwordwordwordwordwordwordwordwordwordword</div>"#,
         "body { margin: 0; } .f { float: left; }",

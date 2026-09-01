@@ -1,12 +1,12 @@
-//! レガシーHTML表示属性(presentational hints)を、対応するCSS宣言へ変換する。
+//! Translating legacy HTML presentational attributes into the corresponding CSS declarations.
 //!
-//! カスケード上は「UAスタイルシートより強く、作者CSSより弱い」位置に
-//! 入るため、作者CSSで常に上書きできる。
+//! In the cascade they sit "stronger than the UA stylesheet, weaker than author CSS", so
+//! author CSS can always override them.
 //!
-//! 属性値は専用のパーサを持たず、CSS宣言テキストへ組み立ててから
-//! [`parse_inline_style`]へ渡す。色・長さ・パーセンテージの解釈が`style`
-//! 属性と完全に同じ実装で行われ、不正な値は既存の
-//! 「不正な宣言は無視」挙動でそのまま落ちる。
+//! Attribute values have no parser of their own: they are assembled into CSS declaration
+//! text and handed to [`parse_inline_style`]. Colours, lengths and percentages are then
+//! interpreted by exactly the same code as the `style` attribute, and invalid values are
+//! dropped by the existing "ignore invalid declarations" behaviour.
 
 use html5ever::Attribute;
 
@@ -15,10 +15,10 @@ use crate::html::{Dom, NodeData, NodeId};
 use super::properties::PropertyDeclaration;
 use super::stylesheet::parse_inline_style;
 
-/// `<font size>`の1〜7に対応するフォントサイズ(px)。既定16pxが`size="3"`。
+/// Font sizes (px) for `<font size>` 1 to 7. The default 16px is `size="3"`.
 const FONT_SIZE_TABLE: [f32; 7] = [10.0, 13.0, 16.0, 18.0, 24.0, 32.0, 48.0];
 
-/// `element`のレガシー表示属性から導かれるCSS宣言を返す。
+/// Return the CSS declarations implied by `element`'s legacy presentational attributes.
 pub(super) fn presentational_hint_declarations(
     dom: &Dom,
     element: NodeId,
@@ -29,7 +29,7 @@ pub(super) fn presentational_hint_declarations(
     let tag = name.local.to_string();
     let mut css = String::new();
 
-    // 要素を問わない属性。
+    // Attributes that apply to any element.
     if let Some(value) = attr(attrs, "align") {
         push_align(&tag, value, &mut css);
     }
@@ -64,8 +64,8 @@ pub(super) fn presentational_hint_declarations(
             if attrs.iter().any(|a| &*a.name.local == "nowrap") {
                 css.push_str("white-space: nowrap;");
             }
-            // `<table border/cellpadding>`は「テーブルの属性なのに効き目は
-            // セルに出る」。祖先方向の最も近い`<table>`を探す。
+            // `<table border/cellpadding>` are "attributes on the table whose effect shows
+            // on the cells". Find the nearest `<table>` ancestor.
             if let Some(table) = nearest_table(dom, element) {
                 let NodeData::Element {
                     attrs: table_attrs, ..
@@ -105,7 +105,7 @@ pub(super) fn presentational_hint_declarations(
         "font" => {
             push_color(&mut css, "color", attr(attrs, "color"));
             if let Some(face) = attr(attrs, "face") {
-                // family名は引用符で囲む(空白入りの名前・キーワードとの衝突対策)。
+                // Quote the family name (to guard against names with spaces and clashes with keywords).
                 let families: Vec<String> = face
                     .split(',')
                     .map(|f| format!("\"{}\"", f.trim().replace('"', "")))
@@ -151,8 +151,8 @@ fn attr<'a>(attrs: &'a [Attribute], name: &str) -> Option<&'a str> {
         .map(|a| &*a.value)
 }
 
-/// `align`属性。テーブル自身の`align`はテーブルの寄せ(CSS的には`float`または
-/// 左右マージン)を意味し、それ以外の要素では中身の`text-align`を意味する。
+/// The `align` attribute. On a table itself it means aligning the table (in CSS terms,
+/// `float` or left/right margins); on any other element it means the `text-align` of its contents.
 fn push_align(tag: &str, value: &str, css: &mut String) {
     let value = value.trim().to_ascii_lowercase();
     if tag == "table" || tag == "img" {
@@ -177,7 +177,7 @@ fn push_vertical_align(css: &mut String, value: Option<&str>) {
     }
 }
 
-/// `width="100"`(px扱い)・`width="50%"`のどちらも受ける。
+/// Accepts both `width="100"` (treated as px) and `width="50%"`.
 fn push_length(css: &mut String, property: &str, value: Option<&str>) {
     let Some(value) = value else { return };
     let value = value.trim();
@@ -195,8 +195,8 @@ fn push_length(css: &mut String, property: &str, value: Option<&str>) {
     }
 }
 
-/// legacy color(`#`の無い16進表記
-/// `bgcolor="ffffff"`も許す)をCSSの色として書き出す。
+/// Write out a legacy colour as a CSS colour (hex notation without the `#`,
+/// as in `bgcolor="ffffff"`, is accepted too).
 fn push_color(css: &mut String, property: &str, value: Option<&str>) {
     let Some(value) = value else { return };
     let value = value.trim();
@@ -213,15 +213,15 @@ fn push_color(css: &mut String, property: &str, value: Option<&str>) {
     }
 }
 
-/// 単位なしの数値(`"100"`)、末尾に`px`が付いた値(`"100px"`、HTML的には
-/// 不正だが実在する)を受け付ける。負値は無視する。
+/// Accepts a unitless number (`"100"`) and a value with a trailing `px` (`"100px"`, which
+/// is invalid HTML but does occur). Negative values are ignored.
 fn parse_pixels(value: &str) -> Option<f32> {
     let value = value.trim();
     let value = value.strip_suffix("px").unwrap_or(value);
     value.trim().parse::<f32>().ok().filter(|v| *v >= 0.0)
 }
 
-/// `<font size>`。`1`〜`7`の絶対値と`+N`/`-N`の相対値。
+/// `<font size>`. Absolute values `1` to `7`, and relative values `+N`/`-N`.
 fn parse_font_size(value: &str) -> Option<f32> {
     let value = value.trim();
     let (base_index, rest) = match value.strip_prefix('+') {
@@ -243,8 +243,8 @@ fn parse_font_size(value: &str) -> Option<f32> {
     Some(FONT_SIZE_TABLE[(clamped - 1) as usize])
 }
 
-/// `<ul type>`(`disc`/`circle`/`square`)・`<ol type>`/`<li type>`
-/// (`1`/`a`/`A`/`i`/`I`)。
+/// `<ul type>` (`disc`/`circle`/`square`) and `<ol type>`/`<li type>`
+/// (`1`/`a`/`A`/`i`/`I`).
 fn legacy_list_type(tag: &str, value: &str) -> Option<&'static str> {
     let value = value.trim();
     match value.to_ascii_lowercase().as_str() {
@@ -263,7 +263,7 @@ fn legacy_list_type(tag: &str, value: &str) -> Option<&'static str> {
     }
 }
 
-/// `node`から祖先方向へ最も近い`<table>`要素。
+/// The nearest `<table>` ancestor of `node`.
 fn nearest_table(dom: &Dom, node: NodeId) -> Option<NodeId> {
     let mut current = dom.parent(node);
     while let Some(id) = current {
@@ -286,7 +286,7 @@ mod tests {
         SpecifiedLengthPercentageOrAuto, SpecifiedVerticalAlign, TextAlign, WhiteSpace,
     };
 
-    /// 指定値の「px長さ」を取り出す(パーセンテージ・autoならNone)。
+    /// Extract the "px length" of a specified value (None for a percentage or auto).
     fn px_of(value: &SpecifiedLengthPercentageOrAuto) -> Option<f32> {
         match value {
             SpecifiedLengthPercentageOrAuto::LengthPercentage(
@@ -296,7 +296,7 @@ mod tests {
         }
     }
 
-    /// 指定値の「パーセンテージ」を取り出す(0〜1の割合)。
+    /// Extract the "percentage" of a specified value (a ratio from 0 to 1).
     fn percent_of(value: &SpecifiedLengthPercentageOrAuto) -> Option<f32> {
         match value {
             SpecifiedLengthPercentageOrAuto::LengthPercentage(
@@ -470,7 +470,7 @@ mod tests {
                   <table cellpadding="2"><tr><td id="inner">x</td></tr></table>
                 </td></tr></table>"#,
         );
-        // 内側の`<td id="inner">`は内側のテーブルのcellpaddingを使う。
+        // The inner `<td id="inner">` uses the inner table's cellpadding.
         fn find_by_id(dom: &Dom, id: NodeId, target: &str) -> Option<NodeId> {
             if let NodeData::Element { attrs, .. } = &dom.node(id).data {
                 if attrs
@@ -533,7 +533,7 @@ mod tests {
         let hints = hints_for(r#"<ul type="square"><li>x</li></ul>"#, "ul");
         assert!(hints.contains(&PropertyDeclaration::ListStyleType(ListStyleType::Square)));
 
-        // `<ul type="1">`はHTML的に無意味なので何も出さない。
+        // `<ul type="1">` is meaningless in HTML, so nothing is emitted.
         let hints = hints_for(r#"<ul type="1"><li>x</li></ul>"#, "ul");
         assert!(hints
             .iter()
@@ -596,7 +596,7 @@ mod tests {
         assert!(hints_for(r#"<p class="x">text</p>"#, "p").is_empty());
     }
 
-    // ===== カスケード上の位置 =====
+    // ===== Position in the cascade =====
 
     #[test]
     fn author_css_overrides_a_presentational_attribute() {
@@ -620,7 +620,7 @@ mod tests {
     fn a_presentational_attribute_overrides_the_ua_stylesheet() {
         use crate::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
-        // UAスタイルシートは`th { text-align: center }`。属性はそれより強い。
+        // The UA stylesheet has `th { text-align: center }`. The attribute is stronger.
         let dom = html::parse(br#"<table><tr><th align="left">x</th></tr></table>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
         let th = find(&dom, dom.document(), "th").expect("th not found");

@@ -1,8 +1,8 @@
 //! `text-shadow`/`text-overflow`/`word-break`/`overflow-wrap`/`hyphens`/
-//! `text-emphasis`のE2Eテスト。
+//! E2E tests for `text-emphasis`.
 //!
-//! `typography.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイル
-//! カスケード→レイアウト→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `typography.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -64,7 +64,7 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     (dom, laid)
 }
 
-/// `<p>`(最初のもの)が組んだ行を返す。
+/// Return the lines laid out by the (first) `<p>`.
 fn lines_of_first_p(html_src: &str, css: &str) -> Vec<LineBox> {
     let (dom, laid) = layout(html_src, css);
     let p = find_first_tag(&dom, dom.document(), "p").expect("p not found");
@@ -75,7 +75,7 @@ fn lines_of_first_p(html_src: &str, css: &str) -> Vec<LineBox> {
     }
 }
 
-/// 行のテキスト(ラン連結)。
+/// The line's text (its runs concatenated).
 fn line_text(line: &LineBox) -> String {
     line.runs.iter().map(|run| run.text.as_str()).collect()
 }
@@ -92,15 +92,15 @@ fn build_pdf(html_src: &str, css: &str) -> Vec<u8> {
     bytes
 }
 
-/// PDFのcontent streamはFlateDecodeで圧縮されているため、演算子を検索するには
-/// 解凍が必要(`typography.rs`と同じヘルパー)。
+/// A PDF's content stream is FlateDecode compressed, so searching for an operator requires
+/// inflating first (the same helper as in `typography.rs`).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
     }
 
-    // `endstream`の内側にも"stream"が現れるため、走査位置は`endstream`の
-    // 後ろまで進める(そうしないとストリームを1つおきに取りこぼす)。
+    // "stream" also appears inside an `endstream`, so the scan position advances past the
+    // `endstream` (otherwise every other stream would be missed).
     let mut out = Vec::new();
     let mut i = 0;
     while let Some(pos) = find_subslice(&pdf_bytes[i..], b"stream\n") {
@@ -143,8 +143,8 @@ fn word_break_break_all_wraps_inside_a_long_word() {
 
 #[test]
 fn a_long_word_stays_on_one_line_by_default() {
-    // `word-break: normal`かつ`overflow-wrap: normal`(初期値)では、
-    // 長い単語は分割せずはみ出す(従来どおりの挙動)。
+    // With `word-break: normal` and `overflow-wrap: normal` (the initial values), a long word
+    // is not split and overflows (the behaviour as before).
     let css = "body { margin: 0; } p { width: 60px; }";
     let lines = lines_of_first_p("<p>abcdefghijklmnopqrstuvwxyz</p>", css);
     assert_eq!(lines.len(), 1);
@@ -187,7 +187,7 @@ fn overflow_wrap_break_word_splits_only_when_it_does_not_fit() {
 
 #[test]
 fn overflow_wrap_keeps_short_words_intact() {
-    // 収まる単語は分割しない(`word-break: break-all`との違い)。
+    // A word that fits is not split (the difference from `word-break: break-all`).
     let css = "body { margin: 0; } p { width: 200px; overflow-wrap: break-word; }";
     let lines = lines_of_first_p("<p>alpha beta gamma</p>", css);
     assert_eq!(lines.len(), 1);
@@ -208,7 +208,7 @@ fn word_wrap_is_accepted_as_a_legacy_alias() {
 
 #[test]
 fn a_soft_hyphen_is_a_break_opportunity_and_shows_a_hyphen() {
-    // U+00AD は描画されず、そこで分割された行の末尾にだけハイフンが出る。
+    // U+00AD is not drawn, and a hyphen appears only at the end of the line broken there.
     let css = "body { margin: 0; } p { width: 70px; }";
     let lines = lines_of_first_p("<p>super\u{00AD}califragilistic</p>", css);
     assert!(lines.len() > 1, "should break at the soft hyphen");
@@ -270,7 +270,7 @@ fn text_overflow_ellipsis_truncates_an_overflowing_line() {
 
 #[test]
 fn text_overflow_needs_a_non_visible_overflow() {
-    // `overflow: visible`(初期値)では`text-overflow`は効かない(仕様通り)。
+    // With `overflow: visible` (the initial value), `text-overflow` has no effect (as the spec says).
     let css = "body { margin: 0; } \
                p { width: 80px; white-space: nowrap; text-overflow: ellipsis; }";
     let lines = lines_of_first_p("<p>a very long single line of text</p>", css);
@@ -287,8 +287,8 @@ fn text_overflow_clip_leaves_the_line_untouched() {
 
 // ===== text-shadow =====
 
-// グリフ列は送り幅の補正を挟めるよう常に`TJ`で書き出すため、
-// テキスト描画の回数は`TJ`の数で数える。
+// A glyph run is always written with `TJ` so advance corrections can be interposed, so the
+// number of text drawings is counted from the number of `TJ`s.
 #[test]
 fn text_shadow_adds_extra_glyph_draws_to_the_content_stream() {
     let plain = decompressed_stream_bytes(&build_pdf("<p>shadowed</p>", "body { margin: 0; }"));
@@ -362,7 +362,7 @@ fn text_emphasis_marks_are_drawn_as_paths() {
         "<p>abc</p>",
         "body { margin: 0; } p { text-emphasis: filled circle; }",
     ));
-    // 円はベジェ曲線(`c`演算子)4本×文字数で描かれる。
+    // A circle is drawn with four Bezier curves (the `c` operator) per character.
     assert!(
         count_occurrences(&marked, b" c\n") > count_occurrences(&plain, b" c\n"),
         "emphasis marks should add curve operators"

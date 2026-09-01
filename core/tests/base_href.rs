@@ -1,7 +1,7 @@
-//! `<base href>`のE2Eテスト。
+//! E2E tests for `<base href>`.
 //!
-//! ローカルパス基準の移動(`<base href="assets/">`)を、実際に`Engine`へ
-//! HTMLを流して画像が埋め込まれるかどうかで確認する。
+//! It checks moving the local path base (`<base href="assets/">`) by really feeding HTML
+//! through `Engine` and seeing whether the image is embedded.
 
 use std::path::PathBuf;
 
@@ -28,7 +28,7 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// `<base>`解決の検証用に、`<base_dir>/assets/img.png`だけを持つ一時ディレクトリを作る。
+/// Build a temporary directory holding only `<base_dir>/assets/img.png`, for checking `<base>` resolution.
 fn fixture_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-base-href-{name}"));
     let assets = dir.join("assets");
@@ -67,8 +67,8 @@ fn base_href_moves_the_directory_relative_references_are_resolved_against() {
 
 #[test]
 fn without_base_href_the_same_reference_does_not_resolve() {
-    // 対照実験: `<base href>`が無ければ`img.png`はbase_dir直下を指し、存在しない
-    // (失敗しても文書全体は生成される)。
+    // The control: with no `<base href>`, `img.png` points directly under base_dir and does
+    // not exist (the document is still generated on failure).
     let dir = fixture_dir("without");
     let bytes = build_pdf(
         r#"<html><body><img src="img.png" width="20" height="20"></body></html>"#,
@@ -84,7 +84,7 @@ fn without_base_href_the_same_reference_does_not_resolve() {
 #[test]
 fn an_absolute_reference_ignores_the_base_href() {
     let dir = fixture_dir("absolute");
-    // data: URIは`<base href>`の影響を受けない(絶対参照)。
+    // A data: URI is unaffected by `<base href>` (being an absolute reference).
     let bytes = build_pdf(
         r#"<html><head><base href="assets/"></head>
              <body><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==" width="10" height="10"></body></html>"#,

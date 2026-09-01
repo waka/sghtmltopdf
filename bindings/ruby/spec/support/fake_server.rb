@@ -2,15 +2,15 @@
 
 require "socket"
 
-# `sghtmltopdf server`の代わりに立てる最小のHTTPサーバ。
-# ステータスコードの割り当て・クエリ文字列・chunked転送の扱いを、
-# 実バイナリが無くても決定的にテストするために使う。
+# The minimal HTTP server standing in for `sghtmltopdf server`.
+# It makes the status code assignment, the query string and chunked transfer handling
+# testable deterministically without the real binary.
 class FakeServer
   Request = Struct.new(:method, :path, :query, :body)
 
   attr_reader :requests, :port
 
-  # ハンドラは`[status, body]`を返す。`body`が配列ならchunked転送にする。
+  # A handler returns `[status, body]`. An array `body` selects chunked transfer.
   def initialize(handler = nil)
     @handler = handler || ->(_request) { [200, "%PDF-1.7 fake\n%%EOF"] }
     @requests = []
@@ -34,8 +34,8 @@ class FakeServer
     @socket.close unless @socket.closed?
   end
 
-  # サーバを立てて、ブロックを抜けたら必ず止める。ハンドラは引数で渡す
-  # (ブロックはテスト本体のため)。
+  # Start the server and always stop it on leaving the block. The handler is an argument
+  # (the block being the test itself).
   def self.run(handler = nil)
     server = new(handler)
     begin
@@ -53,7 +53,7 @@ class FakeServer
       begin
         serve(client)
       rescue StandardError # rubocop:disable Lint/SuppressedException
-        # 接続断はテストの一部(タイムアウトなど)なので無視する。
+        # A dropped connection is part of the test (a timeout and so on), so it is ignored.
       ensure
         client.close unless client.closed?
       end

@@ -1,13 +1,13 @@
-//! PDF書き出しの振る舞いを変えるオプション。
+//! Options changing how the PDF is written.
 //!
-//! レイアウト結果は変えず、PDFの書き出し方だけを変える設定をまとめて
-//! 持ち回るための型。CLIの`--title`/`--no-pdf-compression`/`--grayscale`/
-//! `--dpi`/`--zoom`がここへ集約される。
+//! A type grouping the settings that change only how the PDF is written, never the layout
+//! result, so they can be carried around together. The CLI's `--title`,
+//! `--no-pdf-compression`, `--grayscale`, `--dpi` and `--zoom` all end up here.
 
-/// PDF Info辞書に書く文書メタデータ。
+/// The document metadata written to the PDF Info dictionary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DocumentMetadata {
-    /// `--title`。未指定ならHTMLの`<title>`が入る(呼び出し側で解決する)。
+    /// `--title`. With none given, the HTML `<title>` goes here (resolved by the caller).
     pub title: Option<String>,
     pub author: Option<String>,
     pub subject: Option<String>,
@@ -15,7 +15,7 @@ pub struct DocumentMetadata {
 }
 
 impl DocumentMetadata {
-    /// `title`が未設定のときだけHTMLの`<title>`を採用する。
+    /// Adopt the HTML `<title>` only when `title` is unset.
     pub fn fill_title_from_document(&mut self, document_title: Option<String>) {
         if self.title.is_none() {
             self.title = document_title.filter(|t| !t.trim().is_empty());
@@ -23,23 +23,23 @@ impl DocumentMetadata {
     }
 }
 
-/// CSS pxをPDFのptへ換算する既定の係数(96dpi基準、`72 / 96`)。
+/// The default factor converting CSS px to PDF pt (at 96dpi, `72 / 96`).
 pub const DEFAULT_SCALE: f32 = 72.0 / 96.0;
 
-/// PDF書き出しオプション。
+/// PDF output options.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PdfOutputOptions {
     pub metadata: DocumentMetadata,
-    /// PDFオブジェクト(content stream・フォント・CMap)のFlate圧縮。
-    /// 画像データはこのフラグの対象外。
+    /// Flate compression of the PDF objects (content streams, fonts, CMaps).
+    /// Image data is not covered by this flag.
     pub compress: bool,
-    /// CSS px → PDF ptの係数。
+    /// The CSS px to PDF pt factor.
     pub scale: f32,
-    /// 塗り・線の色をグレースケール化する。
+    /// Convert fill and stroke colours to grayscale.
     pub grayscale: bool,
-    /// ヘッダーの下に罫線を引く(`--header-line`)。
+    /// Draw a rule below the header (`--header-line`).
     pub header_line: bool,
-    /// フッターの上に罫線を引く(`--footer-line`)。
+    /// Draw a rule above the footer (`--footer-line`).
     pub footer_line: bool,
 }
 
@@ -57,20 +57,20 @@ impl Default for PdfOutputOptions {
 }
 
 impl PdfOutputOptions {
-    /// `--dpi`と`--zoom`から換算係数を求める。
+    /// Derive the conversion factor from `--dpi` and `--zoom`.
     ///
-    /// `dpi`は「CSS pxを何dpiとして解釈するか」。既定の96dpiで0.75になり、
-    /// 72を渡すと1 CSS px = 1 ptになる。
+    /// `dpi` is "what dpi a CSS px is read as". The default of 96dpi gives 0.75, and passing
+    /// 72 makes 1 CSS px = 1 pt.
     pub fn scale_from_dpi_and_zoom(dpi: f32, zoom: f32) -> f32 {
         72.0 / dpi * zoom
     }
 
-    /// ページ座標系で直接書く値(MediaBox・注釈のRect・Dests座標)の換算。
+    /// The conversion for values written directly in page coordinates (MediaBox, annotation Rects, Dests coordinates).
     pub fn to_pt(&self, px: f32) -> f32 {
         px * self.scale
     }
 
-    /// 輝度式。`grayscale`が無効ならそのまま返す。
+    /// The luminance formula. Returns the input unchanged when `grayscale` is off.
     pub fn map_rgb(&self, rgb: (f32, f32, f32)) -> (f32, f32, f32) {
         if !self.grayscale {
             return rgb;
@@ -81,13 +81,13 @@ impl PdfOutputOptions {
     }
 }
 
-/// PDF Info辞書の`/Producer`に書く値。
+/// The value written to `/Producer` in the PDF Info dictionary.
 pub fn producer_string() -> String {
     format!("sghtmltopdf {}", env!("CARGO_PKG_VERSION"))
 }
 
-/// 現在時刻をPDFの日付文字列(`D:YYYYMMDDHHmmSSZ`)で返す。
-/// システム時刻が取れない場合はUNIXエポックにフォールバックする。
+/// Return the current time as a PDF date string (`D:YYYYMMDDHHmmSSZ`).
+/// Falls back to the UNIX epoch when the system time cannot be read.
 pub fn current_pdf_date() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -96,16 +96,16 @@ pub fn current_pdf_date() -> String {
     pdf_date_from_unix(secs)
 }
 
-/// UNIX秒をPDFの日付文字列へ変換する(UTC固定)。
+/// Convert UNIX seconds to a PDF date string (always UTC).
 ///
-/// 依存を増やさないため、日付計算はHoward Hinnantの`civil_from_days`を
-/// 自前で持つ。
+/// To avoid another dependency, the date arithmetic uses our own copy of Howard Hinnant's
+/// `civil_from_days`.
 pub fn pdf_date_from_unix(secs: i64) -> String {
     let (year, month, day, hour, minute, second) = datetime_from_unix(secs);
     format!("D:{year:04}{month:02}{day:02}{hour:02}{minute:02}{second:02}Z")
 }
 
-/// UNIX秒をUTCの年月日時分秒へ分解する(`pdf_writer::Date`の組み立て用)。
+/// Break UNIX seconds into UTC year, month, day, hour, minute and second (to build a `pdf_writer::Date`).
 pub fn datetime_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let rem = secs.rem_euclid(86_400);
@@ -120,7 +120,7 @@ pub fn datetime_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     )
 }
 
-/// 現在時刻をUTCの年月日時分秒で返す。
+/// Return the current time as UTC year, month, day, hour, minute and second.
 pub fn current_datetime() -> (i64, u32, u32, u32, u32, u32) {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -129,7 +129,7 @@ pub fn current_datetime() -> (i64, u32, u32, u32, u32, u32) {
     datetime_from_unix(secs)
 }
 
-/// エポックからの日数(1970-01-01 = 0)をグレゴリオ暦の年月日へ変換する。
+/// Convert days since the epoch (1970-01-01 = 0) into a Gregorian year, month and day.
 fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn the_default_scale_turns_a4_into_the_real_paper_size() {
         let options = PdfOutputOptions::default();
-        // A4は793.7 × 1122.5 CSS px。ptに直すと595.3 × 841.9(=210 × 297mm)。
+        // A4 is 793.7 x 1122.5 CSS px, which in pt is 595.3 x 841.9 (= 210 x 297mm).
         assert!((options.to_pt(793.7) - 595.275).abs() < 0.1);
         assert!((options.to_pt(1122.5) - 841.875).abs() < 0.1);
     }
@@ -159,7 +159,7 @@ mod tests {
     fn dpi_72_keeps_one_css_px_as_one_pt() {
         assert!((PdfOutputOptions::scale_from_dpi_and_zoom(72.0, 1.0) - 1.0).abs() < 1e-6);
         assert!((PdfOutputOptions::scale_from_dpi_and_zoom(96.0, 1.0) - 0.75).abs() < 1e-6);
-        // zoomは係数に掛かる。
+        // zoom multiplies the factor.
         assert!((PdfOutputOptions::scale_from_dpi_and_zoom(96.0, 2.0) - 1.5).abs() < 1e-6);
     }
 
@@ -172,7 +172,7 @@ mod tests {
         let (r, g, b) = options.map_rgb((1.0, 0.0, 0.0));
         assert_eq!((r, g), (b, b));
         assert!((r - 0.2126).abs() < 1e-6);
-        // 白と黒は変わらない。
+        // White and black are unchanged.
         assert_eq!(options.map_rgb((0.0, 0.0, 0.0)), (0.0, 0.0, 0.0));
         let (w, _, _) = options.map_rgb((1.0, 1.0, 1.0));
         assert!((w - 1.0).abs() < 1e-6);
@@ -183,24 +183,24 @@ mod tests {
         assert_eq!(pdf_date_from_unix(0), "D:19700101000000Z");
         // 2026-07-25T00:34:56Z
         assert_eq!(pdf_date_from_unix(1_784_939_696), "D:20260725003456Z");
-        // うるう日。
+        // A leap day.
         assert_eq!(pdf_date_from_unix(1_709_164_800), "D:20240229000000Z");
     }
 
     #[test]
     fn the_document_title_is_only_used_when_the_option_is_absent() {
         let mut meta = DocumentMetadata::default();
-        meta.fill_title_from_document(Some("HTMLのtitle".to_string()));
-        assert_eq!(meta.title.as_deref(), Some("HTMLのtitle"));
+        meta.fill_title_from_document(Some("the HTML title".to_string()));
+        assert_eq!(meta.title.as_deref(), Some("the HTML title"));
 
         let mut meta = DocumentMetadata {
-            title: Some("CLI指定".to_string()),
+            title: Some("given on the CLI".to_string()),
             ..Default::default()
         };
-        meta.fill_title_from_document(Some("HTMLのtitle".to_string()));
-        assert_eq!(meta.title.as_deref(), Some("CLI指定"));
+        meta.fill_title_from_document(Some("the HTML title".to_string()));
+        assert_eq!(meta.title.as_deref(), Some("given on the CLI"));
 
-        // 空の<title>は採用しない。
+        // An empty <title> is not adopted.
         let mut meta = DocumentMetadata::default();
         meta.fill_title_from_document(Some("   ".to_string()));
         assert_eq!(meta.title, None);

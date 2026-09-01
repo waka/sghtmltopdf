@@ -1,7 +1,7 @@
-//! CSS Grid(`display: grid`)のE2Eテスト。
+//! E2E tests for CSS Grid (`display: grid`).
 //!
-//! `flexbox.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイルカスケード→
-//! レイアウト→ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `flexbox.rs`: catch regressions by going through the real pipeline
+//! (HTML parse, style cascade, layout, pagination, PDF encode).
 
 use std::collections::HashMap;
 
@@ -64,13 +64,13 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     (dom, laid)
 }
 
-/// グリッドアイテム(`.g`直下の`<div>`)のcontent boxを、文書順に返す。
+/// Return the content boxes of the grid items (the `<div>`s directly under `.g`) in document order.
 fn item_boxes(html_src: &str, css: &str) -> Vec<Rect> {
     let (dom, laid) = layout(html_src, css);
     let mut divs = Vec::new();
     find_all_tags(&dom, dom.document(), "div", &mut divs);
     divs.iter()
-        .skip(1) // 先頭はグリッドコンテナ自身
+        .skip(1) // the first is the grid container itself
         .filter_map(|d| find_laid_out(&laid, *d).map(|b| b.layout.content))
         .collect()
 }
@@ -78,7 +78,7 @@ fn item_boxes(html_src: &str, css: &str) -> Vec<Rect> {
 const THREE_ITEMS: &str =
     r#"<div class="g"><div class="a">a</div><div class="b">b</div><div class="c">c</div></div>"#;
 
-// ===== トラック定義 =====
+// ===== Track definitions =====
 
 #[test]
 fn fixed_length_tracks_lay_items_side_by_side() {
@@ -121,7 +121,7 @@ fn repeat_expands_to_the_given_count() {
 
 #[test]
 fn repeat_auto_fill_derives_the_column_count_from_the_container() {
-    // 400pxに「最小150px」の列 → 2列(3つ目のアイテムは2行目へ折り返す)。
+    // 400px with "at least 150px" columns gives 2 columns (the third item wraps to the second row).
     let boxes = item_boxes(
         THREE_ITEMS,
         "body { margin: 0; } .g { display: grid; width: 400px; \
@@ -129,7 +129,7 @@ fn repeat_auto_fill_derives_the_column_count_from_the_container() {
     );
     assert_eq!(boxes[0].width, 200.0);
     assert_eq!(boxes[1].width, 200.0);
-    assert_eq!(boxes[2].x, 0.0, "3つ目は次の行へ折り返す");
+    assert_eq!(boxes[2].x, 0.0, "the third wraps to the next row");
     assert!(boxes[2].y > boxes[0].y);
 }
 
@@ -142,7 +142,7 @@ fn minmax_clamps_a_flexible_track() {
     );
     assert!(
         boxes[0].width >= 250.0,
-        "minmaxの下限を下回ってはいけない: {}",
+        "it must not go below minmax's lower bound: {}",
         boxes[0].width
     );
 }
@@ -156,11 +156,11 @@ fn gap_inserts_space_between_tracks() {
     );
     assert_eq!(boxes[0].width, 195.0);
     assert_eq!(boxes[1].x, 205.0);
-    // 3つ目は2行目。row-gapも効く。
+    // The third is on the second row. row-gap applies too.
     assert!(boxes[2].y - boxes[0].y >= 10.0);
 }
 
-// ===== 配置 =====
+// ===== Placement =====
 
 #[test]
 fn grid_column_places_an_item_across_tracks() {
@@ -169,7 +169,7 @@ fn grid_column_places_an_item_across_tracks() {
         "body { margin: 0; } .g { display: grid; width: 300px; \
          grid-template-columns: repeat(3, 100px); } .a { grid-column: 1 / 3; }",
     );
-    assert_eq!(boxes[0].width, 200.0, "1〜3ライン=2トラック分");
+    assert_eq!(boxes[0].width, 200.0, "lines 1 to 3 = two tracks");
     assert_eq!(boxes[1].x, 200.0);
 }
 
@@ -197,7 +197,7 @@ fn grid_template_areas_place_items_by_name() {
     assert_eq!(boxes[0].width, 100.0);
     assert_eq!(boxes[1].x, 100.0);
     assert_eq!(boxes[1].width, 200.0);
-    // cは2列にまたがる2行目。
+    // c is on the second row, spanning two columns.
     assert_eq!(boxes[2].x, 0.0);
     assert_eq!(boxes[2].width, 300.0);
     assert!(boxes[2].y > boxes[0].y);
@@ -211,7 +211,7 @@ fn named_grid_lines_can_be_referenced() {
          grid-template-columns: [start] 100px [mid] 100px [end2] 100px; } \
          .a { grid-column-start: mid; }",
     );
-    assert_eq!(boxes[0].x, 100.0, "名前付きライン`mid`から始まる");
+    assert_eq!(boxes[0].x, 100.0, "it starts at the named line `mid`");
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn grid_auto_flow_column_fills_columns_first() {
         "body { margin: 0; } .g { display: grid; width: 300px; \
          grid-template-rows: 30px 30px; grid-auto-flow: column; }",
     );
-    // 1列目に2つ縦に並び、3つ目が2列目の先頭へ。
+    // Two stack vertically in the first column and the third goes to the top of the second.
     assert_eq!(boxes[0].x, boxes[1].x);
     assert!(boxes[1].y > boxes[0].y);
     assert!(boxes[2].x > boxes[0].x);
@@ -230,7 +230,7 @@ fn grid_auto_flow_column_fills_columns_first() {
 
 #[test]
 fn justify_items_aligns_items_in_the_inline_axis() {
-    // `justify-items: start`ならアイテムは内容幅に縮み、トラック左端に寄る。
+    // With `justify-items: start` an item shrinks to its content width and sits at the track's left edge.
     let stretched = item_boxes(
         THREE_ITEMS,
         "body { margin: 0; } .g { display: grid; width: 300px; \
@@ -241,10 +241,10 @@ fn justify_items_aligns_items_in_the_inline_axis() {
         "body { margin: 0; } .g { display: grid; width: 300px; \
          grid-template-columns: 100px 100px 100px; justify-items: start; }",
     );
-    assert_eq!(stretched[0].width, 100.0, "初期値はstretch");
+    assert_eq!(stretched[0].width, 100.0, "the initial value is stretch");
     assert!(
         started[0].width < 100.0,
-        "justify-items: startで内容幅に縮む: {}",
+        "justify-items: start shrinks it to the content width: {}",
         started[0].width
     );
     assert_eq!(started[0].x, 0.0);
@@ -259,12 +259,15 @@ fn justify_self_overrides_justify_items_for_one_item() {
          .b { justify-self: stretch; }",
     );
     assert!(boxes[0].width < 100.0);
-    assert_eq!(boxes[1].width, 100.0, "justify-selfが個別に上書きする");
+    assert_eq!(
+        boxes[1].width, 100.0,
+        "justify-self overrides it individually"
+    );
 }
 
-// ===== ページ分割 =====
+// ===== Pagination =====
 
-/// レイアウト済みツリーからテキストを収集する。
+/// Collect the text from the laid-out tree.
 fn collect_texts(b: &LaidOutBox, out: &mut Vec<String>) {
     match &b.content {
         LaidOutContent::Inline(lines) => {
@@ -320,15 +323,18 @@ fn a_tall_grid_splits_across_pages_by_row() {
          .g > div { height: 40px; }",
     );
 
-    assert!(pages.len() > 1, "1ページに収まらないグリッドは分割される");
+    assert!(
+        pages.len() > 1,
+        "a grid that does not fit one page is split"
+    );
     let total: usize = pages.iter().map(|p| p.len()).sum();
-    assert_eq!(total, 80, "分割してもセルは1つも失われない");
-    // 行の途中で切れていない(各ページの先頭セルは必ず1列目)。
+    assert_eq!(total, 80, "not a single cell is lost in the split");
+    // It is not cut mid-row (the first cell of every page is always in the first column).
     for page in &pages {
         if let Some(first) = page.first() {
             assert!(
                 first.ends_with("c1"),
-                "ページ先頭は行の1列目のはず: {first}"
+                "the top of a page should be the first column of a row: {first}"
             );
         }
     }
@@ -383,11 +389,11 @@ fn grid_renders_a_valid_pdf_end_to_end() {
     assert!(texts.iter().any(|t| t.contains("footer")));
 }
 
-// ===== ネストしたフォーマッティングコンテキスト =====
+// ===== Nested formatting contexts =====
 
-/// 内側のグリッドコンテナはブロックレベルなので、既定では外側のトラック幅を
-/// 埋める。自然幅が0として測られていた頃は、トラックが潰れて内容が1語ずつ
-/// 溢れていた。
+/// The inner grid container is block-level, so by default it fills the outer track's width.
+/// Back when its natural width measured as 0, the track collapsed and the content overflowed
+/// one word at a time.
 #[test]
 fn a_grid_inside_a_grid_item_fills_the_track() {
     let boxes = item_boxes(
@@ -398,17 +404,20 @@ fn a_grid_inside_a_grid_item_fills_the_track() {
     );
 
     let (item, key, value) = (boxes[0], boxes[1], boxes[2]);
-    assert_eq!(item.width, 400.0, "内側のグリッドはトラック幅を埋める");
-    assert!(key.width > 0.0, "auto列は内容幅になる: {key:?}");
+    assert_eq!(item.width, 400.0, "the inner grid fills the track width");
+    assert!(
+        key.width > 0.0,
+        "an auto column takes the content width: {key:?}"
+    );
     assert!(
         (value.width - (400.0 - 10.0 - key.width)).abs() < 0.5,
-        "1fr列が残り幅を取る: key={key:?} value={value:?}"
+        "the 1fr column takes the remaining width: key={key:?} value={value:?}"
     );
 }
 
-/// トラックが内容基準で決まる場合(明示的な`justify-content: flex-start`で
-/// `auto`トラックが伸びない)は、内側のグリッドの自然幅がそのまま列幅になる。
-/// 「潰れない」ことだけでなく「実際に測れている」ことの確認。
+/// Where the tracks are decided from the content (an explicit `justify-content: flex-start`,
+/// so the `auto` tracks do not grow), the inner grid's natural width becomes the column width
+/// outright. This checks not just "it does not collapse" but that it really is measured.
 #[test]
 fn a_nested_grid_is_measured_by_its_own_columns() {
     let boxes = item_boxes(
@@ -422,15 +431,15 @@ fn a_nested_grid_is_measured_by_its_own_columns() {
     let (item, key, value) = (boxes[0], boxes[1], boxes[2]);
     assert!(
         item.width > 0.0 && item.width < 400.0,
-        "内容幅に縮むはず: {item:?}"
+        "it should shrink to the content width: {item:?}"
     );
     assert!(
         (item.width - (key.width + 10.0 + value.width)).abs() < 0.5,
-        "内側の2列+gapの合計が外側の列幅になる: item={item:?} key={key:?} value={value:?}"
+        "the inner two columns plus the gap make the outer column width: item={item:?} key={key:?} value={value:?}"
     );
 }
 
-/// テーブルを内側に持つ場合も、行のセル幅合計から自然幅が出る。
+/// With a table inside, the natural width comes from the sum of a row's cell widths too.
 #[test]
 fn a_table_inside_a_grid_item_is_measured_by_its_rows() {
     let (dom, laid) = layout(
@@ -445,14 +454,14 @@ fn a_table_inside_a_grid_item_is_measured_by_its_rows() {
 
     assert!(
         item.layout.content.width > 0.0 && item.layout.content.width < 400.0,
-        "テーブルの自然幅で列が決まるはず: {:?}",
+        "the column should be decided by the table's natural width: {:?}",
         item.layout.content
     );
 }
 
-/// `justify-content`の初期値`normal`では、余った幅を`auto`トラックが吸って
-/// コンテナを埋める。明示的に`flex-start`と書いた場合は内容幅のまま左に寄る。
-/// (トラック間での余白の配分比率はtaffy任せで、CSSの均等配分とは一致しない)
+/// With `justify-content`'s initial value `normal`, the `auto` tracks absorb the leftover width
+/// and fill the container. Written explicitly as `flex-start` it keeps its content width and
+/// sits to the left (how the slack is divided between tracks is left to taffy).
 #[test]
 fn auto_tracks_absorb_the_free_space_unless_justify_content_says_otherwise() {
     const HTML: &str = r#"<div class="g"><div class="a">key</div><div class="b">value</div></div>"#;
@@ -464,7 +473,7 @@ fn auto_tracks_absorb_the_free_space_unless_justify_content_says_otherwise() {
     let right_edge = filled[1].x + filled[1].width;
     assert!(
         (right_edge - 400.0).abs() < 0.5,
-        "既定ではコンテナを埋める: {filled:?}"
+        "by default it fills the container: {filled:?}"
     );
 
     let packed = item_boxes(
@@ -474,6 +483,6 @@ fn auto_tracks_absorb_the_free_space_unless_justify_content_says_otherwise() {
     );
     assert!(
         packed[1].x + packed[1].width < 200.0,
-        "flex-startなら内容幅のまま左に寄る: {packed:?}"
+        "with flex-start it keeps the content width and sits to the left: {packed:?}"
     );
 }

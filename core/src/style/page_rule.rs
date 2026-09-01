@@ -1,14 +1,14 @@
-//! `@page`ルール(ページの`size`/`margin`・margin box)のパースと解決。
+//! Parsing and resolving `@page` rules (the page's `size`/`margin` and its margin boxes).
 //!
-//! `@page`のブロックは「`size`/`margin`系の通常のプロパティ宣言」と
-//! 「16個のmargin box at-rule(`@top-left`等)」が混在する構文で、
-//! `stylesheet.rs`の既存パーサーとは別に専用の[`PageRuleParser`]を用いる。
+//! An `@page` block mixes ordinary property declarations (`size` and the `margin` family)
+//! with the 16 margin box at-rules (`@top-left` and friends), so it uses its own
+//! [`PageRuleParser`] rather than the existing parser in `stylesheet.rs`.
 //!
-//! `style`クレート内は`layout`クレートに依存しない設計方針
-//! ([`crate::layout`]が[`crate::style`]に依存する一方向)のため、ページ
-//! サイズの実ピクセル値([`NamedPageSize`]の変換テーブル)はこのファイルに
-//! 独立して保持する(`layout::page::PageSize`の同名定数と値を同期させる
-//! 必要がある)。
+//! The `style` crate is designed not to depend on the `layout` crate (the dependency runs
+//! one way, [`crate::layout`] on [`crate::style`]), so the actual pixel values of the page
+//! sizes (the conversion table for [`NamedPageSize`]) are kept independently in this file
+//! (and must be kept in sync with the identically named constants in
+//! `layout::page::PageSize`).
 
 use std::collections::BTreeMap;
 
@@ -21,8 +21,8 @@ use super::properties::{parse_declaration, parse_length, PropertyDeclaration};
 use super::stylesheet::DeclarationBlockParser;
 use super::values::{ContentPart, LengthPercentageOrAuto, SpecifiedLength};
 
-/// `@page`のページセレクタ(prelude)。名前付きページ(`@page intro`)・
-/// `:blank`は非対応。
+/// The page selector (prelude) of `@page`. Named pages (`@page intro`) and `:blank` are
+/// not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageSelector {
     All,
@@ -31,10 +31,10 @@ pub enum PageSelector {
     Right,
 }
 
-/// margin boxの領域(16個)。
+/// A margin box area (there are 16).
 ///
-/// `Ord`はバリアントの宣言順(CSS仕様の並び)になる。margin boxを
-/// `BTreeMap`に持つことで、描画順を実行ごとに揺れない順序に固定する。
+/// `Ord` follows the declaration order of the variants (the order in the CSS spec). Holding
+/// the margin boxes in a `BTreeMap` fixes the drawing order so it does not vary between runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum MarginBoxArea {
     TopLeftCorner,
@@ -56,7 +56,7 @@ pub enum MarginBoxArea {
 }
 
 impl MarginBoxArea {
-    /// 16個のmargin box at-rule名との対応表。
+    /// The mapping from the 16 margin box at-rule names.
     fn from_at_rule_name(name: &str) -> Option<Self> {
         use MarginBoxArea::*;
         let table: &[(&str, MarginBoxArea)] = &[
@@ -84,7 +84,7 @@ impl MarginBoxArea {
     }
 }
 
-/// `size`プロパティの名前付きページサイズ。`b4`/`b5`/`ledger`は非対応。
+/// A named page size for the `size` property. `b4`/`b5`/`ledger` are not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NamedPageSize {
     A4,
@@ -101,7 +101,7 @@ pub enum PageOrientation {
     Landscape,
 }
 
-/// `size`プロパティの指定値。
+/// The specified value of the `size` property.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PageSizeValue {
     Auto,
@@ -109,21 +109,21 @@ pub enum PageSizeValue {
     Explicit(SpecifiedLength, SpecifiedLength),
 }
 
-/// 1つの`@page`ルール(パース結果そのまま)。
+/// One `@page` rule, exactly as parsed.
 #[derive(Debug, Clone, Default)]
 pub struct PageRule {
     pub selector_is_all: bool,
     pub selector: Option<PageSelector>,
     pub size: Option<PageSizeValue>,
-    /// `margin`/`margin-top`等(`size`以外の`@page`直下の宣言)。実際に
-    /// 意味を持つのはmargin系のみだが、パースは`parse_declaration`を
-    /// そのまま再利用するため他のプロパティも構文上は受理される
+    /// `margin`, `margin-top` and so on (every declaration directly under `@page` other
+    /// than `size`). Only the margin family actually means anything, but parsing reuses
+    /// `parse_declaration` as-is, so other properties are syntactically accepted
     pub margin: Vec<PropertyDeclaration>,
     pub margin_boxes: BTreeMap<MarginBoxArea, Vec<PropertyDeclaration>>,
 }
 
-/// `@page`ブロック内の1アイテム。`RuleBodyItemParser`が要求する
-/// 単一の出力型としてまとめる。
+/// One item inside an `@page` block. This groups them into the single output type
+/// `RuleBodyItemParser` requires.
 enum PageBodyItem {
     Size(PageSizeValue),
     Declarations(Vec<PropertyDeclaration>),
@@ -193,8 +193,8 @@ impl<'i> RuleBodyItemParser<'i, PageBodyItem, ()> for PageRuleParser {
     }
 }
 
-/// `@page`のprelude(ページセレクタ)をパースする。`:first`/`:left`/`:right`
-/// 単体のみ認識(複合・名前付きページは非対応)。
+/// Parse the prelude (page selector) of `@page`. Only a bare `:first`/`:left`/`:right` is
+/// recognised (compound selectors and named pages are not supported).
 pub(super) fn parse_page_selector<'i, 't>(
     input: &mut Parser<'i, 't>,
 ) -> Result<PageSelector, ParseError<'i, ()>> {
@@ -214,7 +214,7 @@ pub(super) fn parse_page_selector<'i, 't>(
     }
 }
 
-/// `@page { ... }`のブロック本体をパースする。
+/// Parse the block body of `@page { ... }`.
 pub(super) fn parse_page_rule_block<'i, 't>(
     input: &mut Parser<'i, 't>,
     selector: PageSelector,
@@ -237,7 +237,7 @@ pub(super) fn parse_page_rule_block<'i, 't>(
     rule
 }
 
-/// `size`。`auto` | `<page-size> [portrait | landscape]?` | `<length>{1,2}`。
+/// `size`. `auto` | `<page-size> [portrait | landscape]?` | `<length>{1,2}`.
 fn parse_page_size<'i>(input: &mut Parser<'i, '_>) -> Result<PageSizeValue, ParseError<'i, ()>> {
     if input
         .try_parse(|input| input.expect_ident_matching("auto"))
@@ -284,8 +284,8 @@ fn parse_page_size<'i>(input: &mut Parser<'i, '_>) -> Result<PageSizeValue, Pars
         return Ok(PageSizeValue::Named(named, orientation.unwrap_or_default()));
     }
     if orientation.is_some() {
-        // `portrait`/`landscape`単体は`<page-size>`と併用が前提の仕様
-        // (単体では無効)。
+        // A bare `portrait`/`landscape` is specified to require a `<page-size>` alongside it
+        // (on its own it is invalid).
         return Err(input.new_custom_error(()));
     }
 
@@ -294,11 +294,11 @@ fn parse_page_size<'i>(input: &mut Parser<'i, '_>) -> Result<PageSizeValue, Pars
     Ok(PageSizeValue::Explicit(width, height))
 }
 
-/// 複数`@page`ルールを併合した最終結果。
+/// The final result of merging several `@page` rules.
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedPageRule {
-    /// 幅・高さ(px)。文書全体で1回だけ解決する(`:first`/`:left`/`:right`の
-    /// size宣言は反映されない)。
+    /// Width and height (px). Resolved once for the whole document (a size declaration
+    /// under `:first`/`:left`/`:right` is not honoured).
     pub size_px: Option<(f32, f32)>,
     pub margin_top: Option<LengthPercentageOrAuto>,
     pub margin_right: Option<LengthPercentageOrAuto>,
@@ -307,9 +307,9 @@ pub struct ResolvedPageRule {
     pub margin_boxes: BTreeMap<MarginBoxArea, Vec<PropertyDeclaration>>,
 }
 
-/// 簡易カスケード。無条件`@page{}`ルールをスタイルシート順に畳み込んだ後、
-/// `is_first`/`is_left`に合致する擬似クラス付きルールをmargin boxに
-/// ついてのみ畳み込む(`size`/`margin`は無条件ルールのみが有効)。
+/// A simple cascade. Unconditional `@page{}` rules are folded in stylesheet order, then the
+/// pseudo-class rules matching `is_first`/`is_left` are folded in for the margin boxes only
+/// (`size`/`margin` are honoured only from unconditional rules).
 pub fn resolve_page_rules(rules: &[PageRule], is_first: bool, is_left: bool) -> ResolvedPageRule {
     let mut result = ResolvedPageRule::default();
 
@@ -336,10 +336,9 @@ pub fn resolve_page_rules(rules: &[PageRule], is_first: bool, is_left: bool) -> 
     result
 }
 
-/// いずれかのmargin boxの`content`で`counter(pages)`(`counters(pages, ...)`
-/// 含む)が使われているかを判定する。`Mode::Streaming`では総ページ数が
-/// 原理的に決まらないため、`EngineError::UnsupportedInStreamingMode`を
-/// 返すかどうかの判定に使う。
+/// Whether any margin box's `content` uses `counter(pages)` (including `counters(pages, ...)`).
+/// The total page count cannot be known in principle under `Mode::Streaming`, so this
+/// decides whether to return `EngineError::UnsupportedInStreamingMode`.
 pub fn rules_use_page_count(rules: &[PageRule]) -> bool {
     rules.iter().any(|rule| {
         rule.margin_boxes.values().any(|decls| {
@@ -358,8 +357,8 @@ pub fn rules_use_page_count(rules: &[PageRule]) -> bool {
 }
 
 fn apply_margin_declarations(result: &mut ResolvedPageRule, decls: &[PropertyDeclaration]) {
-    // `@page`のmargin宣言に`em`/`rem`が使われるのは稀だが、要素という概念が
-    // 無いため基準フォントサイズは初期値(16px)固定にする。
+    // `em`/`rem` in an `@page` margin declaration is rare, but with no element to speak of
+    // the reference font size is fixed to the initial value (16px).
     const NOMINAL_FONT_SIZE: f32 = 16.0;
     for decl in decls {
         match decl {
@@ -393,13 +392,13 @@ fn merge_margin_boxes(
     }
 }
 
-/// `layout::page::PageSize`の同名定数と同じ値(96dpi換算)。この関数は
-/// `style`クレートが`layout`に依存しない設計方針を保つため、値をここに
-/// 複製して持つ。
+/// The same values as the identically named constants in `layout::page::PageSize` (at
+/// 96dpi). This function keeps a copy of them here so the `style` crate stays free of any
+/// dependency on `layout`.
 fn resolve_page_size_px(size: PageSizeValue) -> (f32, f32) {
     const NOMINAL_FONT_SIZE: f32 = 16.0;
     let (w, h) = match size {
-        PageSizeValue::Auto => return (793.7, 1122.5), // autoはA4相当を既定にする
+        PageSizeValue::Auto => return (793.7, 1122.5), // auto defaults to the A4 equivalent
         PageSizeValue::Named(named, _) => match named {
             NamedPageSize::A4 => (793.7, 1122.5),
             NamedPageSize::A3 => (1122.5, 1587.4),
@@ -453,7 +452,7 @@ mod tests {
 
     #[test]
     fn page_rule_accepts_physical_units_for_size_and_margin() {
-        // 印刷CSSでよく書かれる形。A4を実寸で指定しても名前付き`a4`と同じ結果になる。
+        // The form usually written in print CSS. Giving A4 at real size matches the named `a4`.
         let sheet = parse_stylesheet("@page { size: 210mm 297mm; margin: 0.5in; }");
         let resolved = resolve_page_rules(&sheet.page_rules, false, false);
         let named = resolve_page_rules(
@@ -462,8 +461,8 @@ mod tests {
             false,
         );
 
-        let (width, height) = resolved.size_px.expect("size が解決されていません");
-        let (named_width, named_height) = named.size_px.expect("size が解決されていません");
+        let (width, height) = resolved.size_px.expect("size was not resolved");
+        let (named_width, named_height) = named.size_px.expect("size was not resolved");
         assert!(
             (width - named_width).abs() < 0.5,
             "{width} vs {named_width}"
@@ -472,7 +471,7 @@ mod tests {
             (height - named_height).abs() < 0.5,
             "{height} vs {named_height}"
         );
-        // 0.5in = 48px。
+        // 0.5in = 48px.
         assert_eq!(
             resolved.margin_top,
             Some(LengthPercentageOrAuto::LengthPercentage(
@@ -497,8 +496,8 @@ mod tests {
 
     #[test]
     fn page_rule_rejects_named_pages_and_combined_pseudo_classes() {
-        // 名前付きページ・複合擬似クラスは非対応。パースエラーになった@page
-        // ルールは無視され、後続のルールには影響しない。
+        // Named pages and compound pseudo-classes are not supported. An @page rule that
+        // fails to parse is ignored and does not affect the rules that follow.
         for css in [
             "@page intro { margin: 0; }",
             "@page :first:left { margin: 0; }",
@@ -554,7 +553,7 @@ mod tests {
              @page :first { size: 999px 999px; margin: 999px; }",
         );
         let resolved = resolve_page_rules(&sheet.page_rules, true, false);
-        // :firstのsize/marginは反映されない。
+        // The size/margin under :first are not honoured.
         assert_eq!(resolved.size_px, Some((300.0, 400.0)));
         assert_eq!(
             resolved.margin_top,
@@ -573,16 +572,16 @@ mod tests {
         let first_page = resolve_page_rules(&sheet.page_rules, true, false);
         let other_page = resolve_page_rules(&sheet.page_rules, false, false);
 
-        // :firstページでは@bottom-centerが上書き(後勝ち)されるため、
-        // 無条件ルールのcontent宣言と:first側のcontent宣言の両方が
-        // (この順で)入っている(実際にどちらが有効かはcontent解決側の責務)。
+        // On the :first page @bottom-center is overridden (later wins), so both the
+        // unconditional rule's content declaration and the :first one are present, in that
+        // order (which of them actually applies is the content resolver's job).
         let first_bottom_center = &first_page.margin_boxes[&MarginBoxArea::BottomCenter];
         assert_eq!(first_bottom_center.len(), 2);
         assert!(first_page
             .margin_boxes
             .contains_key(&MarginBoxArea::TopCenter));
 
-        // 他ページには:first専用の@top-centerが無い。
+        // Other pages have no :first-only @top-center.
         assert!(!other_page
             .margin_boxes
             .contains_key(&MarginBoxArea::TopCenter));

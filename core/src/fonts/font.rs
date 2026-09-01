@@ -1,4 +1,4 @@
-//! フォントファイルの読み込み。
+//! Loading font files.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -14,22 +14,22 @@ use skrifa::prelude::{LocationRef, Size};
 use skrifa::raw::TableProvider;
 use skrifa::MetadataProvider;
 
-/// バイト列から作った借用ビュー一式。
+/// The set of borrowed views built from the bytes.
 ///
-/// harfrustの`Shaper`とskrifaの`Charmap`/`GlyphMetrics`は、いずれも
-/// フォントのバイト列を借用する。個別に作り直すとその都度テーブルを
-/// 引き直すことになるので、まとめて1度だけ構築して保持する。
+/// harfrust's `Shaper` and skrifa's `Charmap`/`GlyphMetrics` all borrow the font bytes.
+/// Rebuilding them individually would mean looking up the tables again every time, so
+/// they are built together, once, and kept.
 struct FaceView<'a> {
     shaper: Shaper<'a>,
     charmap: Charmap<'a>,
     glyph_metrics: GlyphMetrics<'a>,
 }
 
-/// `FaceView`の借用元。
+/// What `FaceView` borrows from.
 ///
-/// `ShaperData`はシェイピングで使うテーブルのキャッシュで、バイト列を
-/// 借用せず自前で持つ。`Shaper`はこの2つ(バイト列と`ShaperData`)を
-/// 借用するため、両方を`self_cell`のownerに入れる。
+/// `ShaperData` caches the tables used during shaping and owns them rather than borrowing
+/// the bytes. `Shaper` borrows both (the bytes and the `ShaperData`), so both go into the
+/// `self_cell` owner.
 struct FaceOwner {
     bytes: Vec<u8>,
     index: u32,
@@ -37,11 +37,11 @@ struct FaceOwner {
 }
 
 self_cell!(
-    /// フォントのバイト列と、そこから作った借用ビューを一緒に持つ。
+    /// Holds the font bytes together with the views built from them.
     ///
-    /// ビューはバイト列を借用するため、素直に構造体へ入れると自己参照になる。
-    /// 構築はフォントのテーブル走査を伴うので、呼び出しのたびに作り直すと
-    /// レイアウトが処理時間の大半を占めてしまう。
+    /// The views borrow the bytes, so putting them in a struct naively would be
+    /// self-referential. Building them walks the font's tables, so rebuilding on every
+    /// call would make layout spend most of its time here.
     struct OwnedFace {
         owner: FaceOwner,
         #[covariant]
@@ -49,17 +49,17 @@ self_cell!(
     }
 );
 
-/// シェイピング計画のキャッシュキー。harfrustがバッファの内容から推測した
-/// 書字方向・スクリプト・言語で、計画の中身はこの3つとフェイスだけで決まる。
+/// Cache key for a shaping plan. harfrust infers the direction, script and language from
+/// the buffer contents, and the plan is determined by those three plus the face.
 type PlanKey = (
     harfrust::Direction,
     harfrust::Script,
     Option<harfrust::Language>,
 );
 
-/// フォント全体のグリフを囲む矩形(フォントユニット)。
+/// The rectangle enclosing every glyph in the font, in font units.
 ///
-/// `head`テーブルが持つ値をそのまま指す。PDFのFontDescriptorの`/FontBBox`に使う。
+/// Taken verbatim from the `head` table. Used for `/FontBBox` in the PDF FontDescriptor.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BoundingBox {
     pub x_min: i16,
@@ -68,36 +68,36 @@ pub struct BoundingBox {
     pub y_max: i16,
 }
 
-/// 読み込み済みのフォントデータ。
+/// A loaded font.
 ///
-/// ファイルの生バイト列と、そこから構築したシェイピング/メトリクス用の
-/// ビューを保持する。値の変わらないメトリクスは[`Metrics`]として構築時に
-/// 1度だけ読み、グリフ検索は[`Font::glyph_id`]でメモ化する。
+/// Holds the file's raw bytes plus the shaping and metrics views built from them.
+/// Metrics that never change are read once at construction as [`Metrics`], and glyph
+/// lookups are memoised by [`Font::glyph_id`].
 pub struct Font {
     face: OwnedFace,
     index: u32,
     metrics: Metrics,
-    /// 文字 → グリフID(cmapに無ければ`None`)のメモ。
+    /// Memo of character -> glyph ID (`None` if absent from the cmap).
     ///
-    /// 文書に現れる異なり文字数は多くないので、素直な`HashMap`で十分に効く。
-    /// 内容はフォントから決まるためキャッシュとして透過的で、外から観測できる
-    /// 振る舞いは変わらない。
+    /// A document contains few distinct characters, so a plain `HashMap` is plenty.
+    /// The contents follow from the font, so the cache is transparent and does not change
+    /// any externally observable behaviour.
     glyphs: RefCell<HashMap<char, Option<u16>>>,
-    /// シェイピング計画のメモ([`Font::shape_plan`])。
+    /// Memo of shaping plans ([`Font::shape_plan`]).
     plans: RefCell<HashMap<PlanKey, Rc<harfrust::ShapePlan>>>,
 }
 
 impl Clone for Font {
-    /// バイト列を複製してビューを作り直す(ビューは複製元のバイト列を
-    /// 借用しているため、そのままは持ち出せない)。
+    /// Copy the bytes and rebuild the views (the views borrow the source's bytes, so they
+    /// cannot be carried over directly).
     fn clone(&self) -> Self {
         Self::from_bytes(self.data().to_vec(), self.index)
-            .expect("複製元が有効なフォントなので失敗しない")
+            .expect("the source is a valid font, so this cannot fail")
     }
 }
 
 impl fmt::Debug for Font {
-    /// ビューが`Debug`を実装しないため、識別に足る情報だけ出す。
+    /// The views do not implement `Debug`, so print only enough to identify the font.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Font")
             .field("family_name", &self.metrics.family_name)
@@ -107,18 +107,18 @@ impl fmt::Debug for Font {
     }
 }
 
-/// フォントから1度だけ読めば足りるメトリクス。
+/// Metrics that only need reading from the font once.
 ///
-/// 各値はフォントユニットで持つ。`head`/`hhea`/`OS/2`/`post`の各テーブルが
-/// これらを整数で格納しているため、skrifaが`f32`で返すものも整数へ戻して
-/// 保持している(丸めは発生しない)。
+/// Each value is in font units. The `head`/`hhea`/`OS/2`/`post` tables store them as
+/// integers, so even the ones skrifa returns as `f32` are converted back to integers
+/// here (no rounding occurs).
 #[derive(Debug, Clone)]
 struct Metrics {
     units_per_em: u16,
     ascender: i16,
     descender: i16,
-    /// 行間(`hhea`の`lineGap`。`OS/2`がUSE_TYPO_METRICSを立てていれば
-    /// `sTypoLineGap`)。`line-height: normal`の算出に使う。
+    /// Line gap (`lineGap` from `hhea`, or `sTypoLineGap` if `OS/2` sets USE_TYPO_METRICS).
+    /// Used to compute `line-height: normal`.
     line_gap: i16,
     capital_height: Option<i16>,
     x_height: Option<i16>,
@@ -132,12 +132,11 @@ struct Metrics {
     weight: u16,
     bounding_box: BoundingBox,
     family_name: Option<String>,
-    /// グリフの輪郭(`glyf`/CFF/CFF2)を持つか。
+    /// Whether the font has glyph outlines (`glyf`/CFF/CFF2).
     ///
-    /// ビットマップ専用のカラー絵文字フォント(`CBDT`/`CBLC`)のように、
-    /// `cmap`は持つが輪郭を持たないフォントがある。この種のフォントは
-    /// 「その文字を持っている」ように見えて実際には何も描けないので、
-    /// フォント選択の対象から外すために区別する。
+    /// Some fonts have a `cmap` but no outlines, such as bitmap-only colour emoji fonts
+    /// (`CBDT`/`CBLC`). They look like they "have" a character while being unable to draw
+    /// anything, so we track this to keep them out of font selection.
     has_outlines: bool,
 }
 
@@ -146,8 +145,8 @@ impl Metrics {
         let m = font.metrics(Size::unscaled(), LocationRef::default());
         let attributes = font.attributes();
 
-        // subscript/superscriptのYオフセットはskrifaの`Metrics`が持たないため、
-        // `OS/2`テーブルを直接読む。
+        // skrifa's `Metrics` does not carry the subscript/superscript Y offsets, so read
+        // the `OS/2` table directly.
         let os2 = font.os2().ok();
 
         let italic_angle = m.italic_angle;
@@ -170,9 +169,9 @@ impl Metrics {
             subscript_y_offset: os2.as_ref().map(|t| t.y_subscript_y_offset()),
             superscript_y_offset: os2.as_ref().map(|t| t.y_superscript_y_offset()),
             italic_angle,
-            // `OS/2`がItalicを立てていなくても、`post`のitalic angleが非ゼロなら
-            // 傾いた面として扱う(斜体指定に対する疑似斜体の要否判定に使うため、
-            // 実際に傾いているかどうかで判断する)。
+            // Even when `OS/2` does not set Italic, treat the face as slanted if `post`'s
+            // italic angle is non-zero (this decides whether faux italic is needed for an
+            // italic request, so what matters is whether it really slants).
             is_italic: matches!(attributes.style, skrifa::attribute::Style::Italic)
                 || italic_angle != 0.0,
             underline: m.underline.map(|d| (d.offset as i16, d.thickness as i16)),
@@ -194,16 +193,16 @@ impl Metrics {
     }
 }
 
-/// 輪郭を持たないフォントを採らなかったことを警告する。
+/// Warn that a font without outlines was not used.
 ///
-/// `source`は`--font`のパスや`@font-face`のfamily名のような、利用者が
-/// 指定した文字列。自動探索で外したものは対象外(そちらは結果として
-/// 「描画できるフォントがありません」の警告に乗る)。
+/// `source` is something the user named, such as a `--font` path or an `@font-face` family
+/// name. Fonts dropped by automatic discovery are not covered here (those end up in the
+/// "no font can render this" warning instead).
 pub fn warn_font_without_outlines(source: &str) {
     eprintln!(
-        "警告: {source} は輪郭を持たない(ビットマップのカラー絵文字専用の)\n  \
-         フォントのため使用しません。カラーフォントは未対応です。\n  \
-         絵文字にはモノクロのアウトライン版(Noto Emojiなど)を指定してください"
+        "warning: {source} has no outlines (it is a bitmap-only colour emoji\n  \
+         font), so it will not be used. Colour fonts are not supported.\n  \
+         For emoji, specify a monochrome outline version such as Noto Emoji"
     );
 }
 
@@ -212,20 +211,20 @@ pub struct FontLoadError(String);
 
 impl fmt::Display for FontLoadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "フォントの読み込みに失敗しました: {}", self.0)
+        write!(f, "failed to load the font: {}", self.0)
     }
 }
 
 impl std::error::Error for FontLoadError {}
 
 impl Font {
-    /// ローカルファイルパスからフォントを読み込む。
+    /// Load a font from a local file path.
     pub fn load(path: impl AsRef<Path>) -> Result<Self, FontLoadError> {
         Self::load_indexed(path, 0)
     }
 
-    /// ローカルファイルパスからフォントを読み込む。TrueType Collection(`.ttc`)等、
-    /// 複数フェイスを含むファイルの場合は`index`でフェイスを選択する。
+    /// Load a font from a local file path. For a file containing several faces, such as a
+    /// TrueType Collection (`.ttc`), `index` selects the face.
     pub fn load_indexed(path: impl AsRef<Path>, index: u32) -> Result<Self, FontLoadError> {
         let path = path.as_ref();
         let data =
@@ -233,12 +232,12 @@ impl Font {
         Self::from_bytes(data, index)
     }
 
-    /// 読み込み済みのバイト列からフォントを構築する(TrueType Collection等、
-    /// 複数フェイスを含む場合は`index`でフェイスを選択する)。
+    /// Build a font from bytes already read (for a file containing several faces, such as
+    /// a TrueType Collection, `index` selects the face).
     pub fn from_bytes(data: Vec<u8>, index: u32) -> Result<Self, FontLoadError> {
-        // `ShaperData`とメトリクスはバイト列を借用しないので、ここで一度
-        // パースして作ってしまう。バイト列を借用する`Shaper`等の構築だけを
-        // この後の`self_cell`のクロージャで行う。
+        // `ShaperData` and the metrics do not borrow the bytes, so parse once and build
+        // them here. Only the things that borrow the bytes, such as `Shaper`, are built
+        // in the `self_cell` closure below.
         let (shaper_data, metrics) = {
             let font = parse_font(&data, index)?;
             (ShaperData::new(&font), Metrics::read(&font))
@@ -275,13 +274,13 @@ impl Font {
         &self.view().shaper
     }
 
-    /// `key`(方向・スクリプト・言語)に対応するシェイピング計画。
+    /// The shaping plan for `key` (direction, script and language).
     ///
-    /// シェイピングは呼び出しのたびに計画を要求するが、その構築は
-    /// シェイピング本体より重い。レイアウトは単語(スタイル/フォントが連続
-    /// する区間)ごとにシェイピングを呼ぶため、計画をフェイス単位で使い回さ
-    /// ないと処理時間の大半を計画構築が占める。計画の中身はフェイスとキー
-    /// だけで決まるため、キャッシュとして透過的で結果は変わらない。
+    /// Shaping asks for a plan on every call, but building one costs more than the shaping
+    /// itself. Layout shapes per word (per run of consistent style and font), so without
+    /// reusing plans per face, building them would dominate the running time. A plan is
+    /// determined by the face and the key alone, so the cache is transparent and the
+    /// results do not change.
     pub(crate) fn shape_plan(&self, key: &PlanKey) -> Rc<harfrust::ShapePlan> {
         if let Some(cached) = self.plans.borrow().get(key) {
             return Rc::clone(cached);
@@ -299,12 +298,12 @@ impl Font {
         plan
     }
 
-    /// フォントファイルの生バイト列(PDFへのフォント埋め込み等で必要)。
+    /// The font file's raw bytes (needed to embed the font in the PDF, among other things).
     pub fn data(&self) -> &[u8] {
         &self.face.borrow_owner().bytes
     }
 
-    /// TrueType Collection(`.ttc`)等、複数フェイスを含むファイル内でのフェイス番号。
+    /// Face index within a file containing several faces, such as a TrueType Collection (`.ttc`).
     pub fn face_index(&self) -> u32 {
         self.index
     }
@@ -321,13 +320,13 @@ impl Font {
         self.metrics.descender
     }
 
-    /// `line-height: normal`の使用値(px)。
+    /// The used value of `line-height: normal`, in px.
     ///
-    /// CSSの`normal`は「フォントが推奨する行送り」で、その実体は
-    /// アセント+ディセント+行間(`lineGap`)。固定倍率(1.2em等)で近似すると、
-    /// アセント+ディセントがそれを超えるフォント(CJKのフォントは1.4em前後の
-    /// ものが珍しくない)でグリフが行ボックスからはみ出し、隣接する行や
-    /// 枠線と重なる。
+    /// CSS `normal` is "the line spacing the font recommends", which is ascender +
+    /// descender + line gap. Approximating it with a fixed ratio (1.2em, say) makes glyphs
+    /// spill out of the line box in fonts where ascender + descender exceeds it (around
+    /// 1.4em is not unusual for CJK fonts), overlapping the neighbouring lines and any
+    /// borders.
     pub fn normal_line_height(&self, font_size: f32) -> f32 {
         let units_per_em = self.units_per_em() as f32;
         if units_per_em <= 0.0 {
@@ -341,10 +340,10 @@ impl Font {
         self.metrics.capital_height
     }
 
-    /// アセント/ディセントから、行ボックス上端からベースラインまでの距離を
-    /// 求める(フォントのem矩形を行ボックス内で上下中央に配置する)。
-    /// テーブルセルの`vertical-align: baseline`(セル内容の最初の行の
-    /// ベースライン位置を求める)とテキスト描画(`render_line`)の両方で使う。
+    /// Distance from the top of the line box to the baseline, derived from the ascender
+    /// and descender (the font's em box is centred vertically within the line box).
+    /// Used both by `vertical-align: baseline` on table cells (which needs the baseline of
+    /// the cell content's first line) and by text drawing (`render_line`).
     pub fn baseline_offset(&self, font_size: f32, line_height: f32) -> f32 {
         let units_per_em = self.units_per_em() as f32;
         let ascent = self.ascender() as f32 / units_per_em * font_size;
@@ -353,8 +352,8 @@ impl Font {
         ascent + half_leading
     }
 
-    /// x-height(px)。`OS/2`テーブルが持たない場合はアセントの半分で近似する
-    /// (`vertical-align: middle`の基準)。
+    /// x-height, in px. Approximated as half the ascender when the `OS/2` table lacks it
+    /// (the reference for `vertical-align: middle`).
     pub fn x_height(&self, font_size: f32) -> f32 {
         let units_per_em = self.units_per_em() as f32;
         match self.metrics.x_height {
@@ -363,8 +362,8 @@ impl Font {
         }
     }
 
-    /// `vertical-align: sub`の下げ幅(px、正の値)。フォントの`OS/2`が
-    /// subscriptのYオフセットを持たない場合は`0.2em`で近似する。
+    /// How far `vertical-align: sub` moves down, in px (a positive value). Approximated as
+    /// `0.2em` when the font's `OS/2` lacks a subscript Y offset.
     pub fn subscript_offset(&self, font_size: f32) -> f32 {
         let units_per_em = self.units_per_em() as f32;
         match self.metrics.subscript_y_offset {
@@ -373,7 +372,7 @@ impl Font {
         }
     }
 
-    /// `vertical-align: super`の上げ幅(px、正の値)。持たない場合は`0.33em`。
+    /// How far `vertical-align: super` moves up, in px (positive). `0.33em` when absent.
     pub fn superscript_offset(&self, font_size: f32) -> f32 {
         let units_per_em = self.units_per_em() as f32;
         match self.metrics.superscript_y_offset {
@@ -390,14 +389,14 @@ impl Font {
         self.metrics.is_italic
     }
 
-    /// 下線の中心位置(ベースラインからの符号付きオフセット、フォントユニット。
-    /// 上方向が正)と太さ。フォントが`post`テーブルを持たない場合は`None`。
+    /// Centre position of the underline (a signed offset from the baseline, in font units,
+    /// positive upwards) and its thickness. `None` if the font has no `post` table.
     pub fn underline_metrics(&self) -> Option<(i16, i16)> {
         self.metrics.underline
     }
 
-    /// 取り消し線の中心位置(ベースラインからの符号付きオフセット、フォントユニット。
-    /// 上方向が正)と太さ。フォントが`OS/2`テーブルを持たない場合は`None`。
+    /// Centre position of the strikethrough (a signed offset from the baseline, in font
+    /// units, positive upwards) and its thickness. `None` if the font has no `OS/2` table.
     pub fn strikeout_metrics(&self) -> Option<(i16, i16)> {
         self.metrics.strikeout
     }
@@ -406,7 +405,7 @@ impl Font {
         self.metrics.is_monospaced
     }
 
-    /// OS/2テーブルのウェイト値(400=標準, 700=太字)。
+    /// Weight from the OS/2 table (400 = regular, 700 = bold).
     pub fn weight(&self) -> u16 {
         self.metrics.weight
     }
@@ -415,7 +414,7 @@ impl Font {
         self.metrics.bounding_box
     }
 
-    /// `glyph_id`の水平アドバンス幅(フォントユニット)。
+    /// Horizontal advance of `glyph_id`, in font units.
     pub fn glyph_hor_advance(&self, glyph_id: u16) -> Option<u16> {
         self.view()
             .glyph_metrics
@@ -423,9 +422,9 @@ impl Font {
             .map(|advance| advance as u16)
     }
 
-    /// `c`に対応するグリフをこのフォントが持っているか。
-    /// font-familyフォールバック(どのフォントでこの文字を描画できるか)の判定に使う。
-    /// 文字に対応するグリフID(cmapに無ければ`None`)。
+    /// Whether this font has a glyph for `c`, and the glyph ID it maps to (`None` if absent
+    /// from the cmap). Used to decide font-family fallback, that is, which font can draw
+    /// this character.
     pub fn glyph_id(&self, c: char) -> Option<u16> {
         if let Some(cached) = self.glyphs.borrow().get(&c) {
             return *cached;
@@ -435,33 +434,32 @@ impl Font {
         found
     }
 
-    /// `c`を実際に描画できるか。
+    /// Whether `c` can actually be drawn.
     ///
-    /// `cmap`にあるだけでは足りず、輪郭を持つフォントであることも要る
-    /// ([`Self::has_outlines`])。カラー絵文字フォントは`cmap`を持つので、
-    /// これを見ないと「描ける」と誤判定して無言で不可視のテキストを出す。
+    /// Being in the `cmap` is not enough: the font must also have outlines
+    /// ([`Self::has_outlines`]). Colour emoji fonts do have a `cmap`, so without this check
+    /// we would decide we can draw and silently emit invisible text.
     pub fn has_glyph(&self, c: char) -> bool {
         self.has_outlines() && self.glyph_id(c).is_some()
     }
 
-    /// グリフの輪郭(`glyf`/CFF/CFF2)を持つか。ビットマップ専用の
-    /// カラー絵文字フォントなど、これが`false`のフォントは何も描けない。
+    /// Whether the font has glyph outlines (`glyf`/CFF/CFF2). A font where this is `false`,
+    /// such as a bitmap-only colour emoji font, can draw nothing.
     pub fn has_outlines(&self) -> bool {
         self.metrics.has_outlines
     }
 
-    /// フォント名(`name`テーブルの Typographic Family、無ければ Family)。
-    /// 英語名があればそれを、無ければ最初に見つかった名前を返す。
+    /// Font name (the `name` table's Typographic Family, or Family if absent).
+    /// Returns the English name if there is one, otherwise the first name found.
     pub fn family_name(&self) -> Option<String> {
         self.metrics.family_name.clone()
     }
 }
 
-/// バイト列の`index`番目のフェイスを読む。TrueType Collectionでない場合、
-/// `index`が0なら単一フェイスとして扱われる。
+/// Read face number `index` from the bytes. For anything other than a TrueType Collection,
+/// an `index` of 0 is treated as the single face.
 fn parse_font(data: &[u8], index: u32) -> Result<FontRef<'_>, FontLoadError> {
-    FontRef::from_index(data, index)
-        .map_err(|e| FontLoadError(format!("不正なフォントデータです: {e}")))
+    FontRef::from_index(data, index).map_err(|e| FontLoadError(format!("invalid font data: {e}")))
 }
 
 #[cfg(test)]
@@ -492,7 +490,7 @@ mod tests {
     fn has_glyph_distinguishes_covered_and_uncovered_characters() {
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
         assert!(font.has_glyph('A'));
-        // DejaVu SansはCJK文字を含まない。
+        // DejaVu Sans contains no CJK characters.
         assert!(!font.has_glyph('日'));
     }
 
@@ -504,7 +502,7 @@ mod tests {
 
     #[test]
     fn reads_the_metrics_the_pdf_font_descriptor_needs() {
-        // FontDescriptorへ書く値が揃っていることを、DejaVu Sansの既知の値で確認する。
+        // Check that every value written to the FontDescriptor is present, using DejaVu Sans's known values.
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
 
         assert_eq!(font.units_per_em(), 2048);
@@ -529,13 +527,13 @@ mod tests {
     fn maps_characters_to_glyphs_with_advances() {
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
 
-        let gid = font.glyph_id('A').expect("DejaVu SansはAを持つ");
+        let gid = font.glyph_id('A').expect("DejaVu Sans has an A");
         let advance = font
             .glyph_hor_advance(gid)
-            .expect("グリフが存在すればアドバンス幅も引ける");
+            .expect("if the glyph exists, its advance can be read too");
         assert!(advance > 0);
-        // 空白の方がAより狭い。
-        let space = font.glyph_id(' ').expect("DejaVu Sansは空白を持つ");
+        // A space is narrower than an A.
+        let space = font.glyph_id(' ').expect("DejaVu Sans has a space");
         assert!(font.glyph_hor_advance(space).unwrap() < advance);
     }
 
@@ -552,8 +550,8 @@ mod tests {
 
     #[test]
     fn baseline_offset_is_between_zero_and_the_line_height() {
-        // アセント分だけ行の上端から下がった位置が概ねベースラインになるはず
-        // (行の高さがフォント自身のメトリクス通りなら半行送りはゼロに近い)。
+        // The baseline should sit roughly the ascender below the top of the line
+        // (with the line height matching the font's own metrics, the half-leading is near zero).
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
         let units_per_em = font.units_per_em() as f32;
         let ascent = font.ascender() as f32 / units_per_em * 16.0;
@@ -574,8 +572,8 @@ mod tests {
         let units_per_em = font.units_per_em() as f32;
         let expected = (font.ascender() as f32 - font.descender() as f32) / units_per_em * 16.0;
 
-        // DejaVu Sansは`lineGap`が0なので、アセント+ディセントがそのまま
-        // `normal`の行送りになる。
+        // DejaVu Sans has a `lineGap` of 0, so ascender + descender is exactly the
+        // `normal` line spacing.
         let normal = font.normal_line_height(16.0);
         assert!(
             (normal - expected).abs() < 0.01,
@@ -585,8 +583,8 @@ mod tests {
 
     #[test]
     fn normal_line_height_always_covers_the_glyphs_content_area() {
-        // `normal`が「アセント+ディセント」を下回るフォントがあると、
-        // 半行送りが負になってグリフが行ボックスからはみ出す。
+        // If a font made `normal` smaller than ascender + descender, the half-leading
+        // would go negative and glyphs would spill out of the line box.
         let paths = [
             TEST_FONT_PATH,
             concat!(
@@ -612,7 +610,7 @@ mod outline_tests {
     use super::*;
 
     const TEST_FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
-    /// ビットマップのみ(CBDT/CBLC)で、グリフの輪郭を一切持たないフォント。
+    /// A bitmap-only font (CBDT/CBLC) with no glyph outlines at all.
     const COLOR_EMOJI_FONT_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fonts/NotoColorEmoji.ttf"
@@ -625,9 +623,9 @@ mod outline_tests {
         assert!(font.has_glyph('A'));
     }
 
-    /// カラー絵文字フォントは`cmap`を持つので文字を持っているように見えるが、
-    /// 輪郭が無いので実際には何も描けない。「描画できる」と判定してしまうと、
-    /// 無言で不可視のテキストを出したうえPDFだけが膨らむ。
+    /// A colour emoji font has a `cmap`, so it looks like it has the character, but with no
+    /// outlines it can draw nothing. Deciding it "can draw" would silently emit invisible
+    /// text and bloat the PDF for nothing.
     #[test]
     fn a_colour_font_covers_nothing() {
         let font = Font::load(COLOR_EMOJI_FONT_PATH).expect("should load bundled colour font");
@@ -635,11 +633,11 @@ mod outline_tests {
         assert!(!font.has_outlines());
         assert!(
             font.glyph_id('\u{1F389}').is_some(),
-            "cmapは持つのでグリフIDは引ける"
+            "it has a cmap, so a glyph ID can be looked up"
         );
         assert!(
             !font.has_glyph('\u{1F389}'),
-            "輪郭が無いので描画できるとは言えない"
+            "with no outlines it cannot be said to be drawable"
         );
     }
 }

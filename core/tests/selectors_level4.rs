@@ -1,7 +1,7 @@
-//! Selectors Level 4の`:has()`/`:is()`/`:where()`のE2Eテスト。
+//! E2E tests for Selectors Level 4's `:has()`/`:is()`/`:where()`.
 //!
-//! マッチングは`selectors`クレートの実装をそのまま使うため、ここで固定するのは
-//! 「有効になっていること」と「詳細度がカスケードの勝敗に正しく反映されること」。
+//! Matching uses the `selectors` crate's implementation as-is, so what is pinned here is
+//! that they are enabled and that specificity is reflected correctly in the cascade.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -11,7 +11,7 @@ use sghtmltopdf_core::style::{
     compute_styles, parse_stylesheet, user_agent_stylesheet, ComputedStyle,
 };
 
-/// `id`属性で要素を探す。
+/// Find an element by its `id` attribute.
 fn find_by_id(dom: &Dom, from: NodeId, id: &str) -> Option<NodeId> {
     if let NodeData::Element { attrs, .. } = &dom.node(from).data {
         if attrs
@@ -30,11 +30,11 @@ fn styles_of(html_src: &str, css: &str) -> (Dom, HashMap<NodeId, Rc<ComputedStyl
     (dom, styles)
 }
 
-/// `#target`の`color`を`#rrggbb`形式で返す。
+/// Return `#target`'s `color` in `#rrggbb` form.
 fn color_of(html_src: &str, css: &str) -> String {
     let (dom, styles) = styles_of(html_src, css);
-    let target = find_by_id(&dom, dom.document(), "target").expect("#target がない");
-    let c = styles.get(&target).expect("styleがない").color;
+    let target = find_by_id(&dom, dom.document(), "target").expect("no #target");
+    let c = styles.get(&target).expect("no style").color;
     format!("#{:02x}{:02x}{:02x}", c.red, c.green, c.blue)
 }
 
@@ -67,7 +67,7 @@ fn has_honours_the_child_combinator() {
     assert_eq!(
         color_of(r#"<div id="target"><p><img src="x"></p></div>"#, css),
         BLACK,
-        "孫は`> img`にマッチしない"
+        "a grandchild does not match `> img`"
     );
 }
 
@@ -86,7 +86,7 @@ fn has_honours_sibling_combinators() {
             "h1:has(+ p) { color: red }"
         ),
         BLACK,
-        "隣接でなければマッチしない"
+        "it does not match when it is not adjacent"
     );
     assert_eq!(
         color_of(
@@ -109,14 +109,14 @@ fn has_can_be_combined_with_not() {
 
 #[test]
 fn has_takes_the_specificity_of_its_most_specific_argument() {
-    // `div:has(#a)` は 1,0,1、`div.c` は 0,1,1。id を含む前者が勝つ。
+    // `div:has(#a)` is 1,0,1 and `div.c` is 0,1,1. The former, containing an id, wins.
     let css = "div.c { color: blue } div:has(#a) { color: red }";
     assert_eq!(
         color_of(r#"<div id="target" class="c"><p id="a">x</p></div>"#, css),
         RED
     );
 
-    // 宣言順を入れ替えても結果は変わらない(詳細度で決まっている)。
+    // Swapping the declaration order changes nothing (specificity decides).
     let reversed = "div:has(#a) { color: red } div.c { color: blue }";
     assert_eq!(
         color_of(
@@ -150,13 +150,13 @@ fn is_can_be_used_inside_a_complex_selector() {
 
 #[test]
 fn is_takes_the_specificity_of_its_most_specific_argument() {
-    // `:is(#target, span)` は 1,0,0。クラスセレクタ(0,1,0)より強い。
+    // `:is(#target, span)` is 1,0,0, stronger than a class selector (0,1,0).
     let html = r#"<p id="target" class="c">x</p>"#;
     assert_eq!(
         color_of(html, ".c { color: blue } :is(#target, span) { color: red }"),
         RED
     );
-    // 宣言順を入れ替えても結果は変わらない(詳細度で決まっている)。
+    // Swapping the declaration order changes nothing (specificity decides).
     assert_eq!(
         color_of(html, ":is(#target, span) { color: red } .c { color: blue }"),
         RED
@@ -165,11 +165,11 @@ fn is_takes_the_specificity_of_its_most_specific_argument() {
 
 #[test]
 fn where_contributes_no_specificity() {
-    // `:where(#a)`は0,0,0なので、要素セレクタ(0,0,1)にすら負ける。
+    // `:where(#a)` is 0,0,0, so it loses even to an element selector (0,0,1).
     let css = ":where(#a) { color: red } p { color: blue }";
     assert_eq!(color_of(r#"<p id="target">x</p>"#, css), BLUE);
 
-    // 宣言順を入れ替えると、同じ詳細度でないぶん常にpが勝つことを確認する。
+    // Swapping the declaration order confirms p always wins, the specificities not being equal.
     let reversed = "p { color: blue } :where(#a) { color: red }";
     assert_eq!(color_of(r#"<p id="target">x</p>"#, reversed), BLUE);
 }
@@ -182,8 +182,8 @@ fn where_still_matches_even_though_it_adds_no_specificity() {
     );
 }
 
-/// `:is()`/`:where()`の引数リストは寛容(forgiving)なので、未対応のセレクタが
-/// 混ざっていてもその項だけが捨てられ、ルール自体は生き残る。
+/// The argument list of `:is()`/`:where()` is forgiving, so an unsupported selector mixed in
+/// drops only that item and the rule itself survives.
 #[test]
 fn is_and_where_drop_only_the_unsupported_argument() {
     assert_eq!(
@@ -195,8 +195,8 @@ fn is_and_where_drop_only_the_unsupported_argument() {
     );
 }
 
-/// 逆に、通常のセレクタリストは寛容ではない(1つでも壊れているとルールごと
-/// 落ちる)。`:is()`との違いを固定しておく。
+/// An ordinary selector list, conversely, is not forgiving (one broken selector drops the
+/// whole rule). This pins down the difference from `:is()`.
 #[test]
 fn a_plain_selector_list_is_not_forgiving() {
     assert_eq!(

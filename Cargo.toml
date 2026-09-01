@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["core"]
-# Ruby拡張(bindings/ruby)はworkspaceに含めない。rb-sysのビルドがlibrubyを必要とするため、
-# membersに入れるとRuby開発環境なしでリポジトリルートの `cargo build`/`cargo test` が通らなくなる
+# The Ruby extension (bindings/ruby) is deliberately kept out of the workspace:
+# rb-sys needs libruby to build, so listing it in `members` would break `cargo build`/`cargo test` at the repo root on machines without a Ruby dev environment
 exclude = ["bindings/ruby"]

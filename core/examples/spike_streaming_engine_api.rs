@@ -1,35 +1,34 @@
-//! flush boundaryを表現するコアAPIの型シグネチャが、既存の
-//! `Sink` traitと矛盾なく成立するかを確認するPoC。
+//! A PoC checking that the type signatures of the core API expressing flush boundaries fit
+//! together consistently with the existing `Sink` trait.
 //!
-//! ここではAPIの「形」だけを検証する。ストリーミングパース・
-//! レイアウトのflush化・フォント埋め込みの後処理(CIDToGIDMap方式)は
-//! まだ組み込まず、`feed`/`finish`の中身は
-//! ダミー実装にとどめる。
+//! Only the API's *shape* is checked here. Streaming parsing, making layout flushable and
+//! the post-processing of font embedding (the CIDToGIDMap approach) are not wired in yet,
+//! and the bodies of `feed`/`finish` are left as dummy implementations.
 //!
-//! 検証したいこと:
-//! - `Engine<S: Sink>`がSinkを所有し、`feed`のたびに内部で`sink.write`を
-//!   呼べる形が、既存の`Sink`トレイト(`sink/mod.rs`)とそのまま噛み合うか
-//! - Ruby側のFFI境界(`Engine.new(options)` / `feed(html_chunk)` /
-//!   `each_pdf_chunk { |bytes| ... }` / `finish`)に、コア側のRust APIを
-//!   ほぼ1:1で対応させられるか
-//! - Rubyの`each_pdf_chunk { |bytes| ... }`ブロックを、コアに手を入れずに
-//!   「呼ばれるたびにブロックを呼ぶだけのSink実装」でラップできるか
-//!   (`CallbackSink`で模擬)
-//! - `Mode::Batch`/`Mode::Streaming`の切り替えが同じ`Engine`型に
-//!   自然に載るか。Batchモードは非局所性の制約を一切課さず(DOM全体を
-//!   待ってから処理するため`nth-last-child`等も問題なく扱える)、
-//!   Streamingモードのみ制約を適用する(body途中の`<style>`はエラーで
-//!   拒否する)
+//! What we want to check:
+//! - Whether a shape where `Engine<S: Sink>` owns the Sink and can call `sink.write`
+//!   internally on every `feed` meshes with the existing `Sink` trait (`sink/mod.rs`) as-is
+//! - Whether the core's Rust API can correspond almost one to one with the Ruby FFI boundary
+//!   (`Engine.new(options)`, `feed(html_chunk)`, `each_pdf_chunk { |bytes| ... }`,
+//!   `finish`)
+//! - Whether Ruby's `each_pdf_chunk { |bytes| ... }` block can be wrapped, without touching
+//!   the core, in "a Sink implementation that merely calls the block whenever it is called"
+//!   (simulated by `CallbackSink`)
+//! - Whether switching between `Mode::Batch` and `Mode::Streaming` sits naturally on the
+//!   same `Engine` type. Batch mode imposes no non-locality constraints at all (waiting for
+//!   the whole DOM before processing, it handles `nth-last-child` and friends fine), and
+//!   only Streaming mode applies them (a `<style>` part-way through the body is refused with
+//!   an error)
 //!
-//! 実行: `cargo run --example spike_streaming_engine_api`
+//! Run with: `cargo run --example spike_streaming_engine_api`
 
 use sghtmltopdf_core::sink::{MemorySink, Sink};
 
-/// 一括処理かストリーミング処理かを選択する。
+/// Selects batch or streaming processing.
 ///
-/// `Batch`はDOM全体が揃ってから処理するため、非局所性の制約(`nth-last-child`
-/// 等の非サポート、`<style>`は`<head>`内のみ)を一切課さない。
-/// `Streaming`のみこれらの制約を適用する。
+/// `Batch` processes only once the whole DOM is present, so it imposes no non-locality
+/// constraints (no unsupported `nth-last-child` and friends, no `<style>`-inside-`<head>`-only rule).
+/// Only `Streaming` applies them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 enum Mode {
     #[default]
@@ -37,17 +36,17 @@ enum Mode {
     Streaming,
 }
 
-/// エンジンの初期化オプション(ページサイズ・マージン等)のプレースホルダ。
-/// 実際のフィールドは、CLI/bindings層のオプションと揃えて決める。
+/// A placeholder for the engine's initialisation options (page size, margins and so on).
+/// The real fields will be decided in line with the CLI and bindings layers' options.
 #[derive(Default)]
 struct EngineOptions {
     mode: Mode,
 }
 
-/// `Engine`が返すエラー。Sinkへの書き込み失敗(`Io`)と、Streamingモードで
-/// 検出したサポート外のHTML構造(`UnsupportedInStreamingMode`)を区別する。
-/// 後者は`Sink::Error`と無関係な、コア自身が判定するエラーのため
-/// `S::Error`にそのまま相乗りさせず専用バリアントを設ける。
+/// The errors `Engine` returns. It distinguishes a failed write to the Sink (`Io`) from an
+/// unsupported HTML structure detected in Streaming mode (`UnsupportedInStreamingMode`).
+/// The latter is an error the core decides itself and unrelated to `Sink::Error`, so it gets
+/// its own variant rather than riding on `S::Error`.
 #[derive(Debug)]
 enum EngineError<E> {
     Io(E),
@@ -60,16 +59,16 @@ impl<E> From<E> for EngineError<E> {
     }
 }
 
-/// flush boundary(ページ確定)ごとに`sink.write`を呼びながらHTMLを消費する
-/// ストリーミングエンジンの型シグネチャ。中身は本実装で埋める。
+/// The type signature of a streaming engine that consumes HTML while calling `sink.write` at
+/// every flush boundary (each settled page). The body is filled in by the real implementation.
 struct Engine<S: Sink> {
     sink: S,
     options: EngineOptions,
-    /// ダミー実装用: feedで受け取ったチャンクを溜めておくだけ。
-    /// 本実装ではストリーミングパーサ+レイアウトの内部状態に置き換わる。
+    /// For the dummy implementation: it merely accumulates the chunks received by feed.
+    /// In the real implementation this is replaced by the streaming parser's and layout's internal state.
     pending: Vec<u8>,
-    /// ダミー実装用: `<body`を見たかどうか(本実装ではTreeSinkのフックで
-    /// 判定する)。
+    /// For the dummy implementation: whether `<body` has been seen (the real implementation
+    /// decides it through a TreeSink hook).
     seen_body: bool,
 }
 
@@ -83,13 +82,13 @@ impl<S: Sink> Engine<S> {
         }
     }
 
-    /// HTMLチャンクを1つ投入する。内部で新たにflush boundary(ページ確定)に
-    /// 到達した分があれば、そのつど`sink.write`を呼ぶ(このダミー実装では
-    /// 呼ばない。本実装でレイアウトのflush化と合わせて実装する)。
+    /// Feed one HTML chunk. Whenever a new flush boundary (a settled page) is reached
+    /// internally, `sink.write` is called (this dummy implementation never does; the real
+    /// implementation adds it alongside making layout flushable).
     ///
-    /// `Mode::Streaming`では、`<body`より後に`<style`が現れたらエラーを返す。
-    /// 実際の判定はTreeSinkのフックとして実装する(ここでは検証用にバイト
-    /// 列の雑な走査で代用している)。
+    /// Under `Mode::Streaming` it returns an error if a `<style` appears after `<body`.
+    /// The real check is implemented as a TreeSink hook (here a crude byte scan stands in for
+    /// the purposes of this check).
     fn feed(&mut self, html_chunk: &[u8]) -> Result<(), EngineError<S::Error>> {
         if self.options.mode == Mode::Streaming {
             if !self.seen_body && contains(html_chunk, b"<body") {
@@ -105,13 +104,12 @@ impl<S: Sink> Engine<S> {
         Ok(())
     }
 
-    /// 残りの内容を最後のページとして確定させ、フォント埋め込み等の
-    /// 全ページ後処理(CIDToGIDMap方式)を行ってから
-    /// `sink.finish()`を呼ぶ。
+    /// Settle the remaining content as the last page, do the all-pages post-processing such
+    /// as font embedding (the CIDToGIDMap approach), and then call `sink.finish()`.
     fn finish(mut self) -> Result<S::Output, EngineError<S::Error>> {
-        // ダミー実装: 溜めたチャンクをそのまま1回書き出すだけ。
-        // 本実装ではここでPDFバイト列(コンテンツストリーム+フォント埋め込み)
-        // を組み立てて書く。
+        // Dummy implementation: it merely writes the accumulated chunks out once.
+        // The real implementation assembles and writes the PDF bytes here (the content
+        // streams plus the font embedding).
         self.sink.write(&self.pending)?;
         Ok(self.sink.finish()?)
     }
@@ -121,9 +119,9 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
-/// Rubyの`each_pdf_chunk { |bytes| ... }`を模した、コールバックを呼ぶだけの
-/// Sink実装。コア側に変更を加えず、FFI層だけでこの変換を吸収できることを
-/// 確認する。
+/// A Sink implementation that merely calls a callback, modelling Ruby's
+/// `each_pdf_chunk { |bytes| ... }`. It confirms that this conversion can be absorbed
+/// entirely in the FFI layer, with no change to the core.
 struct CallbackSink<F: FnMut(&[u8])> {
     callback: F,
 }
@@ -143,18 +141,18 @@ impl<F: FnMut(&[u8])> Sink for CallbackSink<F> {
 }
 
 fn main() {
-    // --- 同期返却モード相当: MemorySinkへ書き込む(既定はBatch) ---
+    // --- The equivalent of the synchronous-return mode: write to a MemorySink (Batch by default) ---
     let mut engine = Engine::new(EngineOptions::default(), MemorySink::new());
     engine.feed(b"<p>Hello").unwrap();
     engine.feed(b", world!</p>").unwrap();
     let bytes = engine.finish().unwrap();
     eprintln!(
-        "MemorySink経由(Batch): {} bytes -> {:?}",
+        "via MemorySink (Batch): {} bytes -> {:?}",
         bytes.len(),
         String::from_utf8_lossy(&bytes)
     );
 
-    // --- each_pdf_chunk { |bytes| ... } 相当: コールバックSinkへ書き込む ---
+    // --- The equivalent of each_pdf_chunk { |bytes| ... }: write to a callback Sink ---
     let mut chunks_seen = Vec::new();
     let callback_sink = CallbackSink {
         callback: |bytes: &[u8]| chunks_seen.push(bytes.to_vec()),
@@ -164,20 +162,20 @@ fn main() {
     engine.feed(b" input</p>").unwrap();
     engine.finish().unwrap();
     eprintln!(
-        "CallbackSink経由(Batch): {}回書き込みを観測",
+        "via CallbackSink (Batch): {} writes observed",
         chunks_seen.len()
     );
 
-    // --- Batchモード: body途中の<style>があっても許容される ---
+    // --- Batch mode: a <style> part-way through the body is accepted ---
     let mut engine = Engine::new(EngineOptions { mode: Mode::Batch }, MemorySink::new());
     engine.feed(b"<body><p>x</p>").unwrap();
     engine
         .feed(b"<style>p{color:red}</style>")
-        .expect("Batchモードではbody途中の<style>もエラーにならないはず");
+        .expect("Batch mode should not error on a <style> part-way through the body");
     engine.finish().unwrap();
-    eprintln!("Batchモード: body途中の<style>を許容");
+    eprintln!("Batch mode: a <style> part-way through the body is accepted");
 
-    // --- Streamingモード: body途中の<style>はエラーになる ---
+    // --- Streaming mode: a <style> part-way through the body is an error ---
     let mut engine = Engine::new(
         EngineOptions {
             mode: Mode::Streaming,
@@ -187,7 +185,7 @@ fn main() {
     engine.feed(b"<body><p>x</p>").unwrap();
     match engine.feed(b"<style>p{color:red}</style>") {
         Err(EngineError::UnsupportedInStreamingMode(msg)) => {
-            eprintln!("Streamingモード: 期待通りエラーを検出 ({msg})");
+            eprintln!("Streaming mode: the error was detected as expected ({msg})");
         }
         other => panic!("expected UnsupportedInStreamingMode, got {other:?}"),
     }

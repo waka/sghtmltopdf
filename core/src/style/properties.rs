@@ -1,4 +1,4 @@
-//! `Declaration: value;`のパースと、プロパティ宣言の型。
+//! Parsing of `Declaration: value;`, and the property declaration types.
 
 use cssparser::{match_ignore_ascii_case, CowRcStr, ParseError, Parser, Token};
 use palette::{FromColor, Lab, Lch, Oklab, Oklch, Srgb};
@@ -25,14 +25,14 @@ pub enum PropertyDeclaration {
     Display(Display),
     Width(SpecifiedLengthPercentageOrAuto),
     Height(SpecifiedLengthPercentageOrAuto),
-    /// `min-width`/`min-height`。初期値`0`。
-    /// `auto`/`min-content`/`max-content`/`fit-content`は非対応。
+    /// `min-width`/`min-height`. Initial value `0`.
+    /// `auto`/`min-content`/`max-content`/`fit-content` are not supported.
     MinWidth(SpecifiedLengthPercentage),
     MinHeight(SpecifiedLengthPercentage),
-    /// `max-width`/`max-height`。初期値`none`(上限なし)。
+    /// `max-width`/`max-height`. Initial value `none` (no upper bound).
     MaxWidth(SpecifiedMaxSize),
     MaxHeight(SpecifiedMaxSize),
-    /// `aspect-ratio: auto || <ratio>`。
+    /// `aspect-ratio: auto || <ratio>`.
     AspectRatio(AspectRatio),
     MarginTop(SpecifiedLengthPercentageOrAuto),
     MarginRight(SpecifiedLengthPercentageOrAuto),
@@ -64,18 +64,18 @@ pub enum PropertyDeclaration {
     FontStyle(FontStyle),
     Color(Color),
     BackgroundColor(Color),
-    /// `url(...)`(生の値、解決は呼び出し側任せ、`FontFaceSource::Url`と
-    /// 同じ方針)。`None`は`none`(背景画像なし)を表す。
+    /// `url(...)` (the raw value; resolving it is left to the caller, the same policy as
+    /// `FontFaceSource::Url`). `None` means `none` (no background image).
     BackgroundImage(Option<String>),
     BackgroundPosition(SpecifiedBackgroundPosition),
     BackgroundSize(SpecifiedBackgroundSize),
     BackgroundRepeat(BackgroundRepeat),
-    /// `fixed`は`scroll`と同一視して描画する。
+    /// `fixed` is drawn the same as `scroll`.
     BackgroundAttachment(BackgroundAttachment),
     TextDecorationLine(TextDecorationLine),
-    /// `::before`/`::after`/`::first-letter`用の`content`。`None`は
-    /// `none`/`normal`(生成ボックスなし)。文字列リテラル・`attr`・
-    /// `counter`/`counters`・引用符キーワードの連結に対応する。
+    /// `content` for `::before`/`::after`/`::first-letter`. `None` means
+    /// `none`/`normal` (no generated box). Concatenation of string literals, `attr`,
+    /// `counter`/`counters` and quote keywords is supported.
     Content(Option<Vec<ContentPart>>),
     BreakBefore(BreakBetween),
     BreakAfter(BreakBetween),
@@ -84,7 +84,7 @@ pub enum PropertyDeclaration {
     Widows(u32),
     Float(Float),
     Clear(Clear),
-    /// `static`/`relative`/`absolute`/`fixed`。
+    /// `static`/`relative`/`absolute`/`fixed`.
     Position(Position),
     Top(SpecifiedLengthPercentageOrAuto),
     Right(SpecifiedLengthPercentageOrAuto),
@@ -98,7 +98,7 @@ pub enum PropertyDeclaration {
     WordSpacing(SpecifiedSpacing),
     TextTransform(TextTransform),
     BorderCollapse(BorderCollapse),
-    /// `border-spacing`(水平, 垂直)。1値指定は両方に同じ値を使う(仕様通り)。
+    /// `border-spacing` (horizontal, vertical). A single value applies to both (as the spec says).
     BorderSpacing(SpecifiedLength, SpecifiedLength),
     CaptionSide(CaptionSide),
     TableLayout(TableLayout),
@@ -106,96 +106,96 @@ pub enum PropertyDeclaration {
     VerticalAlign(SpecifiedVerticalAlign),
     ListStyleType(ListStyleType),
     ListStylePosition(ListStylePosition),
-    /// `url(...)`(生の値、解決は呼び出し側任せ)。`None`は`none`。実際には常に
-    /// `list-style-type`のテキストマーカーへ
-    /// フォールバックし、画像マーカー自体は描画しない。
+    /// `url(...)` (the raw value; resolving it is left to the caller). `None` means `none`.
+    /// In practice it always falls back to the `list-style-type` text marker, and an image
+    /// marker itself is never drawn.
     ListStyleImage(Option<String>),
-    /// `hidden`/`scroll`/`auto`は全て同じクリップ処理として扱う。
+    /// `hidden`/`scroll`/`auto` all get the same clipping.
     Overflow(Overflow),
-    /// `padding-box`(標準外)は非対応。
+    /// `padding-box` (non-standard) is not supported.
     BoxSizing(BoxSizing),
-    /// `position: static`の要素には効果を持たない(仕様通り)。
+    /// It has no effect on a `position: static` element (as the spec says).
     ZIndex(ZIndex),
-    /// `collapse`は`hidden`と同一視する。
+    /// `collapse` is treated as `hidden`.
     Visibility(Visibility),
     OutlineWidth(SpecifiedLength),
-    /// `outline-style`。`auto`(UA依存の既定フォーカスリング)は非対応、
-    /// `border-style`と同じ値集合+`none`のみ受け付ける。
+    /// `outline-style`. `auto` (the UA-dependent default focus ring) is not supported; only
+    /// the same value set as `border-style` plus `none` is accepted.
     OutlineStyle(BorderStyle),
     OutlineColor(Color),
-    /// `counter-reset: name [value]`(複数併記可)。空のVecは`none`。
+    /// `counter-reset: name [value]` (several may be listed). An empty Vec means `none`.
     CounterReset(Vec<(String, i32)>),
-    /// `counter-increment: name [value]`(複数併記可、値省略時は1)。
+    /// `counter-increment: name [value]` (several may be listed; the value defaults to 1).
     CounterIncrement(Vec<(String, i32)>),
-    /// `quotes`。`None`は`none`(常に空文字列を生成する)。
+    /// `quotes`. `None` means `none` (always generating an empty string).
     Quotes(Option<Vec<QuotePair>>),
-    /// `object-fit`。`<img>`にのみ意味を持つ。
+    /// `object-fit`. Meaningful only on `<img>`.
     ObjectFit(ObjectFit),
-    /// `object-position`。値の文法は`background-position`と同じため
-    /// `SpecifiedBackgroundPosition`を再利用する。
+    /// `object-position`. The value grammar is the same as `background-position`, so
+    /// `SpecifiedBackgroundPosition` is reused.
     ObjectPosition(SpecifiedBackgroundPosition),
-    /// `box-shadow`。カンマ区切りの複数指定。
+    /// `box-shadow`. Comma-separated multiples.
     BoxShadow(Vec<SpecifiedBoxShadow>),
-    /// `flex-direction`。flexコンテナ専用。
+    /// `flex-direction`. Flex containers only.
     FlexDirection(FlexDirection),
     FlexWrap(FlexWrap),
     JustifyContent(JustifyContent),
     AlignItems(AlignItems),
     AlignContent(AlignContent),
-    /// `align-self`。flexアイテム専用。
+    /// `align-self`. Flex items only.
     AlignSelf(AlignSelf),
-    /// `flex-grow`。負値は無効(パース時点で拒否)。
+    /// `flex-grow`. A negative value is invalid (rejected at parse time).
     FlexGrow(f32),
-    /// `flex-shrink`。負値は無効(パース時点で拒否)。
+    /// `flex-shrink`. A negative value is invalid (rejected at parse time).
     FlexShrink(f32),
     FlexBasis(SpecifiedFlexBasis),
     RowGap(SpecifiedLengthPercentage),
     ColumnGap(SpecifiedLengthPercentage),
-    /// `transform`。空のVecは`none`。
+    /// `transform`. An empty Vec means `none`.
     Transform(Vec<SpecifiedTransformFunction>),
-    /// `transform-origin`。値の文法が`background-position`と同じため
-    /// `SpecifiedBackgroundPosition`を再利用する(初期値は`50% 50%`、
-    /// `background-position`の`0% 0%`とは個別に指定)。
+    /// `transform-origin`. The value grammar is the same as `background-position`, so
+    /// `SpecifiedBackgroundPosition` is reused (the initial value is `50% 50%`, set
+    /// separately from `background-position`'s `0% 0%`).
     TransformOrigin(SpecifiedBackgroundPosition),
-    /// `opacity`。0〜1にクランプ済み。
+    /// `opacity`. Already clamped to 0-1.
     Opacity(f32),
-    /// `text-shadow`。空のVecは`none`。
+    /// `text-shadow`. An empty Vec means `none`.
     TextShadow(Vec<SpecifiedTextShadow>),
-    /// `text-overflow`。`<string>`指定は非対応。
+    /// `text-overflow`. A `<string>` value is not supported.
     TextOverflow(TextOverflow),
-    /// `word-break`。
+    /// `word-break`.
     WordBreak(WordBreak),
-    /// `overflow-wrap`(別名`word-wrap`)。`anywhere`は`break-word`と同一視。
+    /// `overflow-wrap` (also known as `word-wrap`). `anywhere` is treated as `break-word`.
     OverflowWrap(OverflowWrap),
-    /// `hyphens`。`auto`は`manual`と同じ挙動。
+    /// `hyphens`. `auto` behaves the same as `manual`.
     Hyphens(Hyphens),
-    /// `text-emphasis-style`。
+    /// `text-emphasis-style`.
     TextEmphasisStyle(EmphasisStyle),
     TextEmphasisColor(Color),
     TextEmphasisPosition(EmphasisPosition),
-    /// `grid-template-columns`/`grid-template-rows`。
-    /// 空の`TrackList`は`none`。
+    /// `grid-template-columns`/`grid-template-rows`.
+    /// An empty `TrackList` means `none`.
     GridTemplateColumns(SpecifiedTrackList),
     GridTemplateRows(SpecifiedTrackList),
-    /// `grid-auto-columns`/`grid-auto-rows`。空のVecは初期値`auto`。
+    /// `grid-auto-columns`/`grid-auto-rows`. An empty Vec means the initial value `auto`.
     GridAutoColumns(Vec<SpecifiedTrackSize>),
     GridAutoRows(Vec<SpecifiedTrackSize>),
     GridAutoFlow(GridAutoFlow),
-    /// `grid-template-areas`。空のVecは`none`。
+    /// `grid-template-areas`. An empty Vec means `none`.
     GridTemplateAreas(Vec<GridArea>),
-    /// `grid-row-start`等の配置。
+    /// Placement such as `grid-row-start`.
     GridRowStart(GridLine),
     GridRowEnd(GridLine),
     GridColumnStart(GridLine),
     GridColumnEnd(GridLine),
-    /// `justify-items`/`justify-self`(Grid専用)。値の集合は
-    /// `align-items`/`align-self`と共有する。
+    /// `justify-items`/`justify-self` (Grid only). The value set is shared with
+    /// `align-items`/`align-self`.
     JustifyItems(AlignItems),
     JustifySelf(AlignSelf),
 }
 
-/// プロパティ名から値をパースする。ショートハンド(`margin`/`padding`/`border`)は
-/// 対応するロングハンド宣言に展開して返す。
+/// Parse a value given a property name. Shorthands (`margin`/`padding`/`border`) are
+/// expanded into the corresponding longhand declarations.
 pub fn parse_declaration<'i>(
     name: &CowRcStr<'i>,
     input: &mut Parser<'i, '_>,
@@ -272,8 +272,8 @@ pub fn parse_declaration<'i>(
             Ok(vec![D::TextDecorationLine(parse_text_decoration_line(input)?)])
         },
         "content" => Ok(vec![D::Content(parse_content(input)?)]),
-        // `page-break-*`は旧世代のプロパティ名(wkhtmltopdf/wicked_pdf資産からの
-        // 移行コストを下げるため、`break-*`のエイリアスとして受理する)。
+        // `page-break-*` are the previous generation of property names (accepted as aliases
+        // for `break-*`, to lower the cost of migrating from wkhtmltopdf/wicked_pdf).
         "break-before" | "page-break-before" => {
             Ok(vec![D::BreakBefore(parse_break_between(input)?)])
         },
@@ -347,7 +347,7 @@ pub fn parse_declaration<'i>(
         "text-shadow" => Ok(vec![D::TextShadow(parse_text_shadow(input)?)]),
         "text-overflow" => Ok(vec![D::TextOverflow(parse_text_overflow(input)?)]),
         "word-break" => Ok(vec![D::WordBreak(parse_word_break(input)?)]),
-        // `word-wrap`は`overflow-wrap`のレガシー名(`page-break-*`と同じ扱い)。
+        // `word-wrap` is the legacy name for `overflow-wrap` (handled like `page-break-*`).
         "overflow-wrap" | "word-wrap" => {
             Ok(vec![D::OverflowWrap(parse_overflow_wrap(input)?)])
         },
@@ -379,10 +379,10 @@ pub fn parse_declaration<'i>(
         "grid-area" => parse_grid_area_shorthand(input),
         "justify-items" => Ok(vec![D::JustifyItems(parse_align_items(input)?)]),
         "justify-self" => Ok(vec![D::JustifySelf(parse_align_self(input)?)]),
-        // 論理プロパティ。対応する書字方向が`horizontal-tb`+LTRだけなので、
-        // 物理プロパティへの固定の写像として展開する(`inline-start`=左、
-        // `inline-end`=右、`block-start`=上、`block-end`=下)。`writing-mode`/
-        // `direction`は非対応のため、この写像が変わることはない。
+        // Logical properties. The only writing mode supported is `horizontal-tb` plus LTR,
+        // so they are expanded through a fixed mapping to the physical properties
+        // (`inline-start` = left, `inline-end` = right, `block-start` = top,
+        // `block-end` = bottom). `writing-mode`/`direction` are not supported, so it never changes.
         "margin-inline-start" => Ok(vec![D::MarginLeft(parse_length_percentage_or_auto(input)?)]),
         "margin-inline-end" => Ok(vec![D::MarginRight(parse_length_percentage_or_auto(input)?)]),
         "margin-block-start" => Ok(vec![D::MarginTop(parse_length_percentage_or_auto(input)?)]),
@@ -476,8 +476,8 @@ pub fn parse_declaration<'i>(
         "border-block-color" => {
             parse_start_end(input, parse_color, D::BorderTopColor, D::BorderBottomColor)
         },
-        // 論理版の角丸。1つ目が block 方向、2つ目が inline 方向を指す
-        // (`border-start-end-radius`は上端の行方向終端=右上)。
+        // The logical corner radii. The first names the block direction and the second the
+        // inline direction (`border-start-end-radius` is the inline end of the top edge: top right).
         "border-start-start-radius" => {
             Ok(vec![D::BorderTopLeftRadius(parse_corner_radius(input)?)])
         },
@@ -520,7 +520,7 @@ fn parse_padding_shorthand<'i>(
     ])
 }
 
-/// `inset`ショートハンド。`margin`と同じ1〜4値(上/右/下/左)の展開規則。
+/// The `inset` shorthand. The same 1-to-4-value expansion rule as `margin` (top/right/bottom/left).
 fn parse_inset_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -534,10 +534,10 @@ fn parse_inset_shorthand<'i>(
     ])
 }
 
-/// `margin-inline`/`padding-block`/`inset-inline`/`border-block-width`等の
-/// 2辺ショートハンド。1値なら両辺、2値なら`start end`の順(CSS Logical
-/// Properties仕様通り)。`start`/`end`に対応する物理ロングハンドの
-/// コンストラクタを受け取って展開する。
+/// The two-edge shorthands such as `margin-inline`/`padding-block`/`inset-inline`/
+/// `border-block-width`. One value applies to both edges; two values are in `start end`
+/// order (as the CSS Logical Properties spec requires). It takes the constructors of the
+/// physical longhands corresponding to `start`/`end` and expands through them.
 fn parse_start_end<'i, T: Copy>(
     input: &mut Parser<'i, '_>,
     mut parse_one: impl FnMut(&mut Parser<'i, '_>) -> Result<T, ParseError<'i, ()>>,
@@ -549,19 +549,19 @@ fn parse_start_end<'i, T: Copy>(
     Ok(vec![start(first), end(second)])
 }
 
-/// [`mirror_border_side`]が写す先の辺。
+/// The edge [`mirror_border_side`] copies onto.
 #[derive(Clone, Copy)]
 enum Side {
     Right,
     Bottom,
 }
 
-/// `border-inline`/`border-block`用。片側(左/上)の辺別ショートハンド展開を
-/// もう片側(右/下)へ写す。
+/// For `border-inline`/`border-block`. Copies the per-edge shorthand expansion of one side
+/// (left/top) onto the other (right/bottom).
 ///
-/// 写せない宣言は捨てる。辺別ショートハンドが返すのは幅/スタイル/色だけ
-/// なので現状は起きないが、そのまま複製すると左(上)の宣言が2回出て
-/// しまうため、素通しはしない。
+/// Declarations that cannot be copied are dropped. Per-edge shorthands only return width,
+/// style and colour, so that does not currently happen, but passing them through unchanged
+/// would emit the left (top) declaration twice, so nothing is passed through blindly.
 fn mirror_border_side(decls: &[PropertyDeclaration], to: Side) -> Vec<PropertyDeclaration> {
     use PropertyDeclaration as D;
     decls
@@ -580,7 +580,7 @@ fn mirror_border_side(decls: &[PropertyDeclaration], to: Side) -> Vec<PropertyDe
         .collect()
 }
 
-/// CSSの1〜4値ショートハンド展開規則(上/右/下/左)。
+/// The CSS 1-to-4-value shorthand expansion rule (top/right/bottom/left).
 fn parse_four_sides<'i, T: Copy>(
     input: &mut Parser<'i, '_>,
     mut parse_one: impl FnMut(&mut Parser<'i, '_>) -> Result<T, ParseError<'i, ()>>,
@@ -598,8 +598,8 @@ fn parse_four_sides<'i, T: Copy>(
     Ok((top, right, bottom, left))
 }
 
-/// `border`/`border-top`/`border-right`/`border-bottom`/`border-left`共通の
-/// 「`<width>`/`<style>`/`<color>`、任意順・任意省略」パース(CSS仕様通り)。
+/// The parse shared by `border`/`border-top`/`border-right`/`border-bottom`/`border-left`:
+/// `<width>`/`<style>`/`<color>` in any order, any of them omitted (as the CSS spec says).
 fn parse_border_edge_values<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<(SpecifiedLength, BorderStyle, Option<Color>), ParseError<'i, ()>> {
@@ -625,12 +625,12 @@ fn parse_border_edge_values<'i>(
     Ok((width, style, color))
 }
 
-/// `border`ショートハンドの簡易実装。`border-width`/`border-style`/`border-color`を
-/// 同時に指定でき、指定順序は問わない(CSSの`border`ショートハンドの仕様通り)。
-/// いずれも4辺に同じ値を適用する(辺別に変えたい場合は`border-top`等の
-/// 辺別ショートハンド、または`border-top-width`等のロングハンドを使う)。
-/// `border-color`省略時は宣言を生成しない(計算スタイル側で初期値`currentcolor`
-/// として扱う)。
+/// A simple implementation of the `border` shorthand. `border-width`/`border-style`/
+/// `border-color` may be given together in any order (as the CSS `border` shorthand spec
+/// says). All of them apply the same value to all four edges (to vary them per edge, use a
+/// per-edge shorthand such as `border-top`, or a longhand such as `border-top-width`).
+/// When `border-color` is omitted no declaration is generated (the computed style treats it
+/// as the initial value `currentcolor`).
 fn parse_border_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -658,9 +658,9 @@ fn parse_border_shorthand<'i>(
     Ok(decls)
 }
 
-/// `border-top`/`border-right`/`border-bottom`/`border-left`の辺別
-/// ショートハンド。`border`ショートハンドと同じ値文法(`<width>`/`<style>`/
-/// `<color>`、任意順・任意省略)だが、指定した1辺にのみ適用する。
+/// The per-edge shorthands `border-top`/`border-right`/`border-bottom`/`border-left`.
+/// The same value grammar as the `border` shorthand (`<width>`/`<style>`/`<color>`, any
+/// order, any omitted), but applying only to the one edge named.
 fn parse_border_top_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -748,16 +748,16 @@ fn parse_border_style_shorthand<'i>(
     ])
 }
 
-/// `border-radius`ショートハンドの簡易実装。CSSの角丸半径は4値展開でも「上→
-/// 右→下→左」ではなく「左上→右上→右下→左下」の順序だが、
-/// `parse_four_sides`は値の個数に応じた展開規則(1〜4値)のみを担う汎用
-/// ヘルパーで各スロットの意味には関与しないため、そのまま再利用できる。楕円形
-/// (`/`区切りの水平・垂直別半径)は非対応(常に真円)。`border-radius`
-/// ショートハンドの簡易実装。CSSの角丸半径は4値展開でも「上→右→下→左」
-/// ではなく「左上→右上→右下→左下」の順序だが、`parse_four_sides`は値の
-/// 個数に応じた展開規則(1〜4値)のみを担う汎用ヘルパーで各スロットの意味には
-/// 関与しないため、そのまま再利用できる。`/`区切りで水平・垂直の半径を別々に
-/// 指定する楕円構文に対応する。
+/// A simple implementation of the `border-radius` shorthand. CSS corner radii go
+/// top-left, top-right, bottom-right, bottom-left rather than top, right, bottom, left even
+/// in the four-value expansion, but `parse_four_sides` is a generic helper concerned only
+/// with the expansion rule for the number of values given (1 to 4) and takes no part in
+/// what each slot means, so it can be reused unchanged.
+///
+/// The elliptical syntax, which gives separate horizontal and vertical radii either side of
+/// a `/`, is supported.
+///
+/// Each corner ends up as a (horizontal, vertical) pair; a true circle has the two equal.
 fn parse_border_radius_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -790,8 +790,8 @@ fn parse_border_radius_shorthand<'i>(
     ])
 }
 
-/// `border-top-left-radius`等のロングハンド。`<length>{1,2}`(水平, 垂直の順、
-/// 省略時は水平と同じ=真円)を受け付ける(`border-spacing`と同じパターン)。
+/// Longhands such as `border-top-left-radius`. Accepts `<length>{1,2}` (horizontal then
+/// vertical; when omitted the vertical equals the horizontal, giving a true circle), the same pattern as `border-spacing`.
 fn parse_corner_radius<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedCornerRadius, ParseError<'i, ()>> {
@@ -803,8 +803,8 @@ fn parse_corner_radius<'i>(
     })
 }
 
-/// `border-style`/`outline-style`共通のキーワード。`groove`/`ridge`/`inset`/
-/// `outset`(border-colorから2階調の疑似立体陰影を算出する)にも対応する。
+/// The keywords shared by `border-style`/`outline-style`. `groove`/`ridge`/`inset`/
+/// `outset` (deriving a two-tone pseudo-3D shading from border-color) are supported too.
 fn parse_border_style_keyword<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<BorderStyle, ParseError<'i, ()>> {
@@ -823,7 +823,7 @@ fn parse_border_style_keyword<'i>(
     })
 }
 
-/// `overflow`。`hidden`/`scroll`/`auto`は全て同じクリップ処理として扱う。
+/// `overflow`. `hidden`/`scroll`/`auto` all get the same clipping.
 fn parse_overflow<'i>(input: &mut Parser<'i, '_>) -> Result<Overflow, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -835,7 +835,7 @@ fn parse_overflow<'i>(input: &mut Parser<'i, '_>) -> Result<Overflow, ParseError
     })
 }
 
-/// `box-sizing`。`padding-box`(標準外)は非対応。
+/// `box-sizing`. `padding-box` (non-standard) is not supported.
 fn parse_box_sizing<'i>(input: &mut Parser<'i, '_>) -> Result<BoxSizing, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -845,7 +845,7 @@ fn parse_box_sizing<'i>(input: &mut Parser<'i, '_>) -> Result<BoxSizing, ParseEr
     })
 }
 
-/// `z-index`。`auto | <integer>`。
+/// `z-index`. `auto | <integer>`.
 fn parse_z_index<'i>(input: &mut Parser<'i, '_>) -> Result<ZIndex, ParseError<'i, ()>> {
     if input
         .try_parse(|input| input.expect_ident_matching("auto"))
@@ -856,7 +856,7 @@ fn parse_z_index<'i>(input: &mut Parser<'i, '_>) -> Result<ZIndex, ParseError<'i
     Ok(ZIndex::Value(input.expect_integer()?))
 }
 
-/// `visibility`。`collapse`は`hidden`と同一視する。
+/// `visibility`. `collapse` is treated as `hidden`.
 fn parse_visibility<'i>(input: &mut Parser<'i, '_>) -> Result<Visibility, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -867,9 +867,9 @@ fn parse_visibility<'i>(input: &mut Parser<'i, '_>) -> Result<Visibility, ParseE
     })
 }
 
-/// `outline`ショートハンドの簡易実装。`outline-width`/`outline-style`/
-/// `outline-color`を任意の順序・任意の省略で受け付ける(`border`ショートハンドと
-/// 同じパターン)。`outline-offset`は非対応、常に0固定。
+/// A simple implementation of the `outline` shorthand. `outline-width`/`outline-style`/
+/// `outline-color` are accepted in any order with any of them omitted (the same pattern as
+/// the `border` shorthand). `outline-offset` is not supported and is always 0.
 fn parse_outline_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -935,7 +935,7 @@ fn parse_text_transform<'i>(
     })
 }
 
-/// `line-height`。`normal | <number> | <length> | <percentage>`。
+/// `line-height`. `normal | <number> | <length> | <percentage>`.
 fn parse_line_height<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedLineHeight, ParseError<'i, ()>> {
@@ -958,7 +958,7 @@ fn parse_line_height<'i>(
     }
 }
 
-/// `letter-spacing`/`word-spacing`共通。`normal | <length>`。
+/// Shared by `letter-spacing`/`word-spacing`. `normal | <length>`.
 fn parse_spacing<'i>(input: &mut Parser<'i, '_>) -> Result<SpecifiedSpacing, ParseError<'i, ()>> {
     if input
         .try_parse(|input| input.expect_ident_matching("normal"))
@@ -980,8 +980,8 @@ fn parse_border_collapse<'i>(
     })
 }
 
-/// `border-spacing`。`<length>`(水平・垂直に同じ値)または`<length> <length>`
-/// (水平, 垂直)。
+/// `border-spacing`. `<length>` (the same value horizontally and vertically) or
+/// `<length> <length>` (horizontal, vertical).
 fn parse_border_spacing<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<(SpecifiedLength, SpecifiedLength), ParseError<'i, ()>> {
@@ -1017,10 +1017,10 @@ fn parse_empty_cells<'i>(input: &mut Parser<'i, '_>) -> Result<EmptyCells, Parse
     })
 }
 
-/// `vertical-align`。テーブルセル文脈専用と割り切る。
-/// `sub`/`super`/`text-top`/`text-bottom`/`<length>`/`<percentage>`(インライ
-/// ン文脈向けの値)は非対応。`vertical-align`。
-/// キーワードまたは長さ・パーセンテージ。
+/// `vertical-align`. Accepts either a keyword or a length/percentage.
+///
+/// The inline-context values (`sub`/`super`/`text-top`/`text-bottom`/`<length>`/
+/// `<percentage>`) are handled here too; a table cell keeps only the CSS2.1 subset.
 fn parse_vertical_align<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedVerticalAlign, ParseError<'i, ()>> {
@@ -1054,7 +1054,7 @@ fn parse_display<'i>(input: &mut Parser<'i, '_>) -> Result<Display, ParseError<'
         "table-caption" => Display::TableCaption,
         "list-item" => Display::ListItem,
         "flex" => Display::Flex,
-        // `inline-grid`は非対応(`inline-flex`と同じ既知の簡略化)。
+        // `inline-grid` is not supported (the same known simplification as `inline-flex`).
         "grid" => Display::Grid,
         "none" => Display::None,
         _ => return Err(input.new_custom_error(())),
@@ -1091,22 +1091,22 @@ fn parse_list_style_position<'i>(
     })
 }
 
-/// `list-style-image`。`background-image`と同じ`url(...) | none`の形。
-/// 実際には常に`list-style-type`へフォールバックし描画には使わない。
+/// `list-style-image`. The same `url(...) | none` form as `background-image`.
+/// In practice it always falls back to `list-style-type` and is never used for drawing.
 fn parse_list_style_image<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Option<String>, ParseError<'i, ()>> {
     parse_background_image(input)
 }
 
-/// `list-style`ショートハンドの簡易実装。
-/// `list-style-type`/`list-style-position`/`list-style-image`を任意の順序・
-/// 任意の省略で受け付ける(`border`ショートハンドと同じパターン)。`none`は
-/// `list-style-type`/`list-style-image`のどちらの値としても妥当なため、まだ
-/// 確定していない方のスロットから順に埋める(`type`未確定なら`type: none`、
-/// 確定済みなら`image: none`)。これにより
-/// `list-style: square none`(type=square, image=none)と
-/// `list-style: none`(両方none)のどちらも正しく解決できる。
+/// A simple implementation of the `list-style` shorthand.
+/// `list-style-type`/`list-style-position`/`list-style-image` are accepted in any order
+/// with any of them omitted (the same pattern as the `border` shorthand). `none` is a valid
+/// value for both `list-style-type` and `list-style-image`, so it fills whichever slot is
+/// not yet decided, in order (`type: none` if `type` is undecided, `image: none` if it is
+/// already decided). That resolves both
+/// `list-style: square none` (type=square, image=none) and
+/// `list-style: none` (both none) correctly.
 fn parse_list_style_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -1167,9 +1167,9 @@ fn parse_clear<'i>(input: &mut Parser<'i, '_>) -> Result<Clear, ParseError<'i, (
     })
 }
 
-/// `position`。`absolute`/`fixed`は既知の未対応キーワードとしてパースエラーに
-/// する(`border-style`のgroove/ridge等と同じパターン。宣言ごと無視され、他の
-/// 宣言には影響しない)。
+/// `position`. `absolute`/`fixed` are made a parse error as known unsupported keywords
+/// (the same pattern as groove/ridge in `border-style`: the declaration is ignored without
+/// affecting any other).
 fn parse_position<'i>(input: &mut Parser<'i, '_>) -> Result<Position, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -1181,8 +1181,8 @@ fn parse_position<'i>(input: &mut Parser<'i, '_>) -> Result<Position, ParseError
     })
 }
 
-/// `break-before`/`break-after`(および`page-break-before`/`-after`エイリアス)の値。
-/// `left`/`right`/`recto`/`verso`(見開き制御)は単一ページサイズ前提のため非対応。
+/// Values of `break-before`/`break-after` (and the `page-break-before`/`-after` aliases).
+/// `left`/`right`/`recto`/`verso` (spread control) are unsupported, a single page size being assumed.
 fn parse_break_between<'i>(input: &mut Parser<'i, '_>) -> Result<BreakBetween, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -1193,7 +1193,7 @@ fn parse_break_between<'i>(input: &mut Parser<'i, '_>) -> Result<BreakBetween, P
     })
 }
 
-/// `break-inside`(および`page-break-inside`エイリアス)の値。
+/// Values of `break-inside` (and the `page-break-inside` alias).
 fn parse_break_inside<'i>(input: &mut Parser<'i, '_>) -> Result<BreakInside, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -1203,7 +1203,7 @@ fn parse_break_inside<'i>(input: &mut Parser<'i, '_>) -> Result<BreakInside, Par
     })
 }
 
-/// `orphans`/`widows`の値。0以下は無効(仕様上も1以上の整数のみ有効)。
+/// Values of `orphans`/`widows`. Anything below 1 is invalid (the spec also allows only integers of 1 or more).
 fn parse_positive_integer<'i>(input: &mut Parser<'i, '_>) -> Result<u32, ParseError<'i, ()>> {
     let value = input.expect_integer()?;
     if value < 1 {
@@ -1212,9 +1212,9 @@ fn parse_positive_integer<'i>(input: &mut Parser<'i, '_>) -> Result<u32, ParseEr
     Ok(value as u32)
 }
 
-/// キーワード(`normal`/`bold`)と数値(`100`〜`900`)のどちらも受け付ける。
-/// 数値は600以上を`Bold`とみなす簡略実装(実際の太字フォントを持たず、
-/// 描画時に疑似太字で表現するため、細かい太さの段階は区別しない)。
+/// Accepts both keywords (`normal`/`bold`) and numbers (`100` to `900`).
+/// A simplified implementation treats any number of 600 or more as `Bold` (we hold no real
+/// bold font and render it as faux bold, so finer weight steps are not distinguished).
 pub(crate) fn parse_font_weight<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<FontWeight, ParseError<'i, ()>> {
@@ -1239,15 +1239,15 @@ pub(crate) fn parse_font_style<'i>(
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
         "normal" => FontStyle::Normal,
-        // `oblique`は専用の傾斜角を持たないため`italic`と同一視する。
+        // `oblique` has no slant angle of its own, so it is treated as `italic`.
         "italic" | "oblique" => FontStyle::Italic,
         _ => return Err(input.new_custom_error(())),
     })
 }
 
-/// `text-decoration`/`text-decoration-line`の簡易実装。`underline`/`line-through`は
-/// 併記可能(`underline line-through`)。`overline`/`blink`、`text-decoration`
-/// ショートハンドの`text-decoration-style`/`text-decoration-color`部分は非対応。
+/// A simple implementation of `text-decoration`/`text-decoration-line`.
+/// `underline`/`line-through` may be given together (`underline line-through`).
+/// `overline`/`blink`, and the `text-decoration-style`/`text-decoration-color` parts of the `text-decoration` shorthand, are not supported.
 fn parse_text_decoration_line<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<TextDecorationLine, ParseError<'i, ()>> {
@@ -1272,10 +1272,10 @@ fn parse_text_decoration_line<'i>(
     Ok(line)
 }
 
-/// `padding`のように負の値を受け付けないプロパティ用。負の値はCSSでは
-/// 無効なので、宣言ごと捨てられるようパースエラーにする。
-/// `calc()`は解決するまで符号が決まらないため、ここでは通す
-/// (CSSの規定でも計算結果が負なら0へクランプする扱い)。
+/// For properties that accept no negative value, such as `padding`. A negative value is
+/// invalid in CSS, so it is made a parse error and the whole declaration is dropped.
+/// `calc()` passes through here, its sign being unknown until resolved
+/// (CSS also specifies clamping a negative result to 0).
 fn parse_non_negative_length_percentage<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedLengthPercentage, ParseError<'i, ()>> {
@@ -1289,7 +1289,7 @@ fn parse_non_negative_length_percentage<'i>(
 fn parse_length_percentage<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedLengthPercentage, ParseError<'i, ()>> {
-    // `calc(...)`。
+    // `calc(...)`.
     if let Ok(calc) = input.try_parse(parse_calc) {
         return Ok(SpecifiedLengthPercentage::Calc(calc));
     }
@@ -1310,16 +1310,16 @@ fn parse_length_percentage<'i>(
     }
 }
 
-/// `calc`の計算途中値。長さ次元(px/em/rem)・パーセンテージ・
-/// 純粋な数値の線形結合を保持する。
+/// An intermediate `calc` value. It holds a linear combination of the length dimensions
+/// (px/em/rem), a percentage and a pure number.
 #[derive(Debug, Clone, Copy, Default)]
 struct CalcValue {
     px: f32,
     em: f32,
     rem: f32,
-    /// パーセンテージの割合(50% = 0.5)。
+    /// The percentage as a ratio (50% = 0.5).
     percent: f32,
-    /// 単位のない数値(`* 2`や`/ 3`の係数、または不正な裸の数値)。
+    /// A unitless number (the coefficient of a `* 2` or `/ 3`, or an invalid bare number).
     number: f32,
 }
 
@@ -1330,7 +1330,7 @@ impl CalcValue {
             ..Default::default()
         }
     }
-    /// 次元・パーセンテージ成分を持たない(=純粋な数値)か。
+    /// Whether it has no dimension or percentage component (that is, it is a pure number).
     fn is_pure_number(&self) -> bool {
         self.px == 0.0 && self.em == 0.0 && self.rem == 0.0 && self.percent == 0.0
     }
@@ -1354,22 +1354,22 @@ impl CalcValue {
     }
 }
 
-/// `calc(...)`を[`SpecifiedCalc`]へパースする。裸の数値が残る式(長さとして
-/// 無効)はエラーにする。`min`/`max`/`clamp`は非対応。
-/// `calc()`と括弧のネストを受け付ける深さの上限。
+/// The depth limit for accepting nested `calc()` and parentheses.
 ///
-/// このパーサは再帰下降なので、深さがそのままスタックの消費になる
-/// (信頼できないCSSを食わせるとスタックオーバーフローで落とせる)。
-/// `calc(calc(...) * calc(...))`のような実際のCSSは数段で収まるので、
-/// 大きく余裕を取ったこの値を超えたら無効値として宣言ごと捨てる。
-/// DOMの深さに対する[`crate::html::MAX_ELEMENT_DEPTH`]と同じ考え方。
+/// The parser is recursive descent, so depth translates directly into stack use (untrusted
+/// CSS could otherwise overflow the stack). Real CSS such as `calc(calc(...) * calc(...))`
+/// fits in a few levels, so anything past this deliberately generous value is treated as
+/// invalid and the declaration is dropped.
+/// The same idea as [`crate::html::MAX_ELEMENT_DEPTH`] for DOM depth.
 const MAX_CALC_DEPTH: u32 = 32;
 
+/// Parse `calc(...)` into [`SpecifiedCalc`]. An expression that leaves a bare number (which
+/// is invalid as a length) is an error. `min`/`max`/`clamp` are not supported.
 fn parse_calc<'i>(input: &mut Parser<'i, '_>) -> Result<SpecifiedCalc, ParseError<'i, ()>> {
     input.expect_function_matching("calc")?;
     let value = input.parse_nested_block(|input| parse_calc_sum(input, 1))?;
     if value.number != 0.0 {
-        // `calc(2)`のように裸の数値が残る = 長さ文脈では無効。
+        // A bare number left over, as in `calc(2)`, is invalid in a length context.
         return Err(input.new_custom_error(()));
     }
     Ok(SpecifiedCalc {
@@ -1386,8 +1386,8 @@ fn parse_calc_sum<'i>(
 ) -> Result<CalcValue, ParseError<'i, ()>> {
     let mut acc = parse_calc_product(input, depth)?;
     loop {
-        // `+`/`-`の前後には空白が必須(CSS仕様)。cssparserは`+5`のような
-        // 符号付き数値を1トークンにするため、Delimでない場合はループを抜ける。
+        // Whitespace is required either side of `+`/`-` (per the CSS spec). cssparser makes
+        // a signed number such as `+5` a single token, so we leave the loop when it is not a Delim.
         let sign = input.try_parse(|input| {
             let token = input.next()?.clone();
             match token {
@@ -1427,7 +1427,7 @@ fn parse_calc_product<'i>(
         match op {
             Ok(Op::Mul) => {
                 let rhs = parse_calc_value(input, depth)?;
-                // 次元×次元は不可(少なくとも一方が純粋な数値、CSS仕様)。
+                // Dimension times dimension is not allowed (at least one side must be a pure number, per the CSS spec).
                 if acc.is_pure_number() {
                     acc = rhs.scale(acc.number);
                 } else if rhs.is_pure_number() {
@@ -1452,10 +1452,10 @@ fn parse_calc_value<'i>(
     input: &mut Parser<'i, '_>,
     depth: u32,
 ) -> Result<CalcValue, ParseError<'i, ()>> {
-    // 括弧、またはネストした`calc()`(CSS Values 4ではどちらも同じ扱い)。
-    // Tailwind v4の`space-y-*`/`divide-*`は
+    // Parentheses, or a nested `calc()` (CSS Values 4 treats both the same).
+    // Tailwind v4's `space-y-*`/`divide-*` emit a nested `calc()` like
     // `calc(calc(var(--spacing) * N) * calc(1 - var(--tw-space-y-reverse)))`
-    // のようにネストした`calc()`を出力する(issue #17)。
+    // (issue #17).
     if input
         .try_parse(|input| input.expect_parenthesis_block())
         .is_ok()
@@ -1494,9 +1494,9 @@ fn parse_calc_value<'i>(
     }
 }
 
-/// `aspect-ratio: auto || <ratio>`。`auto`と`<ratio>`は順序を問わず
-/// 併記できる。`<ratio>`は`<number> [ / <number> ]?`(分母省略時は1)で、0や
-/// 負の数を含む比(degenerate ratio)は無効=宣言ごと無視する(CSS仕様通り)。
+/// `aspect-ratio: auto || <ratio>`. `auto` and `<ratio>` may be given together in either
+/// order. `<ratio>` is `<number> [ / <number> ]?` (the denominator defaults to 1), and a
+/// degenerate ratio containing zero or a negative number is invalid, so the whole declaration is ignored (as the spec says).
 fn parse_aspect_ratio<'i>(input: &mut Parser<'i, '_>) -> Result<AspectRatio, ParseError<'i, ()>> {
     let mut auto = false;
     let mut ratio = None;
@@ -1525,7 +1525,7 @@ fn parse_aspect_ratio<'i>(input: &mut Parser<'i, '_>) -> Result<AspectRatio, Par
     Ok(AspectRatio { auto, ratio })
 }
 
-/// `<ratio> = <number> [ / <number> ]?`。`width / height`の比を返す。
+/// `<ratio> = <number> [ / <number> ]?`. Returns the `width / height` ratio.
 fn parse_ratio<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>> {
     let width = input.expect_number()?;
     let height = input
@@ -1540,8 +1540,8 @@ fn parse_ratio<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>
     Ok(width / height)
 }
 
-/// `max-width`/`max-height`。`none | <length-percentage>`。
-/// `min-content`/`max-content`/`fit-content`は非対応。
+/// `max-width`/`max-height`. `none | <length-percentage>`.
+/// `min-content`/`max-content`/`fit-content` are not supported.
 fn parse_max_size<'i>(input: &mut Parser<'i, '_>) -> Result<SpecifiedMaxSize, ParseError<'i, ()>> {
     if input
         .try_parse(|input| input.expect_ident_matching("none"))
@@ -1579,12 +1579,12 @@ pub(crate) fn parse_length<'i>(
     }
 }
 
-/// 絶対単位1つ分が何CSS pxかを返す。`px`以外の絶対単位でなければ`None`。
+/// How many CSS px one absolute unit is. `None` for anything that is not an absolute unit other than `px`.
 ///
-/// CSSの絶対単位はいずれもpxとの比が固定(1in = 96px)なので、パースの時点で
-/// pxへ畳んでしまう。こうすると[`SpecifiedLength`]に単位を持ち込まずに済み、
-/// 計算値の解決やレイアウトは一切変わらない。ビューポート単位(`vh`等)は
-/// 印刷にビューポートの概念が無いため対象外。
+/// Every CSS absolute unit has a fixed ratio to px (1in = 96px), so they are folded into px
+/// at parse time. That keeps units out of [`SpecifiedLength`] entirely and changes nothing
+/// about computed value resolution or layout. Viewport units (`vh` and friends) are out of
+/// scope, print having no concept of a viewport.
 fn absolute_length_px(unit: &str) -> Option<f32> {
     const PX_PER_IN: f32 = 96.0;
     if unit.eq_ignore_ascii_case("px") {
@@ -1596,21 +1596,21 @@ fn absolute_length_px(unit: &str) -> Option<f32> {
     } else if unit.eq_ignore_ascii_case("mm") {
         Some(PX_PER_IN / 25.4)
     } else if unit.eq_ignore_ascii_case("q") {
-        // 1Q = 1/4mm。
+        // 1Q = 1/4mm.
         Some(PX_PER_IN / 25.4 / 4.0)
     } else if unit.eq_ignore_ascii_case("pt") {
         Some(PX_PER_IN / 72.0)
     } else if unit.eq_ignore_ascii_case("pc") {
-        // 1pc = 12pt。
+        // 1pc = 12pt.
         Some(PX_PER_IN / 6.0)
     } else {
         None
     }
 }
 
-/// `<数値><単位>`の単位部分を見て、絶対単位(`px`/`mm`/`cm`/`in`/`pt`/`pc`/`Q`)
-/// または相対単位(`em`/`rem`)として解釈する。
-/// ビューポート単位(`vh`等)は非対応。
+/// Read the unit part of `<number><unit>` as either an absolute unit
+/// (`px`/`mm`/`cm`/`in`/`pt`/`pc`/`Q`) or a relative unit (`em`/`rem`).
+/// Viewport units (`vh` and friends) are not supported.
 fn parse_length_unit<'i>(
     input: &Parser<'i, '_>,
     value: f32,
@@ -1627,12 +1627,12 @@ fn parse_length_unit<'i>(
     }
 }
 
-/// `color-mix()`の入れ子の上限。無効な深さでスタックを食い潰さないための歯止め
-/// (`MAX_IMPORT_DEPTH`と同じ考え方)。
+/// The nesting limit for `color-mix()`. A brake so an invalid depth cannot eat the stack
+/// (the same idea as `MAX_IMPORT_DEPTH`).
 const MAX_COLOR_MIX_DEPTH: u32 = 16;
 
-/// `lab`/`lch`/`oklab`/`oklch`は`cssparser-color`がsRGB変換関数を
-/// 公開していないため、`palette`クレートで変換する。
+/// `lab`/`lch`/`oklab`/`oklch` are converted with the `palette` crate, because
+/// `cssparser-color` does not expose sRGB conversion functions for them.
 fn parse_color<'i>(input: &mut Parser<'i, '_>) -> Result<Color, ParseError<'i, ()>> {
     parse_color_at_depth(input, 0)
 }
@@ -1641,8 +1641,8 @@ fn parse_color_at_depth<'i>(
     input: &mut Parser<'i, '_>,
     depth: u32,
 ) -> Result<Color, ParseError<'i, ()>> {
-    // `cssparser-color`は`color-mix()`を扱わない(より良い`calc()`対応が要る、
-    // として対象外にしている)ので、先に自前で試す。
+    // `cssparser-color` does not handle `color-mix()` (it is left out pending better
+    // `calc()` support), so we try our own first.
     if let Ok(mixed) = input.try_parse(|input| parse_color_mix(input, depth)) {
         return Ok(mixed);
     }
@@ -1727,12 +1727,12 @@ fn parse_color_at_depth<'i>(
     }
 }
 
-/// `color-mix(in <color-space> [<hue-interpolation-method>]?, <color> <percentage>?, <color> <percentage>?)`。
+/// `color-mix(in <color-space> [<hue-interpolation-method>]?, <color> <percentage>?, <color> <percentage>?)`.
 ///
-/// `currentcolor`をオペランドに含む形は非対応。`currentcolor`はカスケードの後
-/// (その要素の`color`が決まってから)解決するのに対し、混色はここで済ませて
-/// しまうため、この時点では値が分からない。仕様どおり無効な色として扱い、
-/// 宣言ごと落とす。
+/// A form with `currentcolor` as an operand is not supported. `currentcolor` is resolved
+/// after the cascade (once the element's `color` is known), whereas the mixing happens
+/// here, so the value is not known yet. As the spec says, it is treated as an invalid
+/// colour and the declaration is dropped.
 fn parse_color_mix<'i>(
     input: &mut Parser<'i, '_>,
     depth: u32,
@@ -1753,8 +1753,8 @@ fn parse_color_mix<'i>(
         }
         .map_err(|_| input.new_custom_error(()))?;
 
-        // `<hue-interpolation-method>`は極座標の色空間でのみ意味を持つ。
-        // 構文としては`shorter hue`のように2つのidentが続く。
+        // A `<hue-interpolation-method>` is meaningful only in a polar colour space.
+        // Syntactically it is two idents in a row, as in `shorter hue`.
         let hue_method = input
             .try_parse(|input| {
                 let method = match input.expect_ident() {
@@ -1788,7 +1788,7 @@ fn parse_color_mix<'i>(
     })
 }
 
-/// `<color> <percentage>?`(順序はどちらでもよい)。
+/// `<color> <percentage>?` (in either order).
 #[allow(clippy::type_complexity)]
 fn parse_color_mix_operand<'i>(
     input: &mut Parser<'i, '_>,
@@ -1808,7 +1808,7 @@ fn parse_color_mix_operand<'i>(
         alpha,
     } = color
     else {
-        // `currentcolor`。上記のとおりここでは解決できない。
+        // `currentcolor`. As explained above, it cannot be resolved here.
         return Err(input.new_custom_error(()));
     };
     Ok((
@@ -1824,14 +1824,14 @@ fn parse_color_mix_operand<'i>(
 
 fn parse_mix_percentage<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>> {
     match input.expect_percentage() {
-        // 負のパーセンテージは無効。
+        // A negative percentage is invalid.
         Ok(p) if p >= 0.0 => Ok(p),
         _ => Err(input.new_custom_error(())),
     }
 }
 
-/// 2つの重みを正規化する(CSS Color 5 §3.2)。返り値は`(第1の重み, 第2の重み,
-/// 結果のアルファに掛ける係数)`。両方が0%なら無効。
+/// Normalise the two weights (CSS Color 5 section 3.2). Returns
+/// `(first weight, second weight, the factor to apply to the result's alpha)`. Both being 0% is invalid.
 fn normalize_mix_weights(first: Option<f32>, second: Option<f32>) -> Option<(f32, f32, f32)> {
     match (first, second) {
         (None, None) => Some((0.5, 0.5, 1.0)),
@@ -1842,14 +1842,14 @@ fn normalize_mix_weights(first: Option<f32>, second: Option<f32>) -> Option<(f32
             if sum <= 0.0 {
                 return None;
             }
-            // 合計が100%に満たない場合は、足りないぶんだけ結果を透明にする。
+            // When they add up to less than 100%, the result is made transparent by the shortfall.
             let alpha_multiplier = if sum < 1.0 { sum } else { 1.0 };
             Some((a / sum, b / sum, alpha_multiplier))
         }
     }
 }
 
-/// 0.0〜1.0のRGB成分・アルファ値から[`Color::Rgba`]を組み立てる。
+/// Build a [`Color::Rgba`] from RGB components and an alpha in the range 0.0 to 1.0.
 fn rgba_from_unit_floats(red: f32, green: f32, blue: f32, alpha: f32) -> Color {
     let to_u8 = |c: f32| (c.clamp(0.0, 1.0) * 255.0).round() as u8;
     Color::Rgba {
@@ -1860,7 +1860,7 @@ fn rgba_from_unit_floats(red: f32, green: f32, blue: f32, alpha: f32) -> Color {
     }
 }
 
-/// `object-fit`。
+/// `object-fit`.
 fn parse_object_fit<'i>(input: &mut Parser<'i, '_>) -> Result<ObjectFit, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -1873,7 +1873,7 @@ fn parse_object_fit<'i>(input: &mut Parser<'i, '_>) -> Result<ObjectFit, ParseEr
     })
 }
 
-/// `box-shadow: none | <shadow>#`。
+/// `box-shadow: none | <shadow>#`.
 fn parse_box_shadow<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<SpecifiedBoxShadow>, ParseError<'i, ()>> {
@@ -1886,9 +1886,9 @@ fn parse_box_shadow<'i>(
     input.parse_comma_separated(parse_single_box_shadow)
 }
 
-/// `<shadow>`1つ分。`inset`・`<color>`は前後どちらの位置にも書けるが、
-/// 長さの並び(`<length>{2,4}`、offset-x/offset-y/blur-radius/spread-radius
-/// の順)はCSS仕様通り一塊としてまとめてパースする。
+/// One `<shadow>`. `inset` and `<color>` may be written either before or after, but the run
+/// of lengths (`<length>{2,4}`, in the order offset-x/offset-y/blur-radius/spread-radius)
+/// is parsed as one block, as the CSS spec requires.
 fn parse_single_box_shadow<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedBoxShadow, ParseError<'i, ()>> {
@@ -1933,8 +1933,8 @@ fn parse_single_box_shadow<'i>(
     })
 }
 
-/// `<length>{2,4}`(offset-x offset-y [blur-radius [spread-radius]])。
-/// offset-x/offset-yは必須、blur-radius/spread-radius省略時は`0`。
+/// `<length>{2,4}` (offset-x offset-y [blur-radius [spread-radius]]).
+/// offset-x/offset-y are required; blur-radius/spread-radius default to `0`.
 #[allow(clippy::type_complexity)]
 fn parse_box_shadow_lengths<'i>(
     input: &mut Parser<'i, '_>,
@@ -1958,9 +1958,9 @@ fn parse_box_shadow_lengths<'i>(
     Ok((offset_x, offset_y, blur_radius, spread_radius))
 }
 
-/// `content`。文字列リテラル・`attr`・`counter`/`counters`・引用符
-/// キーワードの列を受け付け、任意個連結できる。`none`/`normal`は「生成
-/// ボックスなし」を表す`None`として扱う。
+/// `content`. Accepts a sequence of string literals, `attr`, `counter`/`counters` and quote
+/// keywords, concatenating any number of them. `none`/`normal` are treated as `None`,
+/// meaning "no generated box".
 fn parse_content<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Option<Vec<ContentPart>>, ParseError<'i, ()>> {
@@ -2012,7 +2012,7 @@ fn parse_content_quote_keyword<'i>(
     })
 }
 
-/// `attr(name)`/`counter(name [, style])`/`counters(name, separator [, style])`。
+/// `attr(name)`/`counter(name [, style])`/`counters(name, separator [, style])`.
 fn parse_content_function<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<ContentPart, ParseError<'i, ()>> {
@@ -2050,8 +2050,8 @@ fn parse_content_function<'i>(
     Err(input.new_custom_error(()))
 }
 
-/// `counter-reset`/`counter-increment`共通。`none`は空リスト、それ以外は
-/// `name [<integer>]`の繰り返し(値省略時は`default_value`)。
+/// Shared by `counter-reset`/`counter-increment`. `none` is an empty list; otherwise it is
+/// a repetition of `name [<integer>]` (the value defaults to `default_value`).
 fn parse_counter_list<'i>(
     input: &mut Parser<'i, '_>,
     default_value: i32,
@@ -2078,8 +2078,8 @@ fn parse_counter_list<'i>(
     Ok(result)
 }
 
-/// `quotes`。`none`は`None`(常に空文字列を生成する)、それ以外は
-/// `"開き" "閉じ"`のペアの繰り返し(ネスト深度が浅い順)。
+/// `quotes`. `none` becomes `None` (always generating an empty string); otherwise it is a
+/// repetition of `"open" "close"` pairs, shallowest nesting depth first.
 fn parse_quotes<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Option<Vec<QuotePair>>, ParseError<'i, ()>> {
@@ -2106,9 +2106,9 @@ fn parse_quotes<'i>(
     Ok(Some(pairs))
 }
 
-/// `background-image`の簡易実装。`url(...)`1つのみ受け付ける
-/// (`linear-gradient()`等の非`url()`値、複数背景のカンマ区切りは非対応)。
-/// `none`は「背景画像なし」を表す`None`として扱う。
+/// A simple implementation of `background-image`. Only a single `url(...)` is accepted
+/// (non-`url()` values such as `linear-gradient()`, and comma-separated multiple
+/// backgrounds, are not supported). `none` is treated as `None`, meaning no background image.
 fn parse_background_image<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Option<String>, ParseError<'i, ()>> {
@@ -2124,9 +2124,9 @@ fn parse_background_image<'i>(
     Ok(Some(url.as_ref().to_string()))
 }
 
-/// `background-position`の1コンポーネント。`left`/`right`は水平軸、
-/// `top`/`bottom`は垂直軸を確定させる。`center`・長さ・パーセンテージは
-/// どちらの軸にもなり得る。
+/// One component of `background-position`. `left`/`right` fix the horizontal axis and
+/// `top`/`bottom` the vertical one. `center`, a length and a percentage can each be either
+/// axis.
 enum BackgroundPositionComponent {
     Horizontal(SpecifiedLengthPercentage),
     Vertical(SpecifiedLengthPercentage),
@@ -2150,8 +2150,8 @@ fn parse_background_position_component<'i>(
     Ok(C::Either(parse_length_percentage(input)?))
 }
 
-/// `background-position`。1〜2値、キーワード(`left`/`center`/`right`/`top`/
-/// `bottom`)と長さ・パーセンテージの組み合わせを受け付ける。
+/// `background-position`. Accepts one or two values, combining keywords
+/// (`left`/`center`/`right`/`top`/`bottom`) with lengths and percentages.
 fn parse_background_position<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedBackgroundPosition, ParseError<'i, ()>> {
@@ -2191,8 +2191,8 @@ fn parse_background_position<'i>(
     })
 }
 
-/// `background-size`。`cover`/`contain`、または`[<length-percentage> |
-/// auto]{1,2}`(1値のみの場合、高さは`auto`)。
+/// `background-size`. `cover`/`contain`, or `[<length-percentage> | auto]{1,2}`
+/// (with only one value, the height is `auto`).
 fn parse_background_size<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedBackgroundSize, ParseError<'i, ()>> {
@@ -2216,8 +2216,8 @@ fn parse_background_size<'i>(
     Ok(SpecifiedBackgroundSize::WidthHeight(width, height))
 }
 
-/// `background-repeat`。CSS2.1の値集合のみ(`round`/`space`等CSS3値・
-/// カンマ区切りの複数背景は非対応)。
+/// `background-repeat`. Only the CSS2.1 value set (CSS3 values such as `round`/`space`,
+/// and comma-separated multiple backgrounds, are not supported).
 fn parse_background_repeat<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<BackgroundRepeat, ParseError<'i, ()>> {
@@ -2231,7 +2231,7 @@ fn parse_background_repeat<'i>(
     })
 }
 
-/// `background-attachment`。`fixed`は`scroll`と同一視して描画する。
+/// `background-attachment`. `fixed` is drawn the same as `scroll`.
 fn parse_background_attachment<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<BackgroundAttachment, ParseError<'i, ()>> {
@@ -2243,12 +2243,12 @@ fn parse_background_attachment<'i>(
     })
 }
 
-/// `background`ショートハンドの簡易実装。
-/// `color`/`image`/`repeat`/`attachment`/`position`(`/`区切りで直後に`size`)
-/// を任意の順序で受け付ける(`border`ショートハンドと同じ「ループでどの種類の
-/// 値か`try_parse`で判定」方式)。仕様通り、指定されなかったロングハンドは全て
-/// 初期値へリセットする(`border`/`list-style`
-/// ショートハンドとは異なり、以前の宣言を引きずらない)。
+/// A simple implementation of the `background` shorthand.
+/// `color`/`image`/`repeat`/`attachment`/`position` (with `size` immediately after a `/`)
+/// are accepted in any order (the same "loop and decide which kind of value it is with
+/// `try_parse`" approach as the `border` shorthand). As the spec requires, every longhand
+/// not given is reset to its initial value (unlike the `border`/`list-style` shorthands,
+/// it does not carry over earlier declarations).
 fn parse_background_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -2322,9 +2322,9 @@ fn parse_font_family<'i>(input: &mut Parser<'i, '_>) -> Result<Vec<String>, Pars
     input.parse_comma_separated(parse_family_name)
 }
 
-/// 単一の`<family-name>`(引用符付き文字列、または空白区切りの識別子の連なり)を
-/// パースする。`font-family`プロパティ(カンマ区切りリスト)と`@font-face`の
-/// `font-family`ディスクリプタ(単一値)の両方から呼ばれる。
+/// Parse a single `<family-name>` (a quoted string, or a run of whitespace-separated
+/// identifiers). Called both from the `font-family` property (a comma-separated list) and
+/// from the `font-family` descriptor of `@font-face` (a single value).
 pub(crate) fn parse_family_name<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<String, ParseError<'i, ()>> {
@@ -2362,7 +2362,7 @@ fn parse_flex_wrap<'i>(input: &mut Parser<'i, '_>) -> Result<FlexWrap, ParseErro
     })
 }
 
-/// `justify-content`。CSS Box Alignment仕様の`safe`/`unsafe`オーバーフローキーワードは非対応。
+/// `justify-content`. The `safe`/`unsafe` overflow keywords from CSS Box Alignment are not supported.
 fn parse_justify_content<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<JustifyContent, ParseError<'i, ()>> {
@@ -2405,7 +2405,7 @@ fn parse_align_content<'i>(input: &mut Parser<'i, '_>) -> Result<AlignContent, P
     })
 }
 
-/// `align-self`。`auto`(初期値、親の`align-items`を使う)を含む。
+/// `align-self`, including `auto` (the initial value, using the parent's `align-items`).
 fn parse_align_self<'i>(input: &mut Parser<'i, '_>) -> Result<AlignSelf, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -2419,8 +2419,8 @@ fn parse_align_self<'i>(input: &mut Parser<'i, '_>) -> Result<AlignSelf, ParseEr
     })
 }
 
-/// `flex-grow`/`flex-shrink`。仕様上負値は無効(パース時点で拒否し、宣言全体を
-/// 無視する既存の挙動に乗せる)。
+/// `flex-grow`/`flex-shrink`. A negative value is invalid per the spec (rejected at parse
+/// time, riding on the existing behaviour of ignoring the whole declaration).
 fn parse_non_negative_number<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>> {
     let value = input.expect_number()?;
     if value < 0.0 {
@@ -2429,7 +2429,7 @@ fn parse_non_negative_number<'i>(input: &mut Parser<'i, '_>) -> Result<f32, Pars
     Ok(value)
 }
 
-/// `flex-basis: auto | content | <length-percentage>`。`content`は`auto`と同一視する。
+/// `flex-basis: auto | content | <length-percentage>`. `content` is treated as `auto`.
 fn parse_flex_basis<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedFlexBasis, ParseError<'i, ()>> {
@@ -2448,9 +2448,9 @@ fn parse_flex_basis<'i>(
     parse_length_percentage(input).map(SpecifiedFlexBasis::LengthPercentage)
 }
 
-/// `flex`ショートハンドの簡易実装。CSS仕様の既定値規則
-/// (`flex: <number>`単独/`<number> <number>`はbasisが省略時0%になり、
-/// `flex: <width>`単独はgrow/shrinkが両方1になる)を再現する。
+/// A simple implementation of the `flex` shorthand. It reproduces the CSS spec's default
+/// rules (a lone `flex: <number>`, or `<number> <number>`, gives an omitted basis of 0%,
+/// while a lone `flex: <width>` gives both grow and shrink a value of 1).
 fn parse_flex_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -2494,9 +2494,9 @@ fn parse_flex_shorthand<'i>(
         return Err(input.new_custom_error(()));
     }
 
-    // basis省略時は0%(`flex: 1`のような数値のみの指定は0%基準で伸縮する、
-    // 仕様通り)。grow省略時(basisのみの指定)は1(仕様通り、通常の
-    // flex-growの初期値0とは異なる)。
+    // With basis omitted it is 0% (a numbers-only setting such as `flex: 1` flexes from a
+    // 0% basis, per the spec). With grow omitted (a basis-only setting) it is 1 (per the
+    // spec, unlike flex-grow's ordinary initial value of 0).
     Ok(vec![
         D::FlexGrow(grow.unwrap_or(1.0)),
         D::FlexShrink(shrink.unwrap_or(1.0)),
@@ -2506,8 +2506,8 @@ fn parse_flex_shorthand<'i>(
     ])
 }
 
-/// `gap`ショートハンド。`<row-gap> <column-gap>?`(`border-spacing`と同じ
-/// 1〜2値パターン)。
+/// The `gap` shorthand. `<row-gap> <column-gap>?` (the same 1-to-2-value pattern as
+/// `border-spacing`).
 fn parse_gap_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -2517,7 +2517,7 @@ fn parse_gap_shorthand<'i>(
     Ok(vec![D::RowGap(row), D::ColumnGap(column)])
 }
 
-/// `transform: none | <transform-function>+`。
+/// `transform: none | <transform-function>+`.
 fn parse_transform<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<SpecifiedTransformFunction>, ParseError<'i, ()>> {
@@ -2537,7 +2537,7 @@ fn parse_transform<'i>(
     Ok(functions)
 }
 
-/// `<transform-function>`1つ分(`translate(...)`等)。
+/// One `<transform-function>` (`translate(...)` and the like).
 fn parse_transform_function<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedTransformFunction, ParseError<'i, ()>> {
@@ -2604,8 +2604,8 @@ fn parse_transform_function<'i>(
     })
 }
 
-/// 角度値(`deg`/`rad`/`grad`/`turn`)をラジアンへ正規化する。単位無しの`0`も
-/// 有効(CSS仕様通り)。
+/// Normalise an angle value (`deg`/`rad`/`grad`/`turn`) to radians. A unitless `0` is valid
+/// too (as the CSS spec says).
 fn parse_angle_radians<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>> {
     let token = input.next()?.clone();
     match token {
@@ -2629,7 +2629,7 @@ fn parse_angle_radians<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError
     }
 }
 
-/// `grid-template-columns`/`grid-template-rows`。
+/// `grid-template-columns`/`grid-template-rows`.
 /// `none | [ <line-names>? <track-size> | <repeat> ]+ <line-names>?`
 fn parse_track_list<'i>(
     input: &mut Parser<'i, '_>,
@@ -2642,7 +2642,7 @@ fn parse_track_list<'i>(
     }
 
     let mut components = Vec::new();
-    // ライン名はトラックの前後に置ける。`components.len() + 1`要素を保つ。
+    // Line names can sit before and after the tracks. Keep `components.len() + 1` entries.
     let mut line_names: Vec<Vec<String>> = vec![parse_line_names(input)];
 
     loop {
@@ -2665,7 +2665,7 @@ fn parse_track_list<'i>(
     })
 }
 
-/// `[a b]`形式のライン名。無ければ空の`Vec`(トラック境界ごとに必ず1要素持つ)。
+/// Line names in `[a b]` form. An empty `Vec` when absent (there is always one entry per track boundary).
 fn parse_line_names(input: &mut Parser<'_, '_>) -> Vec<String> {
     input
         .try_parse(|input| {
@@ -2681,7 +2681,7 @@ fn parse_line_names(input: &mut Parser<'_, '_>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// `repeat( [ <integer> | auto-fill | auto-fit ] , <track-list> )`。
+/// `repeat( [ <integer> | auto-fill | auto-fit ] , <track-list> )`.
 fn parse_track_repeat<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedTrackComponent, ParseError<'i, ()>> {
@@ -2720,7 +2720,7 @@ fn parse_track_repeat<'i>(
 }
 
 /// `<track-size> = <track-breadth> | minmax(<inflexible>, <track-breadth>) |
-/// fit-content(<length-percentage>)`。
+/// `fit-content(<length-percentage>)`.
 fn parse_track_size<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedTrackSize, ParseError<'i, ()>> {
@@ -2730,7 +2730,7 @@ fn parse_track_size<'i>(
     {
         return input.parse_nested_block(|input| {
             let min = parse_track_breadth(input)?;
-            // CSS仕様: minmax()の第1引数に`fr`は書けない。
+            // Per the CSS spec, `fr` cannot be the first argument of minmax().
             if matches!(min, SpecifiedTrackBreadth::Fr(_)) {
                 return Err(input.new_custom_error(()));
             }
@@ -2752,7 +2752,7 @@ fn parse_track_size<'i>(
     Ok(SpecifiedTrackSize::Breadth(parse_track_breadth(input)?))
 }
 
-/// `<track-breadth> = <length-percentage> | <flex> | auto | min-content | max-content`。
+/// `<track-breadth> = <length-percentage> | <flex> | auto | min-content | max-content`.
 fn parse_track_breadth<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedTrackBreadth, ParseError<'i, ()>> {
@@ -2764,7 +2764,7 @@ fn parse_track_breadth<'i>(
             _ => Err(input.new_custom_error(())),
         };
     }
-    // `<flex>`(`1fr`)。cssparserは`fr`付き数値をDimensionトークンとして返す。
+    // `<flex>` (`1fr`). cssparser returns a number with `fr` as a Dimension token.
     if let Ok(fr) = input.try_parse(|input| -> Result<f32, ParseError<'i, ()>> {
         let token = input.next()?.clone();
         match token {
@@ -2785,13 +2785,13 @@ fn parse_track_breadth<'i>(
     match parse_length_percentage(input)? {
         SpecifiedLengthPercentage::Length(length) => Ok(SpecifiedTrackBreadth::Length(length)),
         SpecifiedLengthPercentage::Percentage(v) => Ok(SpecifiedTrackBreadth::Percentage(v)),
-        // `calc()`のトラックサイズは非対応(taffyへ渡す型が複合値を持たない、
-        // 既知の簡略化)。
+        // A `calc()` track size is not supported (the type handed to taffy has no compound
+        // value; a known simplification).
         SpecifiedLengthPercentage::Calc(_) => Err(input.new_custom_error(())),
     }
 }
 
-/// `grid-auto-columns`/`grid-auto-rows`。`<track-size>+`。
+/// `grid-auto-columns`/`grid-auto-rows`. `<track-size>+`.
 fn parse_auto_track_list<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<SpecifiedTrackSize>, ParseError<'i, ()>> {
@@ -2805,7 +2805,7 @@ fn parse_auto_track_list<'i>(
     Ok(sizes)
 }
 
-/// `grid-auto-flow: [ row | column ] || dense`。
+/// `grid-auto-flow: [ row | column ] || dense`.
 fn parse_grid_auto_flow<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<GridAutoFlow, ParseError<'i, ()>> {
@@ -2833,7 +2833,7 @@ fn parse_grid_auto_flow<'i>(
     })
 }
 
-/// `grid-row-start`等。
+/// `grid-row-start` and friends.
 /// `auto | <integer> | span <integer> | <custom-ident> | span <custom-ident>`
 fn parse_grid_line<'i>(input: &mut Parser<'i, '_>) -> Result<GridLine, ParseError<'i, ()>> {
     if input
@@ -2846,7 +2846,7 @@ fn parse_grid_line<'i>(input: &mut Parser<'i, '_>) -> Result<GridLine, ParseErro
         .try_parse(|input| input.expect_ident_matching("span"))
         .is_ok()
     {
-        // `span <integer>`と`span <custom-ident> <integer>?`のどちらも受け付ける。
+        // Accepts both `span <integer>` and `span <custom-ident> <integer>?`.
         if let Ok(count) = input.try_parse(|input| input.expect_integer()) {
             if count < 1 {
                 return Err(input.new_custom_error(()));
@@ -2861,7 +2861,7 @@ fn parse_grid_line<'i>(input: &mut Parser<'i, '_>) -> Result<GridLine, ParseErro
         return Ok(GridLine::NamedSpan(name, count as u16));
     }
     if let Ok(line) = input.try_parse(|input| input.expect_integer()) {
-        // `0`は無効(CSS仕様、ライン番号は1始まりで負値は末尾から)。
+        // `0` is invalid (per the CSS spec, line numbers start at 1 and negatives count from the end).
         if line == 0 {
             return Err(input.new_custom_error(()));
         }
@@ -2870,7 +2870,7 @@ fn parse_grid_line<'i>(input: &mut Parser<'i, '_>) -> Result<GridLine, ParseErro
     Ok(GridLine::Named(input.expect_ident()?.as_ref().to_string()))
 }
 
-/// `grid-row: <start> [/ <end>]?`。省略時の終端は`auto`(仕様通り)。
+/// `grid-row: <start> [/ <end>]?`. An omitted end is `auto` (as the spec says).
 fn parse_grid_row_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -2894,8 +2894,8 @@ fn parse_grid_line_pair<'i>(
     let end = if input.try_parse(|input| input.expect_delim('/')).is_ok() {
         parse_grid_line(input)?
     } else {
-        // `grid-row: foo`のように名前付きラインを1つだけ書いた場合、終端も同じ
-        // 名前になる(CSS仕様)。それ以外は`auto`。
+        // When a single named line is written, as in `grid-row: foo`, the end takes the same
+        // name (per the CSS spec). Otherwise it is `auto`.
         match &start {
             GridLine::Named(name) => GridLine::Named(name.clone()),
             _ => GridLine::Auto,
@@ -2904,7 +2904,7 @@ fn parse_grid_line_pair<'i>(
     Ok((start, end))
 }
 
-/// `grid-area: <row-start> [/ <col-start> [/ <row-end> [/ <col-end>]]]`。
+/// `grid-area: <row-start> [/ <col-start> [/ <row-end> [/ <col-end>]]]`.
 fn parse_grid_area_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -2916,8 +2916,8 @@ fn parse_grid_area_shorthand<'i>(
         slots.push(parse_grid_line(input)?);
     }
 
-    // 省略されたスロットは、対応する開始側が名前付きラインならその名前、
-    // それ以外は`auto`になる(CSS仕様)。
+    // An omitted slot takes the name of the corresponding start if that is a named line, and
+    // `auto` otherwise (per the CSS spec).
     let fallback = |line: &GridLine| match line {
         GridLine::Named(name) => GridLine::Named(name.clone()),
         _ => GridLine::Auto,
@@ -2943,8 +2943,8 @@ fn parse_grid_area_shorthand<'i>(
     ])
 }
 
-/// `grid-template-areas: none | <string>+`。各行の列数が揃っていること・同じ
-/// 名前のセルが矩形を成すことを検証し、違反したら宣言ごと無視する(`Err`)。
+/// `grid-template-areas: none | <string>+`. Checks that every row has the same number of
+/// columns and that cells with the same name form a rectangle, ignoring the whole declaration (`Err`) on a violation.
 fn parse_grid_template_areas<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<GridArea>, ParseError<'i, ()>> {
@@ -2968,12 +2968,12 @@ fn parse_grid_template_areas<'i>(
         return Err(input.new_custom_error(()));
     }
 
-    // 名前ごとに出現範囲(最小/最大の行・列)を集め、その矩形が隙間なく
-    // 埋まっているかを検証する。
+    // Collect the extent of each name (its minimum and maximum row and column) and check
+    // that the resulting rectangle is filled with no gaps.
     let mut bounds: Vec<(String, usize, usize, usize, usize)> = Vec::new();
     for (r, row) in rows.iter().enumerate() {
         for (c, cell) in row.iter().enumerate() {
-            // `.`(1個以上の連続)は名前なしセル。
+            // A `.` (one or more in a row) is an unnamed cell.
             if cell.chars().all(|ch| ch == '.') {
                 continue;
             }
@@ -2993,7 +2993,7 @@ fn parse_grid_template_areas<'i>(
         for row in rows.iter().take(row_end + 1).skip(*row_start) {
             for cell in row.iter().take(column_end + 1).skip(*column_start) {
                 if cell != name {
-                    // 飛び地・L字形(矩形でない)は無効。
+                    // Disjoint or L-shaped (non-rectangular) areas are invalid.
                     return Err(input.new_custom_error(()));
                 }
             }
@@ -3005,10 +3005,10 @@ fn parse_grid_template_areas<'i>(
         .map(
             |(name, row_start, row_end, column_start, column_end)| GridArea {
                 name,
-                // taffyの`GridTemplateArea`は1-indexedのグリッドライン番号で
-                // 持つ(エリアの`-start`/`-end`暗黙ライン名がこの番号で登録される)。
-                // 0-indexedのセル座標から、開始は+1、終端は+2(終端セルの次の
-                // ライン)へ変換する。
+                // taffy's `GridTemplateArea` holds 1-indexed grid line numbers (the area's
+                // implicit `-start`/`-end` line names are registered with those numbers).
+                // From 0-indexed cell coordinates, the start converts with +1 and the end
+                // with +2 (the line after the final cell).
                 row_start: row_start as u16 + 1,
                 row_end: row_end as u16 + 2,
                 column_start: column_start as u16 + 1,
@@ -3018,8 +3018,8 @@ fn parse_grid_template_areas<'i>(
         .collect())
 }
 
-/// `text-shadow: none | <shadow>#`。
-/// `box-shadow`と違いspread・insetを持たない。
+/// `text-shadow: none | <shadow>#`.
+/// Unlike `box-shadow` it has no spread and no inset.
 fn parse_text_shadow<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<SpecifiedTextShadow>, ParseError<'i, ()>> {
@@ -3032,7 +3032,7 @@ fn parse_text_shadow<'i>(
     input.parse_comma_separated(parse_single_text_shadow)
 }
 
-/// `<shadow>`1つ分。`<color>`は長さの前後どちらにも書ける(CSS仕様)。
+/// One `<shadow>`. The `<color>` may be written before or after the lengths (per the CSS spec).
 fn parse_single_text_shadow<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<SpecifiedTextShadow, ParseError<'i, ()>> {
@@ -3066,7 +3066,7 @@ fn parse_single_text_shadow<'i>(
     })
 }
 
-/// `<length>{2,3}`(offset-x offset-y [blur-radius])。blur省略時は`0`。
+/// `<length>{2,3}` (offset-x offset-y [blur-radius]). An omitted blur is `0`.
 fn parse_text_shadow_lengths<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<(SpecifiedLength, SpecifiedLength, SpecifiedLength), ParseError<'i, ()>> {
@@ -3078,7 +3078,7 @@ fn parse_text_shadow_lengths<'i>(
     Ok((offset_x, offset_y, blur_radius))
 }
 
-/// `text-overflow: clip | ellipsis`。
+/// `text-overflow: clip | ellipsis`.
 fn parse_text_overflow<'i>(input: &mut Parser<'i, '_>) -> Result<TextOverflow, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -3088,9 +3088,9 @@ fn parse_text_overflow<'i>(input: &mut Parser<'i, '_>) -> Result<TextOverflow, P
     })
 }
 
-/// `word-break: normal | break-all | keep-all`。`break-word`(非推奨値)は
-/// `overflow-wrap: break-word`相当だが、プロパティをまたぐ変換になるため受け
-/// 付けない(既知の簡略化)。
+/// `word-break: normal | break-all | keep-all`. `break-word` (a deprecated value) is
+/// equivalent to `overflow-wrap: break-word`, but that would be a conversion across
+/// properties, so it is not accepted (a known simplification).
 fn parse_word_break<'i>(input: &mut Parser<'i, '_>) -> Result<WordBreak, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -3101,19 +3101,19 @@ fn parse_word_break<'i>(input: &mut Parser<'i, '_>) -> Result<WordBreak, ParseEr
     })
 }
 
-/// `overflow-wrap: normal | break-word | anywhere`。
+/// `overflow-wrap: normal | break-word | anywhere`.
 fn parse_overflow_wrap<'i>(input: &mut Parser<'i, '_>) -> Result<OverflowWrap, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
         "normal" => OverflowWrap::Normal,
-        // `anywhere`との差はmin-content幅への影響のみのため同一視する。
+        // It differs from `anywhere` only in its effect on min-content width, so they are treated alike.
         "break-word" | "anywhere" => OverflowWrap::BreakWord,
         _ => return Err(input.new_custom_error(())),
     })
 }
 
-/// `hyphens: none | manual | auto`。`auto`は
-/// 辞書を持たないため`manual`と同じ挙動になる。
+/// `hyphens: none | manual | auto`. `auto` behaves the same as `manual`, since we have no
+/// dictionary.
 fn parse_hyphens<'i>(input: &mut Parser<'i, '_>) -> Result<Hyphens, ParseError<'i, ()>> {
     let ident = input.expect_ident()?.clone();
     Ok(match_ignore_ascii_case! { &ident,
@@ -3123,20 +3123,20 @@ fn parse_hyphens<'i>(input: &mut Parser<'i, '_>) -> Result<Hyphens, ParseError<'
     })
 }
 
-/// `text-emphasis-style`。
-/// `none | [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] | <string>`。
+/// `text-emphasis-style`.
+/// `none | [ filled | open ] || [ dot | circle | double-circle | triangle | sesame ] | <string>`.
 fn parse_text_emphasis_style<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<EmphasisStyle, ParseError<'i, ()>> {
     if let Ok(s) = input.try_parse(|input| input.expect_string_cloned()) {
-        // `<string>`は先頭1文字だけを使う(仕様通り)。空文字列は無効。
+        // Only the first character of a `<string>` is used (as the spec says). An empty string is invalid.
         let Some(ch) = s.chars().next() else {
             return Err(input.new_custom_error(()));
         };
         return Ok(EmphasisStyle::String(ch));
     }
 
-    /// このプロパティが解釈できたキーワード。
+    /// The keywords this property could interpret.
     enum Keyword {
         None,
         Filled(bool),
@@ -3146,10 +3146,10 @@ fn parse_text_emphasis_style<'i>(
     let mut filled = None;
     let mut shape = None;
     loop {
-        // 解釈できないキーワード(`text-emphasis`ショートハンドの`<color>`など)は
-        // `try_parse`ごと巻き戻してループを抜ける。ここで`Err`を返してしまうと
-        // `text-emphasis: filled dot red`のような正当な指定でスタイル側が
-        // 丸ごと落ちる。
+        // A keyword we cannot interpret (the `<color>` of the `text-emphasis` shorthand, say)
+        // rewinds the whole `try_parse` and leaves the loop. Returning `Err` here would drop
+        // the entire style for a legitimate setting such as
+        // `text-emphasis: filled dot red`.
         let Ok(keyword) = input.try_parse(|input| -> Result<Keyword, ParseError<'i, ()>> {
             let ident = input.expect_ident()?.clone();
             Ok(match_ignore_ascii_case! { &ident,
@@ -3168,7 +3168,7 @@ fn parse_text_emphasis_style<'i>(
         };
         match keyword {
             Keyword::None => return Ok(EmphasisStyle::None),
-            // 同じ種類のキーワードを2回書くのは不正(`filled open`等)。
+            // Writing the same kind of keyword twice is invalid (`filled open`, say).
             Keyword::Filled(_) if filled.is_some() => return Err(input.new_custom_error(())),
             Keyword::Shape(_) if shape.is_some() => return Err(input.new_custom_error(())),
             Keyword::Filled(v) => filled = Some(v),
@@ -3180,14 +3180,14 @@ fn parse_text_emphasis_style<'i>(
         return Err(input.new_custom_error(()));
     }
     Ok(EmphasisStyle::Shape {
-        // 形状省略時の初期値は`dot`、塗り指定省略時は`filled`(仕様通り)。
+        // With the shape omitted the initial value is `dot`, and with the fill omitted it is `filled` (as the spec says).
         shape: shape.unwrap_or(EmphasisShape::Dot),
         filled: filled.unwrap_or(true),
     })
 }
 
-/// `text-emphasis-position`。横書きでは`over`/`under`のみが意味を持つため、
-/// `right`/`left`は受理した上で読み飛ばす。
+/// `text-emphasis-position`. In horizontal writing only `over`/`under` mean anything, so
+/// `right`/`left` are accepted and then skipped.
 fn parse_text_emphasis_position<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<EmphasisPosition, ParseError<'i, ()>> {
@@ -3206,8 +3206,8 @@ fn parse_text_emphasis_position<'i>(
     position.ok_or_else(|| input.new_custom_error(()))
 }
 
-/// `text-emphasis`ショートハンド(`<style> || <color>`)。指定されなかった側は
-/// 初期値へリセットする(`background`ショートハンドと同じ方針)。
+/// The `text-emphasis` shorthand (`<style> || <color>`). Whichever side is not given is
+/// reset to its initial value (the same policy as the `background` shorthand).
 fn parse_text_emphasis_shorthand<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<PropertyDeclaration>, ParseError<'i, ()>> {
@@ -3240,7 +3240,7 @@ fn parse_text_emphasis_shorthand<'i>(
     ])
 }
 
-/// `opacity: <number> | <percentage>`。0〜1にクランプする。
+/// `opacity: <number> | <percentage>`. Clamped to 0-1.
 fn parse_opacity<'i>(input: &mut Parser<'i, '_>) -> Result<f32, ParseError<'i, ()>> {
     let token = input.next()?.clone();
     let value = match token {

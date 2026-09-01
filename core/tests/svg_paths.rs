@@ -1,13 +1,13 @@
-//! SVG参照のパス/URL解決のE2Eテスト。
+//! E2E tests for path and URL resolution of SVG references.
 //!
-//! SVGはラスタ画像と同じ`img::fetch`を通るので、封じ込め(基準ディレクトリ・
-//! `--allow`・`--disable-local-file-access`)とリモート取得の可否は共通の
-//! はず。「共通のはず」を実際に確かめておかないと、SVGだけ別経路で読めて
-//! しまっていても気付けない。読み出しに関わる部分なので、通る場合だけでなく
-//! **拒否される場合**を同じ密度で見る。
+//! An SVG goes through the same `img::fetch` as a raster image, so containment (the base
+//! directory, `--allow`, `--disable-local-file-access`) and whether remote fetching is
+//! allowed should be shared. Without really checking that "should be", an SVG being readable
+//! through some other path would go unnoticed. This concerns reading, so the **refused**
+//! cases are covered as thoroughly as the permitted ones.
 //!
-//! フォーマットの判定はバイト列で行う(拡張子や宣言mime typeは見ない)ので、
-//! そこも併せて確認する。
+//! Format identification is done from the bytes (never the extension or the declared mime
+//! type), which is checked here too.
 
 #![cfg(feature = "svg")]
 
@@ -21,7 +21,7 @@ const PNG_PATH: &str = concat!(
 );
 const BIN: &str = env!("CARGO_BIN_EXE_sghtmltopdf");
 
-/// 20x10の最小SVG。青い矩形1つ。
+/// A minimal 20x10 SVG: one blue rectangle.
 const SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10">
   <rect width="20" height="10" fill="#0000ff"/>
 </svg>"##;
@@ -33,17 +33,17 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// SVGがベクタとして埋め込まれたか(Form XObjectになっているか)。
+/// Whether the SVG was embedded as vectors (that is, became a Form XObject).
 fn embedded_as_vector(pdf: &[u8]) -> bool {
     count_occurrences(pdf, b"/Subtype /Form") > 0
 }
 
-/// ラスタ画像として埋め込まれたか。
+/// Whether it was embedded as a raster image.
 fn embedded_as_raster(pdf: &[u8]) -> bool {
     count_occurrences(pdf, b"/Subtype /Image") > 0
 }
 
-/// テスト1件分の作業ディレクトリ。
+/// The working directory for one test.
 struct Fixture {
     dir: PathBuf,
 }
@@ -74,7 +74,7 @@ impl Fixture {
         self.dir.join(relative)
     }
 
-    /// `html`(このディレクトリ配下の相対パス)をPDFへ変換する。
+    /// Convert `html` (a relative path under this directory) to PDF.
     fn convert(&self, html: &str, extra: &[&str]) -> Outcome {
         let output = self.dir.join("out.pdf");
         let result = Command::new(BIN)
@@ -92,9 +92,9 @@ impl Fixture {
         }
     }
 
-    /// 拒否された理由の文言。`--load-media-error-handling abort`にすると
-    /// 取得できなかった理由がそのままエラーとして出るので、それを読む
-    /// (既定の`ignore`は黙って続けるため理由が見えない)。
+    /// The text of the reason it was refused. With `--load-media-error-handling abort` the
+    /// reason it could not be fetched comes out as the error itself, so that is what is read
+    /// (the default `ignore` carries on silently and shows no reason).
     fn refusal_reason(&self, html: &str, extra: &[&str]) -> String {
         let mut args = extra.to_vec();
         args.extend(["--load-media-error-handling", "abort"]);
@@ -121,7 +121,7 @@ struct Outcome {
 }
 
 impl Outcome {
-    /// 変換は成功し、SVGがベクタとして入っていること。
+    /// The conversion succeeds and the SVG is in as vectors.
     fn assert_rendered(&self) {
         assert!(
             self.success,
@@ -136,11 +136,11 @@ impl Outcome {
         );
     }
 
-    /// 変換自体は成功するが、SVGは読まれず描画もされないこと。
+    /// The conversion itself succeeds, but the SVG is neither read nor drawn.
     ///
-    /// 取得失敗の既定は`--load-media-error-handling ignore`で、ラスタ画像と
-    /// 同じく黙って空の置換要素になる(文書全体は止めない)。理由まで確かめたい
-    /// ときは[`Fixture::refusal_reason`]を使う。
+    /// The default on a failed fetch is `--load-media-error-handling ignore`, which silently
+    /// becomes an empty replaced element as with a raster image (the whole document carries
+    /// on). Use [`Fixture::refusal_reason`] to check the reason too.
     fn assert_refused(&self) {
         assert!(
             self.success,
@@ -160,7 +160,7 @@ fn html_with(src: &str) -> String {
     format!(r#"<body style="margin:0"><img src="{src}"></body>"#)
 }
 
-// ===== 基準ディレクトリの中 =====
+// ===== Inside the base directory =====
 
 #[test]
 fn a_plain_relative_reference_resolves_against_the_documents_directory() {
@@ -178,14 +178,14 @@ fn a_reference_into_a_subdirectory_resolves() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// `..`を含んでいても基準ディレクトリの中で収まるなら通す。
+/// A `..` is allowed as long as it stays inside the base directory.
 #[test]
 fn a_parent_reference_that_stays_inside_the_base_directory_resolves() {
     let fx = Fixture::new("inside-parent");
     fx.write("logo.svg", SVG);
     fx.write("assets/in.html", &html_with("../logo.svg"));
-    // base_dirは入力HTMLのあるディレクトリ(assets/)になるため、
-    // `../logo.svg`はその外へ出る。`--allow`で基準ディレクトリを明示する。
+    // base_dir is the directory holding the input HTML (assets/), so `../logo.svg` goes
+    // outside it. `--allow` names the base directory explicitly.
     fx.convert("assets/in.html", &["--allow", fx.dir.to_str().unwrap()])
         .assert_rendered();
 }
@@ -198,8 +198,8 @@ fn a_dot_segment_inside_the_base_directory_resolves() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// ルート相対(`/logo.svg`)は「サイトルート」=基準ディレクトリとして解決する
-/// (OSのファイルシステムルートを読みに行かない)。
+/// A root-relative path (`/logo.svg`) resolves against the "site root", that is the base
+/// directory (it does not read from the OS filesystem root).
 #[test]
 fn a_root_relative_reference_is_resolved_against_the_base_directory() {
     let fx = Fixture::new("root-relative");
@@ -219,9 +219,9 @@ fn base_href_prefixes_a_relative_reference() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-// ===== 基準ディレクトリの外・アクセス制御 =====
+// ===== Outside the base directory, and access control =====
 
-/// `<img src="../../secret.svg">`のような参照は既定で拒否する。
+/// A reference such as `<img src="../../secret.svg">` is refused by default.
 #[test]
 fn a_reference_that_escapes_the_base_directory_is_refused() {
     let fx = Fixture::new("escape");
@@ -230,7 +230,7 @@ fn a_reference_that_escapes_the_base_directory_is_refused() {
     fx.convert("public/in.html", &[]).assert_refused();
     let reason = fx.refusal_reason("public/in.html", &[]);
     assert!(
-        reason.contains("基準ディレクトリ"),
+        reason.contains("base directory"),
         "the reason should name the containment, got: {reason}"
     );
 }
@@ -243,7 +243,7 @@ fn stacked_parent_segments_do_not_slip_past_the_containment() {
     fx.convert("public/deep/in.html", &[]).assert_refused();
 }
 
-/// `--allow`で明示したディレクトリの中なら、基準ディレクトリの外でも読める。
+/// Inside a directory named with `--allow`, it is readable even outside the base directory.
 #[test]
 fn allow_permits_a_reference_outside_the_base_directory() {
     let fx = Fixture::new("allow");
@@ -256,7 +256,7 @@ fn allow_permits_a_reference_outside_the_base_directory() {
     .assert_rendered();
 }
 
-/// `--allow`を付けても、指定したディレクトリの外は読めない。
+/// Even with `--allow`, anything outside the named directory is unreadable.
 #[test]
 fn allow_does_not_permit_a_reference_outside_the_allowed_directory() {
     let fx = Fixture::new("allow-elsewhere");
@@ -273,8 +273,8 @@ fn allow_does_not_permit_a_reference_outside_the_allowed_directory() {
     );
 }
 
-/// `--disable-local-file-access`は、基準ディレクトリの中の参照も拒否する
-/// (サーバモードの既定)。
+/// `--disable-local-file-access` refuses even a reference inside the base directory
+/// (the default in server mode).
 #[test]
 fn disable_local_file_access_refuses_even_a_reference_inside_the_base_directory() {
     let fx = Fixture::new("no-local");
@@ -284,12 +284,12 @@ fn disable_local_file_access_refuses_even_a_reference_inside_the_base_directory(
     fx.convert("in.html", &flag).assert_refused();
     let reason = fx.refusal_reason("in.html", &flag);
     assert!(
-        reason.contains("ローカルファイル"),
+        reason.contains("local files"),
         "the reason should say local file access is off, got: {reason}"
     );
 }
 
-/// リモート取得は既定で無効。ネットワークへは出ないまま拒否される。
+/// Remote fetching is disabled by default. It is refused without ever going to the network.
 #[test]
 fn a_remote_reference_is_refused_unless_remote_assets_are_allowed() {
     let fx = Fixture::new("remote");
@@ -302,7 +302,7 @@ fn a_remote_reference_is_refused_unless_remote_assets_are_allowed() {
     );
 }
 
-/// 取得できなかったときに文書ごと失敗させたい場合。
+/// For when a failed fetch should fail the whole document.
 #[test]
 fn load_media_error_handling_abort_fails_the_conversion_for_an_unreachable_svg() {
     let fx = Fixture::new("abort");
@@ -315,9 +315,9 @@ fn load_media_error_handling_abort_fails_the_conversion_for_an_unreachable_svg()
     );
 }
 
-// ===== フォーマット判定はバイト列で行う =====
+// ===== Format identification is done from the bytes =====
 
-/// 拡張子は見ない。`.txt`の中身がSVGならSVGとして描く。
+/// The extension is ignored. A `.txt` whose contents are SVG is drawn as SVG.
 #[test]
 fn the_extension_does_not_decide_the_format() {
     let fx = Fixture::new("ext-svg");
@@ -326,7 +326,7 @@ fn the_extension_does_not_decide_the_format() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// 逆も同じ。`.svg`の中身がPNGならラスタ画像として描く。
+/// And the reverse. A `.svg` whose contents are PNG is drawn as a raster image.
 #[test]
 fn a_png_named_svg_is_still_embedded_as_a_raster_image() {
     let fx = Fixture::new("png-named-svg");
@@ -345,7 +345,7 @@ fn a_png_named_svg_is_still_embedded_as_a_raster_image() {
     );
 }
 
-/// `data:`URIも同じ経路(バイト列を見る)。宣言mime typeが間違っていても通る。
+/// A `data:` URI takes the same path (the bytes decide). It works even with the wrong declared mime type.
 #[test]
 fn a_data_uri_svg_is_rendered_even_when_the_declared_mime_type_is_wrong() {
     use base64::engine::general_purpose::STANDARD;
@@ -353,7 +353,7 @@ fn a_data_uri_svg_is_rendered_even_when_the_declared_mime_type_is_wrong() {
 
     let fx = Fixture::new("data-uri");
     let encoded = STANDARD.encode(SVG);
-    // わざと`image/png`と名乗らせる。
+    // Deliberately declared as `image/png`.
     fx.write(
         "in.html",
         &html_with(&format!("data:image/png;base64,{encoded}")),
@@ -361,8 +361,8 @@ fn a_data_uri_svg_is_rendered_even_when_the_declared_mime_type_is_wrong() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// `%XX`をURLエンコードする(テスト用の最小実装。RFC 3986の
-/// unreserved以外をすべてエスケープする)。
+/// Percent-encode as `%XX` (a minimal implementation for the tests, escaping everything
+/// outside RFC 3986's unreserved set).
 fn percent_encode(value: &str) -> String {
     let mut out = String::new();
     for byte in value.as_bytes() {
@@ -376,8 +376,8 @@ fn percent_encode(value: &str) -> String {
     out
 }
 
-/// SVGのdata URIは`;base64`ではなくパーセントエンコードで書くのが一般的。
-/// base64しか受けないと、この最も普通の書き方が通らない。
+/// An SVG data URI is normally written percent-encoded rather than with `;base64`.
+/// Accepting only base64 would reject this, the most ordinary form.
 #[test]
 fn a_percent_encoded_svg_data_uri_is_rendered() {
     let fx = Fixture::new("data-uri-percent");
@@ -388,8 +388,8 @@ fn a_percent_encoded_svg_data_uri_is_rendered() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// `;utf8,`のような慣習的なパラメータが付いていても、`;base64`が無ければ
-/// パーセントエンコードとして読む。
+/// Even with a conventional parameter such as `;utf8,`, it is read as percent-encoded when
+/// there is no `;base64`.
 #[test]
 fn a_data_uri_with_a_charset_style_parameter_but_no_base64_is_rendered() {
     let fx = Fixture::new("data-uri-utf8");
@@ -410,7 +410,7 @@ fn a_data_uri_with_a_charset_style_parameter_but_no_base64_is_rendered() {
     charset.convert("in.html", &[]).assert_rendered();
 }
 
-/// CSSの`url()`の中でも同じ(`background-image`は`<img src>`と同じ経路を通る)。
+/// The same inside a CSS `url()` (`background-image` takes the same path as `<img src>`).
 #[test]
 fn a_percent_encoded_svg_data_uri_works_in_a_css_url() {
     let fx = Fixture::new("data-uri-css");
@@ -426,9 +426,9 @@ fn a_percent_encoded_svg_data_uri_works_in_a_css_url() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// エンコードされていない生のSVGも通す(空白を落とさないことの確認も兼ねる。
-/// 落とすと`<svgxmlns=...>`になってパースできない)。HTML属性の中では引用符が
-/// 衝突するので、属性は単引用符で囲む。
+/// Raw, unencoded SVG works too (which also confirms whitespace is not dropped: dropping it
+/// would give `<svgxmlns=...>`, which cannot be parsed). Quotes clash inside an HTML
+/// attribute, so the attribute is single-quoted.
 #[test]
 fn an_unencoded_svg_data_uri_is_rendered() {
     let fx = Fixture::new("data-uri-raw");
@@ -439,8 +439,8 @@ fn an_unencoded_svg_data_uri_is_rendered() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// gzip圧縮されたSVG(`.svgz`)。マジックバイト`1f 8b`で嗅ぎ分け、
-/// 展開はusvgに任せる。
+/// A gzip-compressed SVG (`.svgz`). It is sniffed by the magic bytes `1f 8b` and the
+/// decompression is left to usvg.
 #[test]
 fn a_gzipped_svgz_is_rendered() {
     use std::io::Write;
@@ -456,7 +456,7 @@ fn a_gzipped_svgz_is_rendered() {
     fx.convert("in.html", &[]).assert_rendered();
 }
 
-/// `background-image: url(...)`も`<img src>`と同じ解決・封じ込めを通る。
+/// `background-image: url(...)` goes through the same resolution and containment as `<img src>`.
 #[test]
 fn a_background_image_reference_uses_the_same_containment() {
     let fx = Fixture::new("background");
@@ -478,9 +478,9 @@ fn a_background_image_reference_uses_the_same_containment() {
     ok.convert("in.html", &[]).assert_rendered();
 }
 
-/// 同じSVGを別の書き方で参照しても、解決後が同じファイルなら取得は1回。
-/// (`src`文字列がキーなので、書き方が違えば別エントリになる。ここで見たいのは
-/// 「同じ文字列なら1回」の方。)
+/// Referencing the same SVG two different ways still fetches it once, as long as they
+/// resolve to the same file. (The `src` string is the key, so a different spelling makes a
+/// separate entry. What is checked here is the "same string, one fetch" side.)
 #[test]
 fn the_same_reference_is_fetched_once() {
     let fx = Fixture::new("dedup");
@@ -500,7 +500,7 @@ fn the_same_reference_is_fetched_once() {
     );
 }
 
-/// 参照先がディレクトリだった場合に、変換ごと落ちたりしないこと。
+/// Pointing at a directory must not bring the whole conversion down.
 #[test]
 fn a_reference_to_a_directory_is_refused_without_crashing() {
     let fx = Fixture::new("dir-ref");
@@ -509,7 +509,7 @@ fn a_reference_to_a_directory_is_refused_without_crashing() {
     fx.convert("in.html", &[]).assert_refused();
 }
 
-/// 空ファイルもSVGとしては解釈できない。警告して先へ進む。
+/// An empty file cannot be interpreted as SVG either. It warns and carries on.
 #[test]
 fn an_empty_file_is_refused_without_crashing() {
     let fx = Fixture::new("empty");

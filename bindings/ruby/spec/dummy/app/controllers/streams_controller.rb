@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-# 確定したページから順にRackのレスポンスへ流す。
+# Stream to the Rack response page by page as they settle.
 #
-# `render pdf:`のレンダラは組み上がったPDFを`send_data`で一括返却するので、
-# 逐次で返したい場合は`ActionController::Live`とブロック付き`render`を
-# 直接組み合わせる。
+# The `render pdf:` renderer returns the assembled PDF in one go with `send_data`, so to
+# return it incrementally you combine `ActionController::Live` with a block-taking `render`
+# directly.
 class StreamsController < ActionController::Base
   include ActionController::Live
 

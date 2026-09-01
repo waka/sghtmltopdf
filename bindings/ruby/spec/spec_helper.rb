@@ -4,16 +4,15 @@ require "sghtmltopdf"
 
 Dir[File.join(__dir__, "support", "**", "*.rb")].sort.each { |file| require file }
 
-# Ruby 4.0でbenchmarkが同梱されなくなったため、依存を増やさず自前で測る。
+# benchmark is no longer bundled in Ruby 4.0, so we measure it ourselves rather than adding a dependency.
 def elapsed_seconds
   started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   yield
   Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
 end
 
-# PDFの`/CreationDate`とtrailerの`/ID`には実行時刻が入る(どちらも固定長
-# なので他のオフセットには影響しない)。バイト列を比べるときはここを固定して
-# から比較する。
+# The PDF's `/CreationDate` and the trailer's `/ID` carry the time of the run (both are fixed
+# length, so no other offset is affected). They are pinned before comparing bytes.
 def normalize(pdf)
   pdf.gsub(/D:\d{14}Z/, "D:19700101000000Z")
      .gsub(/\/ID \[<\h{32}> <\h{32}>\]/, "/ID [<#{'0' * 32}> <#{'0' * 32}>]")

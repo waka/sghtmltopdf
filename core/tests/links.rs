@@ -1,8 +1,8 @@
-//! `<a href>`のPDFリンク注釈のE2Eテスト。
+//! E2E tests for the PDF link annotations of `<a href>`.
 //!
-//! 生成したPDFのバイト列から`/Annots`・`/URI`・`/Dest`・`/Dests`を読み出して
-//! 検証する(注釈は辞書オブジェクトなので、Flate圧縮されるコンテンツ
-//! ストリームと違ってそのまま検索できる)。
+//! They read `/Annots`, `/URI`, `/Dest` and `/Dests` out of the generated PDF bytes and
+//! check them (an annotation is a dictionary object, so unlike a Flate-compressed content
+//! stream it can be searched directly).
 
 use std::path::PathBuf;
 
@@ -103,7 +103,7 @@ fn an_internal_anchor_becomes_a_named_destination() {
 
 #[test]
 fn a_forward_reference_to_a_later_page_resolves() {
-    // 目次から本文へのリンク。宛先はリンクより後のページにある。
+    // A link from the table of contents into the body. The destination is on a later page than the link.
     let bytes = build_pdf(
         r##"<p><a href="#body">go to the body</a></p>
            <p id="body" style="break-before: page;">the body</p>"##,
@@ -130,8 +130,8 @@ fn an_a_name_anchor_is_also_a_destination() {
         r##"<p><a href="#legacy">jump</a></p><p><a name="legacy">target</a></p>"##,
         Mode::Batch,
     );
-    // `<a name>`自身はインライン要素でボックスを持たないため位置を特定できず、
-    // 宛先は生成されない(既知の限界)。リンク側は書かれる。
+    // An `<a name>` is an inline element with no box of its own, so its position cannot be
+    // determined and no destination is generated (a known limitation). The link side is still written.
     assert!(count_occurrences(&bytes, b"/Dest /a_legacy") >= 1);
 }
 

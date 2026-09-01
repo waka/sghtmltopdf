@@ -1,12 +1,12 @@
-//! アリーナ(`Vec<Node>`)ベースの最小DOM。
+//! A minimal arena-based DOM (`Vec<Node>`).
 //!
-//! ノード間の親子・兄弟関係は`NodeId`(アリーナのインデックス)で表現する。
-//! `Rc<RefCell<Node>>`のようなノード単位の参照カウント/借用チェックを避け、
-//! 後続フェーズ(スタイル計算・レイアウト)がDOMを気軽に持ち回れるようにする。
+//! Parent, child and sibling relationships are expressed as `NodeId`s (indices into the
+//! arena). This avoids per-node reference counting and borrow checking (`Rc<RefCell<Node>>`)
+//! so later phases (style computation, layout) can pass the DOM around freely.
 
 use html5ever::{Attribute, QualName};
 
-/// アリーナ内のノードを指すID。
+/// An ID pointing at a node in the arena.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(pub(crate) usize);
 
@@ -17,9 +17,9 @@ pub struct Node {
     pub(crate) next_sibling: Option<NodeId>,
     pub(crate) first_child: Option<NodeId>,
     pub(crate) last_child: Option<NodeId>,
-    /// ルート([`Dom::document`])からの深さ。木に繋がれた時点で確定し、
-    /// 別の親へ移し替えられれば部分木ごと振り直される
-    /// ([`set_subtree_depth`])。深さ上限の判定に使う。
+    /// Depth from the root ([`Dom::document`]). Fixed as soon as the node joins the tree,
+    /// and recomputed for the whole subtree if it is moved to another parent
+    /// ([`set_subtree_depth`]). Used to enforce the depth limit.
     pub(crate) depth: u32,
     pub data: NodeData,
 }
@@ -53,39 +53,39 @@ pub enum NodeData {
     Element {
         name: QualName,
         attrs: Vec<Attribute>,
-        /// `<template>`要素の内容を保持する別ドキュメントノード。
+        /// A separate document node holding the contents of a `<template>` element.
         template_contents: Option<NodeId>,
     },
     ProcessingInstruction {
         target: String,
         contents: String,
     },
-    /// [`Dom::release_subtree`]で解放済みのノード。
+    /// A node already freed by [`Dom::release_subtree`].
     ///
-    /// テキスト内容・属性など重いデータは破棄済みだが、`Node`の
+    /// The heavy data (text content, attributes) is gone, but `Node`'s
     /// `parent`/`previous_sibling`/`next_sibling`/`first_child`/`last_child`
-    /// (木構造のリンク)はそのまま残す。`NodeId`はアリーナ(`Vec<Node>`)の
-    /// 固定インデックスであり、要素を実際に取り除くとインデックスがずれて
-    /// 他の`NodeId`が指す先を壊してしまうため、ノードのスロット自体は
-    /// 削除せず中身だけを空にする「タブストーン化」方式を採る。
+    /// (the tree links) are left in place. A `NodeId` is a fixed index into the arena
+    /// (`Vec<Node>`), and actually removing an element would shift the indices and break
+    /// what every other `NodeId` points at. So we "tombstone" instead: the node's slot
+    /// stays and only its contents are emptied.
     ///
-    /// 既存の`NodeData`パターンマッチ(`if let NodeData::Element {..}`等)
-    /// はいずれも網羅的ではなく`Released`をワイルドカード側で自然に扱うため、
-    /// 「要素でもテキストでもない」として黙って無視される。これは安全側
-    /// (誤ってマッチしない)に倒れるが、逆に「本来解放してはいけないノードを
-    /// 誤って解放してしまった」というバグはサイレントな不具合として現れうる。
-    /// 解放を呼び出すタイミングの安全性(「兄弟・子孫セレクタの参照範囲を
-    /// 跨がない」制約)は呼び出し側の責務であり、
-    /// この型自体はそれを強制しない。
+    /// None of the existing `NodeData` pattern matches (`if let NodeData::Element {..}`
+    /// and friends) are exhaustive, and they all handle `Released` naturally on the
+    /// wildcard arm, so it is silently ignored as "neither an element nor text". That
+    /// fails safe (it never matches by mistake), but the opposite bug -- freeing a node
+    /// that should have been kept -- can show up as a silent defect. Whether it is safe
+    /// to free at a given point (the "never cross the range a sibling or descendant
+    /// selector can see" constraint) is the caller's responsibility;
+    /// this type does not enforce it.
     Released,
 }
 
-/// `<link>`要素が`rel="stylesheet"`かどうかを判定する。
+/// Whether a `<link>` element is `rel="stylesheet"`.
 ///
-/// HTML仕様上`rel`は空白区切りのトークン列(`rel="stylesheet preload"`も
-/// 有効)であり、単純な文字列完全一致では`stylesheet`以外のトークンが
-/// 混ざったケースを見逃す。`class`属性のトークンマッチング
-/// (`style/element_ref.rs`の`has_class`)と同種の注意点。
+/// Per the HTML spec, `rel` is a whitespace-separated token list (`rel="stylesheet preload"`
+/// is valid too), so a plain whole-string comparison would miss cases where other tokens
+/// are mixed in. The same pitfall as token matching on the `class` attribute
+/// (`has_class` in `style/element_ref.rs`).
 pub fn is_stylesheet_link(attrs: &[Attribute]) -> bool {
     attrs
         .iter()
@@ -97,8 +97,8 @@ pub fn is_stylesheet_link(attrs: &[Attribute]) -> bool {
         })
 }
 
-/// 文書内の最初の`<title>`のテキスト(PDF Info辞書の`/Title`用)。`--title`が
-/// 指定されていない場合のフォールバックとして使う。
+/// Text of the first `<title>` in the document (for `/Title` in the PDF Info dictionary).
+/// Used as the fallback when `--title` is not given.
 pub fn find_document_title(dom: &Dom) -> Option<String> {
     fn walk(dom: &Dom, node: NodeId) -> Option<String> {
         if let NodeData::Element { name, .. } = &dom.node(node).data {
@@ -125,9 +125,9 @@ pub fn find_document_title(dom: &Dom) -> Option<String> {
     walk(dom, dom.document())
 }
 
-/// 文書内の最初の`<base href>`の値。`<body>`より後に現れた`<base>`は無視する
-/// (`Mode::Streaming`では原理的に
-/// 反映できないため、両モードで同じ挙動に揃える)。
+/// Value of the first `<base href>` in the document. A `<base>` appearing after `<body>`
+/// is ignored (`Mode::Streaming` cannot honour it in principle, so both modes behave
+/// the same way).
 pub fn find_base_href(dom: &Dom) -> Option<String> {
     fn walk(dom: &Dom, node: NodeId, seen_body: &mut bool) -> Option<String> {
         if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
@@ -157,11 +157,11 @@ pub fn find_base_href(dom: &Dom) -> Option<String> {
     walk(dom, dom.document(), &mut seen_body)
 }
 
-/// アンカーの対象になりうる要素(`id`属性を持つ要素、および`<a name>`)を
-/// `NodeId` → 名前(`id`/`name`の値)として集める。
+/// Collect the elements that can be anchor targets (elements with an `id` attribute, plus
+/// `<a name>`) as `NodeId` -> name (the `id`/`name` value).
 ///
-/// 同じ名前が複数回現れた場合はドキュメント順で最初のものを採用する
-/// (HTML仕様どおり)。
+/// If the same name appears more than once, the first in document order wins
+/// (as the HTML spec requires).
 pub fn collect_anchor_targets(dom: &Dom) -> Vec<(NodeId, String)> {
     fn walk(dom: &Dom, node: NodeId, out: &mut Vec<(NodeId, String)>) {
         if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
@@ -188,18 +188,18 @@ pub fn collect_anchor_targets(dom: &Dom) -> Vec<(NodeId, String)> {
     out
 }
 
-/// パース済みのDOM木。
+/// A parsed DOM tree.
 pub struct Dom {
     pub(crate) nodes: Vec<Node>,
     pub(crate) document: NodeId,
-    /// この木に現れた最大の深さ。木を組み立てながら更新するため、パース途中
-    /// (ストリーミング)でも参照できる。
+    /// The greatest depth seen in this tree. It is updated as the tree is built, so it can
+    /// be read part-way through parsing (in streaming mode).
     pub(crate) max_depth: u32,
-    /// まだ内容を保持しているノードの数。
+    /// Number of nodes still holding their contents.
     ///
-    /// `nodes`の長さではなく、[`Self::release_subtree`]で解放したぶんを
-    /// 差し引いた値。ノードは解放しても`nodes`から取り除かない(NodeIdが
-    /// 添字なので詰められない)ため、長さでは実際の保持量を表せない。
+    /// Not the length of `nodes`, but that length minus what [`Self::release_subtree`] has
+    /// freed. Freed nodes are not removed from `nodes` (a NodeId is an index, so the list
+    /// cannot be compacted), so the length cannot express how much is really held.
     pub(crate) live_nodes: usize,
 }
 
@@ -208,28 +208,28 @@ impl Dom {
         self.document
     }
 
-    /// これまでに木へ繋がれたノードの最大深さ([`Node::depth`])。
+    /// The greatest [`Node::depth`] of anything attached to the tree so far.
     ///
-    /// DOMを再帰的に辿る処理(スタイル計算・ボックスツリー構築・レイアウト・
-    /// PDF描画、および`LayoutBox`の再帰Drop)はいずれも深さに比例して
-    /// スタックを消費するため、それらを走らせる前にこの値を上限
-    /// ([`crate::html::MAX_ELEMENT_DEPTH`])と比べて拒否する。
+    /// Everything that walks the DOM recursively (style computation, box tree construction,
+    /// layout, PDF drawing, and the recursive Drop of `LayoutBox`) consumes stack in
+    /// proportion to the depth, so this is compared against the limit
+    /// ([`crate::html::MAX_ELEMENT_DEPTH`]) and rejected before any of them run.
     pub fn max_depth(&self) -> u32 {
         self.max_depth
     }
 
-    /// まだ内容を保持しているノードの数([`Self::live_nodes`])。
+    /// Number of nodes still holding their contents ([`Self::live_nodes`]).
     ///
-    /// スタイル計算・ボックスツリー・レイアウト結果はこれに比例して増える
-    /// ため、メモリの上限判定に使う([`crate::html::MAX_NODES`])。
+    /// Computed styles, the box tree and layout results all grow in proportion to this,
+    /// so it is what the memory limit is checked against ([`crate::html::MAX_NODES`]).
     pub fn node_count(&self) -> usize {
         self.live_nodes
     }
 
-    /// ノードを1つ足して`NodeId`を返す。
+    /// Add one node and return its `NodeId`.
     ///
-    /// `nodes`への追加経路をここ1本にまとめ、[`Self::live_nodes`]の更新
-    /// 漏れを防ぐ。
+    /// This is the single route for appending to `nodes`, which keeps [`Self::live_nodes`]
+    /// from getting out of step.
     pub(crate) fn push_node(&mut self, data: NodeData) -> NodeId {
         self.nodes.push(Node::new(data));
         self.live_nodes += 1;
@@ -251,23 +251,23 @@ impl Dom {
         }
     }
 
-    /// `root`以下の部分木を再帰的に解放する。
+    /// Recursively free the subtree rooted at `root`.
     ///
-    /// 各ノードの`data`を[`NodeData::Released`]に置き換え、テキスト内容・
-    /// 属性等の重いデータを破棄する。`root`自身も解放対象に含む。木構造の
-    /// リンク(`parent`/`previous_sibling`/`next_sibling`/`first_child`/
-    /// `last_child`)は変更しないため、解放後もこの部分木を経由した
-    /// ナビゲーション(`children`/`parent`)自体は壊れない。
+    /// Each node's `data` is replaced with [`NodeData::Released`], discarding the heavy
+    /// data (text content, attributes and so on). `root` itself is freed too. The tree
+    /// links (`parent`/`previous_sibling`/`next_sibling`/`first_child`/`last_child`) are
+    /// left untouched, so navigating through this subtree (`children`/`parent`) still
+    /// works afterwards.
     ///
-    /// 安全に呼べるのは、`root`以下がスタイル計算・レイアウトともに完了し、
-    /// かつ以後どの要素のセレクタマッチングからも参照されないことが確定した
-    /// 場合のみ(「兄弟・子孫セレクタの参照範囲を跨がない」制約)。この判定は
-    /// 呼び出し側の責務で、`Dom`自体はそれを強制しない。
+    /// This is only safe to call once everything under `root` has finished both style
+    /// computation and layout, and it is certain that no later element's selector matching
+    /// will reference it (the "never cross the range a sibling or descendant selector can
+    /// see" constraint). That judgement is the caller's; `Dom` does not enforce it.
     pub fn release_subtree(&mut self, root: NodeId) {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
             stack.extend(self.children(id));
-            // 二重解放でも数え過ぎないよう、解放済みは飛ばす。
+            // Skip anything already freed, so a double free is not counted twice.
             if !matches!(self.nodes[id.0].data, NodeData::Released) {
                 self.live_nodes -= 1;
                 self.nodes[id.0].data = NodeData::Released;
@@ -275,16 +275,16 @@ impl Dom {
         }
     }
 
-    /// `root`の子孫だけを解放し、`root`自身は要素として残す。
+    /// Free only `root`'s descendants, leaving `root` itself as an element.
     ///
-    /// 残った`root`はタグ名・クラス・idを保つので、後続の兄弟からは
-    /// 「直前の兄弟」として見え続ける。`+`/`~`や`:first-child`のように
-    /// 直前の兄弟が要るセレクタを使う文書では、[`Self::release_subtree`]の
-    /// 代わりにこちらを使う(ストリーミング処理での使い分けは
-    /// `style::needs_preceding_siblings`が判断する)。
+    /// The surviving `root` keeps its tag name, classes and id, so later siblings still
+    /// see it as "the preceding sibling". In documents using selectors that need the
+    /// preceding sibling, such as `+`/`~` or `:first-child`, use this instead of
+    /// [`Self::release_subtree`] (`style::needs_preceding_siblings` decides which one
+    /// streaming uses).
     ///
-    /// 残るのはトップレベル要素1個につきノード1個なので、解放できる量は
-    /// ほぼ変わらない(子孫が大半を占めるため)。
+    /// Only one node per top-level element survives, so how much can be freed is barely
+    /// affected (the descendants are the bulk of it).
     pub fn release_descendants(&mut self, root: NodeId) {
         let children: Vec<NodeId> = self.children(root).collect();
         for child in children {
@@ -292,7 +292,7 @@ impl Dom {
         }
     }
 
-    /// `id`が[`Dom::release_subtree`]で解放済みかどうか。
+    /// Whether `id` has already been freed by [`Dom::release_subtree`].
     pub fn is_released(&self, id: NodeId) -> bool {
         matches!(self.node(id).data, NodeData::Released)
     }
@@ -313,7 +313,7 @@ impl Iterator for Children<'_> {
     }
 }
 
-/// `id`をその親・兄弟から切り離す。
+/// Detach `id` from its parent and siblings.
 pub(crate) fn detach(nodes: &mut [Node], id: NodeId) {
     let (parent, previous_sibling, next_sibling) = {
         let node = &mut nodes[id.0];
@@ -337,11 +337,11 @@ pub(crate) fn detach(nodes: &mut [Node], id: NodeId) {
     }
 }
 
-/// `child`を`parent`の最後の子として追加する(既存の親からは自動的にdetachされる)。
-/// `root`以下の[`Node::depth`]を`depth`起点で振り直し、部分木内の最大深さを返す。
+/// Append `child` as the last child of `parent` (detaching it from any existing parent).
+/// Recompute [`Node::depth`] under `root` starting from `depth`, and return the greatest depth in the subtree.
 ///
-/// 明示スタックで辿る。ここを再帰で書くと、深さ上限を判定するための処理自体が
-/// 深いDOMでスタックを溢れさせてしまい本末転倒になる。
+/// Walked with an explicit stack. Written recursively, the very code enforcing the depth
+/// limit would overflow the stack on a deep DOM, which rather defeats the point.
 pub(crate) fn set_subtree_depth(nodes: &mut [Node], root: NodeId, depth: u32) -> u32 {
     let mut max = depth;
     let mut stack = vec![(root, depth)];
@@ -357,7 +357,7 @@ pub(crate) fn set_subtree_depth(nodes: &mut [Node], root: NodeId, depth: u32) ->
     max
 }
 
-/// `child`を`parent`の末尾に繋ぎ、繋いだ部分木の最大深さを返す。
+/// Attach `child` at the end of `parent` and return the greatest depth of the attached subtree.
 pub(crate) fn append(nodes: &mut [Node], parent: NodeId, child: NodeId) -> u32 {
     detach(nodes, child);
 
@@ -373,7 +373,7 @@ pub(crate) fn append(nodes: &mut [Node], parent: NodeId, child: NodeId) -> u32 {
     set_subtree_depth(nodes, child, nodes[parent.0].depth + 1)
 }
 
-/// `new_node`を`sibling`の直前に挿入する(既存の親からは自動的にdetachされる)。
+/// Insert `new_node` immediately before `sibling` (detaching it from any existing parent).
 pub(crate) fn insert_before(nodes: &mut [Node], sibling: NodeId, new_node: NodeId) -> u32 {
     detach(nodes, new_node);
 
@@ -390,7 +390,7 @@ pub(crate) fn insert_before(nodes: &mut [Node], sibling: NodeId, new_node: NodeI
     }
     nodes[sibling.0].previous_sibling = Some(new_node);
 
-    // 兄弟として並ぶので深さは`sibling`と同じ。
+    // They sit as siblings, so the depth is the same as `sibling`'s.
     set_subtree_depth(nodes, new_node, nodes[sibling.0].depth)
 }
 
@@ -442,8 +442,8 @@ mod tests {
 
     #[test]
     fn tree_navigation_still_works_across_a_released_subtree() {
-        // 兄弟の1人目が解放済みでも、木構造のリンク自体は保持されるため、
-        // 2人目からその親・祖先へのナビゲーションは引き続き機能する。
+        // Even with the first sibling freed, the tree links themselves survive, so
+        // navigating from the second one to its parent and ancestors still works.
         let mut dom = parse(br#"<div><p>first</p><p>second</p></div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         let first = dom.children(div).next().expect("first <p> not found");
@@ -486,7 +486,7 @@ mod tests {
 
     #[test]
     fn find_base_href_ignores_a_base_that_appears_after_body_starts() {
-        // `Mode::Streaming`では原理的に反映できないため、両モードで無視する。
+        // `Mode::Streaming` cannot honour it in principle, so both modes ignore it.
         let dom = crate::html::parse(
             br#"<html><body><base href="https://example.com/"><p>x</p></body></html>"#,
         );

@@ -1,26 +1,26 @@
 # frozen_string_literal: true
 
-RSpec.describe "バージョン" do
+RSpec.describe "the version" do
   ROOT = File.expand_path("../../..", __dir__)
 
   def cargo_version(relative_path)
     path = File.join(ROOT, relative_path)
-    skip "#{relative_path}が無い(gemとして配布された状態では見えない)" unless File.exist?(path)
+    skip "no #{relative_path} (it is invisible in a distributed gem)" unless File.exist?(path)
 
-    # `[package]`セクションの最初のversion行。
+    # The first version line of the `[package]` section.
     File.read(path)[/^\s*version\s*=\s*"([^"]+)"/, 1]
   end
 
-  it "Rustコアとgemのバージョンが揃っている" do
+  it "keeps the Rust core and the gem at the same version" do
     expect(cargo_version("core/Cargo.toml")).to eq(Sghtmltopdf::VERSION)
   end
 
-  it "ネイティブ拡張のクレートとgemのバージョンが揃っている" do
+  it "keeps the native extension crate and the gem at the same version" do
     expect(cargo_version("bindings/ruby/ext/sghtmltopdf/Cargo.toml")).to eq(Sghtmltopdf::VERSION)
   end
 
-  it "CHANGELOGがある" do
-    skip "リポジトリ外" unless File.exist?(File.join(ROOT, "core"))
+  it "has a CHANGELOG" do
+    skip "outside the repository" unless File.exist?(File.join(ROOT, "core"))
 
     expect(File.exist?(File.join(ROOT, "CHANGELOG.md"))).to be(true)
   end

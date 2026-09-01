@@ -1,4 +1,4 @@
-//! stylesheet全体(ルールの集合)のパース。
+//! Parsing a whole stylesheet (a set of rules).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -28,16 +28,16 @@ pub struct Stylesheet {
     pub rules: Vec<StyleRule>,
     pub font_faces: Vec<FontFaceRule>,
     pub page_rules: Vec<PageRule>,
-    /// [`Self::index`]が作る索引のメモ。
+    /// Memo of the index [`Self::index`] builds.
     index: RefCell<Option<Rc<RuleIndex>>>,
 }
 
 impl Stylesheet {
-    /// セレクタマッチングの候補を絞る索引。初回の参照時に組み立てる。
+    /// The index that narrows the candidates for selector matching. Built on first use.
     ///
-    /// `rules`は公開フィールドで、パース後に連結される場合がある
-    /// (ユーザーCSSをUAスタイルシートの末尾へ足す経路)。連結の際に索引を
-    /// 捨て忘れると古い索引が残るため、ルール数が変わっていたら作り直す。
+    /// `rules` is a public field and can be appended to after parsing (the path that adds
+    /// user CSS onto the end of the UA stylesheet). Forgetting to discard the index on such
+    /// an append would leave a stale one, so it is rebuilt whenever the rule count changed.
     pub fn index(&self) -> Rc<RuleIndex> {
         if let Some(index) = self.index.borrow().as_ref() {
             if index.rule_count() == self.rules.len() {
@@ -50,16 +50,16 @@ impl Stylesheet {
     }
 }
 
-/// トップレベルルールの中間表現。通常のスタイルルール・`@font-face`・
-/// `@media`・`@page`は`StyleSheetParser`の型システム上、同じ`Prelude`/
-/// `Rule`型を共有する必要があるため、この列挙型で束ねる
-/// ([`parse_stylesheet`]で仕分ける)。
+/// The intermediate representation of a top-level rule. Ordinary style rules, `@font-face`,
+/// `@media` and `@page` all have to share the same `Prelude`/`Rule` types under
+/// `StyleSheetParser`'s type system, so this enum bundles them
+/// (and [`parse_stylesheet`] sorts them out).
 enum TopLevelRule {
-    /// スタイルルール1つと、その中にネストしていたルールをカスケード順に
-    /// 平坦化したもの([`parse_style_rule_body`])。
+    /// One style rule plus the rules nested inside it, flattened into cascade order
+    /// ([`parse_style_rule_body`]).
     Style(Vec<StyleRule>),
     FontFace(FontFaceRule),
-    /// `@media`の中身(マッチしなかった場合は空のVec)。
+    /// The contents of an `@media` (an empty Vec if it did not match).
     Media(Vec<TopLevelRule>),
     Page(PageRule),
 }
@@ -91,10 +91,10 @@ fn flatten_top_level_rule(
     page_rules: &mut Vec<PageRule>,
 ) {
     match rule {
-        // 宣言が空のルールはカスケードにも擬似要素の解決にも寄与しないので、
-        // 索引と照合のコストだけが残る。ここで捨てる。
-        // ネストしたルールの親(`.a { &:hover { } }`の`.a`)は宣言を持たない
-        // ことが多く、残すとネスト1つにつきルールが2つに増える。
+        // A rule with no declarations contributes to neither the cascade nor pseudo-element
+        // resolution, leaving only the cost of indexing and matching. Drop it here.
+        // The parent of a nested rule (the `.a` in `.a { &:hover { } }`) often has no
+        // declarations, and keeping it would double the rules for every nesting.
         TopLevelRule::Style(r) => {
             rules.extend(r.into_iter().filter(|rule| !rule.declarations.is_empty()))
         }
@@ -108,7 +108,7 @@ fn flatten_top_level_rule(
     }
 }
 
-/// `style="..."`属性の値のような、セレクタを伴わない宣言リストをパースする。
+/// Parse a declaration list with no selector, such as the value of a `style="..."` attribute.
 pub fn parse_inline_style(css: &str) -> Vec<PropertyDeclaration> {
     let mut input = ParserInput::new(css);
     let mut parser = Parser::new(&mut input);
@@ -120,7 +120,7 @@ pub fn parse_inline_style(css: &str) -> Vec<PropertyDeclaration> {
         .collect()
 }
 
-/// stylesheet直下のルール(セレクタ+宣言ブロック)をパースする。
+/// Parse a rule directly under the stylesheet (a selector plus a declaration block).
 struct TopLevelRuleParser;
 
 impl<'i> QualifiedRuleParser<'i> for TopLevelRuleParser {
@@ -146,17 +146,17 @@ impl<'i> QualifiedRuleParser<'i> for TopLevelRuleParser {
     }
 }
 
-/// スタイルルールの`{ }`の中身(宣言とネストしたスタイルルール)をパースし、
-/// カスケード順に並んだ平坦なルール列にする。
+/// Parse the contents of a style rule's `{ }` (declarations and nested style rules) into a
+/// flat list of rules in cascade order.
 ///
-/// CSS Nestingでは、ネストしたルールは親ルールの直後に(ソース順で)置かれた
-/// ものとして扱う。ネストしたルールより後ろに書かれた宣言は、親と同じ
-/// セレクタを持つ別のルール(仕様のCSSNestedDeclarations)として、その
-/// ネストしたルールの後ろに並ぶ。先頭へ巻き上げると、`&`で親自身を上書き
-/// するルールとの勝敗がソース順と食い違うため、書かれた順を保つ。
+/// Under CSS Nesting, a nested rule is treated as though placed immediately after the
+/// parent rule (in source order). Declarations written after a nested rule become a separate
+/// rule with the same selector as the parent (CSSNestedDeclarations in the spec), placed
+/// after that nested rule. Hoisting them to the front would make them win or lose against a
+/// rule that overrides the parent via `&` in a way that contradicts source order, so the written order is preserved.
 ///
-/// 先頭のルール(親そのもの)と末尾の宣言ルールは、宣言が無ければ空のまま
-/// 返る。宣言が空のルールは[`flatten_top_level_rule`]が捨てる。
+/// The first rule (the parent itself) and the trailing declaration rule come back empty if
+/// they have no declarations. [`flatten_top_level_rule`] drops rules with no declarations.
 fn parse_style_rule_body(
     selectors: SelectorList<SgSelectorImpl>,
     input: &mut Parser<'_, '_>,
@@ -165,12 +165,12 @@ fn parse_style_rule_body(
         selectors: selectors.clone(),
         declarations: Vec::new(),
     }];
-    // 宣言を受け入れる先。ネストしたルールを挟むたびに`None`へ戻し、
-    // 次の宣言が来た時点で`&`と同じセレクタのルールを新しく作る。
+    // Where declarations are accepted. Reset to `None` whenever a nested rule intervenes, so
+    // that the next declaration starts a new rule with the same selector as `&`.
     let mut open: Option<usize> = Some(0);
-    // ネストしたルールより後ろに書いた宣言(仕様のCSSNestedDeclarations)は
-    // `&`と同じセレクタを持つ。親がセレクタリストのときは`:is(親)`へ
-    // まとまって詳細度が親そのものとは変わるので、解決結果を別に用意する。
+    // Declarations written after a nested rule (CSSNestedDeclarations in the spec) have the
+    // same selector as `&`. When the parent is a selector list they collapse into `:is(parent)`,
+    // whose specificity differs from the parent's own, so the resolved form is prepared separately.
     let mut nested_selectors: Option<SelectorList<SgSelectorImpl>> = None;
 
     let mut body_parser = StyleRuleBodyParser { parent: &selectors };
@@ -198,10 +198,10 @@ fn parse_style_rule_body(
     rules
 }
 
-/// `&`(親セレクタ)を`parent`で解決したセレクタリスト。
+/// The selector list with `&` (the parent selector) resolved against `parent`.
 ///
-/// 親が1つだけなら`:is()`で包んでも詳細度は変わらないため、そのまま返す
-/// (出力されるセレクタを不必要に変えない)。
+/// With only one parent, wrapping in `:is()` does not change the specificity, so it is
+/// returned unchanged (this keeps the emitted selectors from changing needlessly).
 fn parent_selector_reference(
     parent: &SelectorList<SgSelectorImpl>,
 ) -> SelectorList<SgSelectorImpl> {
@@ -216,23 +216,23 @@ fn parent_selector_reference(
     }
 }
 
-/// [`StyleRuleBodyParser`]が返す、ルール本体の1項目。
+/// One item of a rule body, as returned by [`StyleRuleBodyParser`].
 enum StyleRuleBodyItem {
-    /// 宣言1つ(ショートハンドは展開後の複数)。
+    /// One declaration (or several, once a shorthand is expanded).
     Declarations(Vec<PropertyDeclaration>),
-    /// ネストしたスタイルルール(とその中のネスト)を平坦化したもの。
+    /// A nested style rule (and its own nesting), flattened.
     Nested(Vec<StyleRule>),
 }
 
-/// スタイルルールの`{ }`の中身をパースする。宣言に加えて、ネストした
-/// スタイルルール(CSS Nesting)を受け付ける。
+/// Parse the contents of a style rule's `{ }`. In addition to declarations, it accepts
+/// nested style rules (CSS Nesting).
 ///
-/// ネストしたルールのセレクタは`&`(親セレクタ)を含む相対セレクタとして
-/// パースし、`&`を親のセレクタリスト(`:is(親)`相当)へ置き換えて解決する。
-/// `&`を書かない`.probe { }`は`& .probe`、先頭がコンビネータの`> li { }`は
-/// `& > li`として扱う(`selectors`クレートの`ParseRelative::ForNesting`)。
+/// A nested rule's selector is parsed as a relative selector that may contain `&` (the
+/// parent selector), and `&` is resolved by substituting the parent's selector list
+/// (equivalent to `:is(parent)`). A `.probe { }` written without `&` is treated as
+/// `& .probe`, and a `> li { }` starting with a combinator as `& > li` (`ParseRelative::ForNesting`).
 ///
-/// ネストしたat-rule(`@media`等)は非対応で、ブロックごと読み飛ばす。
+/// Nested at-rules (`@media` and friends) are not supported and are skipped block and all.
 struct StyleRuleBodyParser<'a> {
     parent: &'a SelectorList<SgSelectorImpl>,
 }
@@ -293,10 +293,10 @@ impl<'i> RuleBodyItemParser<'i, StyleRuleBodyItem, ()> for StyleRuleBodyParser<'
     }
 }
 
-/// `@font-face`/`@media`/`@page`を認識する。
+/// Recognises `@font-face`, `@media` and `@page`.
 enum TopLevelAtRulePrelude {
     FontFace,
-    /// `applies`は[`media_query_list_matches`]による判定結果。
+    /// `applies` is what [`media_query_list_matches`] decided.
     Media {
         applies: bool,
     },
@@ -340,9 +340,9 @@ impl<'i> AtRuleParser<'i> for TopLevelRuleParser {
             TopLevelAtRulePrelude::Page(selector) => {
                 Ok(TopLevelRule::Page(parse_page_rule_block(input, selector)))
             }
-            // マッチしなかった`@media`ブロックの中身は読み飛ばすだけでよい
-            // (`input`は既にこのブロックにスコープされているため、何も
-            // 消費せず返しても呼び出し元が正しくブロックの終端まで進める)。
+            // The contents of an `@media` block that did not match need only be skipped
+            // (`input` is already scoped to this block, so returning without consuming
+            // anything still lets the caller advance correctly to the end of the block).
             TopLevelAtRulePrelude::Media { applies: false } => Ok(TopLevelRule::Media(Vec::new())),
             TopLevelAtRulePrelude::Media { applies: true } => {
                 let mut rule_parser = TopLevelRuleParser;
@@ -355,10 +355,10 @@ impl<'i> AtRuleParser<'i> for TopLevelRuleParser {
     }
 }
 
-/// `@media`のprelude(トークン列)から、印刷/PDF出力用の簡略化された
-/// メディアタイプ判定を行う。カンマ区切りのクエリリスト(=OR)を、それぞれ
-/// 「先頭の`not`/`only`修飾子+メディアタイプ識別子」だけ見て判定する。
-/// 特徴クエリ(`(min-width: ...)`等)は一切評価せず読み飛ばす。
+/// Decide, from an `@media` prelude (a token sequence), a simplified media type check for
+/// print/PDF output. The comma-separated query list (an OR) is decided per query, looking
+/// only at the leading `not`/`only` modifier plus the media type identifier.
+/// Feature queries (`(min-width: ...)` and the like) are skipped without being evaluated at all.
 fn media_query_list_matches<'i, 't>(
     input: &mut Parser<'i, 't>,
 ) -> Result<bool, ParseError<'i, ()>> {
@@ -373,9 +373,9 @@ fn media_query_list_matches<'i, 't>(
     Ok(any_matches)
 }
 
-/// 1つのメディアクエリ(次のコンマまで、またはpreludeの終端まで)を判定し、
-/// その分のトークンを消費する。特徴クエリ部分は評価せず読み飛ばす。戻り値は
-/// `(このクエリがマッチしたか, まだ後続クエリがあるか)`。
+/// Decide one media query (up to the next comma, or the end of the prelude) and consume its
+/// tokens. The feature query part is skipped without being evaluated. Returns
+/// `(whether this query matched, whether more queries follow)`.
 fn parse_one_media_query<'i, 't>(
     input: &mut Parser<'i, 't>,
 ) -> Result<(bool, bool), ParseError<'i, ()>> {
@@ -393,8 +393,8 @@ fn parse_one_media_query<'i, 't>(
         }
     }
 
-    // 残り(`and (min-width: ...)`等)は評価せず、次のコンマ(を消費して
-    // 「後続あり」を伝える)またはpreludeの終端まで読み飛ばす。
+    // Skip the rest (`and (min-width: ...)` and so on) without evaluating it, up to the next
+    // comma (consuming it to signal "more follow") or the end of the prelude.
     let has_more = loop {
         match input.next() {
             Ok(Token::Comma) => break true,
@@ -410,9 +410,9 @@ fn parse_one_media_query<'i, 't>(
     Ok((is_screen == negate, has_more))
 }
 
-/// `{ }`内の宣言のみをパースする(ネストしたルールは扱わない)。
-/// `style`属性と`@page`のmargin box(`page_rule.rs`)が使う。スタイルルールの
-/// 本体は、ネストしたルールも受け付ける[`StyleRuleBodyParser`]でパースする。
+/// Parse only the declarations inside `{ }` (nested rules are not handled).
+/// Used by the `style` attribute and by `@page` margin boxes (`page_rule.rs`). A style
+/// rule's body is parsed by [`StyleRuleBodyParser`], which also accepts nested rules.
 pub(super) struct DeclarationBlockParser;
 
 impl<'i> DeclarationParser<'i> for DeclarationBlockParser {
@@ -451,11 +451,11 @@ impl<'i> RuleBodyItemParser<'i, Vec<PropertyDeclaration>, ()> for DeclarationBlo
     }
 }
 
-/// 判定に直前の兄弟が要るセレクタ。
+/// Selectors that need the preceding sibling to be decided.
 ///
-/// ストリーミングは処理済みのトップレベル要素を解放するが、これらを使う文書では
-/// 解放を子孫だけに絞り、要素そのものは兄弟として見えるように残す必要がある
-/// ([`crate::html::Dom::release_descendants`])。
+/// Streaming frees top-level elements once processed, but in a document using these the
+/// freeing has to be limited to the descendants, leaving the element itself visible as a
+/// sibling ([`crate::html::Dom::release_descendants`]).
 const NEEDS_PRECEDING: &[&str] = &[
     "+",
     "~",
@@ -467,10 +467,10 @@ const NEEDS_PRECEDING: &[&str] = &[
     ":only-of-type",
 ];
 
-/// 直前の兄弟を残しても、なお判定できないセレクタ。
+/// Selectors that still cannot be decided even with the preceding sibling kept.
 ///
-/// いずれも「この先に同じ型の要素が続くか」を知る必要があるが、トップレベル
-/// 要素が確定するのは次の兄弟が現れた時点なので、その先は分からない。
+/// All of them need to know "whether more elements of the same type follow", but a top-level
+/// element is only final once the next sibling appears, so what comes after that is unknown.
 const STILL_UNSAFE: &[&str] = &[
     ":last-of-type",
     ":only-of-type",
@@ -479,31 +479,31 @@ const STILL_UNSAFE: &[&str] = &[
     ":has(~ ...)",
 ];
 
-/// スタイルシートが、判定に直前の兄弟を要するセレクタを含むか。
+/// Whether the stylesheet contains a selector that needs the preceding sibling.
 ///
-/// 含む場合、ストリーミング処理はトップレベル要素の解放を子孫だけに絞る。
-/// 含まない場合は従来どおりサブツリーごと解放してよい。
+/// If it does, streaming limits the freeing of a top-level element to its descendants.
+/// If not, the whole subtree can be freed as before.
 ///
-/// 使うときだけ残すのは、残すと解放できないノードが積み上がるため。
-/// 実測(トップレベル要素20万個)ではピークRSSが89.5MB→93.2MB、要素あたり
-/// 約19バイト。ただし積み上がるぶん[`crate::html::MAX_NODES`]には当たりうるので、
-/// トップレベル要素がその数を超える文書では、これらのセレクタを使うと
-/// ノード数の上限エラーになる(使わなければ従来どおり上限に当たらない)。
+/// Keeping them only when they are used matters because kept nodes cannot be freed and
+/// accumulate. Measured over 200,000 top-level elements, peak RSS went from 89.5MB to
+/// 93.2MB, about 19 bytes per element. That accumulation can still hit
+/// [`crate::html::MAX_NODES`], so in a document with more top-level elements than that,
+/// using these selectors produces a node limit error (without them the limit is not hit, as before).
 pub fn needs_preceding_siblings(sheet: &Stylesheet) -> bool {
     scan_sheet(sheet)
         .iter()
         .any(|name| NEEDS_PRECEDING.contains(&name.as_str()))
 }
 
-/// `Mode::Streaming`では直前の兄弟を残してもなおバッチと結果が変わるセレクタが
-/// 使われていれば、その名前を返す。
+/// Return the names of any selectors used that make `Mode::Streaming` differ from batch even
+/// with the preceding sibling kept.
 ///
-/// トップレベル要素が確定するのは次の兄弟が現れた時点なので、そこから先に同じ型の
-/// 要素が続くかどうかは分からない。判定にそれが要るものは、余分にマッチしたり
-/// 取りこぼしたりする。黙って結果が変わるのを避けるため、呼び出し側が警告を出すのに使う。
+/// A top-level element is only final once the next sibling appears, so whether more elements
+/// of the same type follow is unknown. Anything needing that either matches too much or
+/// misses matches. The caller uses this to warn rather than let the result change silently.
 ///
-/// 逆に`:last-child`・`:empty`・`:has()`の子孫/直後の兄弟は、確定の条件
-/// (次の兄弟が現れた)と一致するのでバッチと同じ結果になる。ここでは挙げない。
+/// Conversely `:last-child`, `:empty` and the descendant or next-sibling forms of `:has()`
+/// coincide with the condition for being final, give the same result as batch, and are not listed.
 pub fn streaming_unsafe_selectors(sheet: &Stylesheet) -> Vec<String> {
     scan_sheet(sheet)
         .into_iter()
@@ -511,7 +511,7 @@ pub fn streaming_unsafe_selectors(sheet: &Stylesheet) -> Vec<String> {
         .collect()
 }
 
-/// スタイルシート中の、兄弟関係に依存するセレクタの名前を重複なく集める。
+/// Collect, without duplicates, the names of the sibling-dependent selectors in a stylesheet.
 fn scan_sheet(sheet: &Stylesheet) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for rule in &sheet.rules {
@@ -528,14 +528,14 @@ fn scan_selector(selector: &Selector<SgSelectorImpl>, found: &mut Vec<String>) {
             Component::Combinator(Combinator::NextSibling) => push_once(found, "+"),
             Component::Combinator(Combinator::LaterSibling) => push_once(found, "~"),
             Component::Nth(data) => push_once(found, nth_name(data)),
-            // 引数の中身も同じ規則で効くので辿る。
+            // The arguments follow the same rules, so descend into them.
             Component::Is(list) | Component::Where(list) | Component::Negation(list) => {
                 for inner in list.slice() {
                     scan_selector(inner, found);
                 }
             }
-            // `:has()`の中で問題になるのは`~`(後続の兄弟全部)だけ。子孫・`>`・`+`は
-            // 確定した時点で見えている。
+            // Inside `:has()`, only `~` (every following sibling) is a problem. Descendants,
+            // `>` and `+` are all visible by the time an element is final.
             Component::Has(relatives) => {
                 for relative in relatives.iter() {
                     if relative
@@ -552,9 +552,9 @@ fn scan_selector(selector: &Selector<SgSelectorImpl>, found: &mut Vec<String>) {
     }
 }
 
-/// 判定に前後の兄弟が要るものだけを名前で返す。
-/// `:last-child`(`is_function`が`false`の`LastChild`)だけは、確定の条件と
-/// 一致するので安全。空文字を返して除く。
+/// Return by name only those that need a sibling before or after.
+/// `:last-child` alone (a `LastChild` with `is_function` false) is safe, coinciding with the
+/// condition for being final. Return an empty string to exclude it.
 fn nth_name(data: &NthSelectorData) -> &'static str {
     match (data.ty, data.is_function) {
         (NthType::Child, false) => ":first-child",
@@ -580,7 +580,7 @@ fn push_once(found: &mut Vec<String>, name: &str) {
 #[cfg(test)]
 mod tests {
 
-    /// 直前の兄弟が要るセレクタを検出する(検出したらDOMの解放を子孫だけに絞る)。
+    /// Detect selectors needing the preceding sibling (which limits DOM freeing to descendants).
     #[test]
     fn selectors_that_need_preceding_siblings_are_detected() {
         for css in [
@@ -596,12 +596,12 @@ mod tests {
         ] {
             assert!(
                 needs_preceding_siblings(&parse_stylesheet(css)),
-                "検出できていない: {css}"
+                "not detected: {css}"
             );
         }
     }
 
-    /// 直前の兄弟が要らないセレクタでは、従来どおりサブツリーごと解放してよい。
+    /// With selectors that do not need the preceding sibling, the whole subtree can be freed as before.
     #[test]
     fn ordinary_selectors_do_not_need_preceding_siblings() {
         for css in [
@@ -614,12 +614,12 @@ mod tests {
         ] {
             assert!(
                 !needs_preceding_siblings(&parse_stylesheet(css)),
-                "余計に検出している: {css}"
+                "over-detected: {css}"
             );
         }
     }
 
-    /// 直前の兄弟を残してもなお判定できないセレクタだけを警告する。
+    /// Warn only about selectors that still cannot be decided with the preceding sibling kept.
     #[test]
     fn only_selectors_that_stay_broken_are_reported() {
         let sheet = parse_stylesheet(
@@ -637,13 +637,13 @@ mod tests {
         ] {
             assert!(
                 found.contains(&expected.to_string()),
-                "{expected} が漏れている: {found:?}"
+                "{expected} is missing: {found:?}"
             );
         }
     }
 
-    /// 直前の兄弟を残せば正しくなるものは警告しない。過剰に警告すると、
-    /// 外す必要のない利用者にまで`--streaming`を諦めさせる。
+    /// Do not warn about ones that become correct with the preceding sibling kept. Warning
+    /// too eagerly would make users give up on `--streaming` when they need not.
     #[test]
     fn selectors_that_stay_correct_are_not_reported() {
         let sheet = parse_stylesheet(
@@ -659,7 +659,7 @@ mod tests {
         );
     }
 
-    /// `:is()`/`:where()`/`:not()`の引数の中も見る。
+    /// Look inside the arguments of `:is()`/`:where()`/`:not()` too.
     #[test]
     fn nested_selector_lists_are_scanned() {
         let sheet = parse_stylesheet(":is(p:nth-last-of-type(2), span) { color: red }");
@@ -698,9 +698,9 @@ mod tests {
 
     #[test]
     fn media_with_only_a_feature_query_defaults_to_matching_all() {
-        // 型を省略した特徴クエリ単体(`(min-width: 600px)`)は仕様上
-        // `all and (min-width: 600px)`と同義。特徴クエリ自体は
-        // 評価しないため、常にマッチする。
+        // A bare feature query with the type omitted (`(min-width: 600px)`) is defined to
+        // mean `all and (min-width: 600px)`. Feature queries themselves are not evaluated,
+        // so it always matches.
         let sheet = parse_stylesheet("@media (min-width: 600px) { div { color: rgb(1, 2, 3); } }");
         assert_eq!(sheet.rules.len(), 1);
     }
@@ -745,11 +745,10 @@ mod tests {
 
     #[test]
     fn parse_stylesheet_ignores_at_import_and_keeps_subsequent_rules() {
-        // `@import`は`@font-face`以外のat-ruleとして
-        // `TopLevelRuleParser::parse_prelude`が拒否し、cssparserの
-        // `StyleSheetParser`のエラー回復で読み飛ばされる想定。フェッチした
-        // 外部CSSに`@import`が含まれていても、それ以降の通常ルールの
-        // パースが継続されることを確認する。
+        // `@import` is rejected by `TopLevelRuleParser::parse_prelude` as an at-rule other than
+        // `@font-face`, and is expected to be skipped by cssparser's `StyleSheetParser` error
+        // recovery. This checks that even when fetched external CSS contains an `@import`,
+        // parsing of the ordinary rules after it continues.
         let sheet = parse_stylesheet(
             r#"@import url("other.css"); p { color: rgb(1, 2, 3); } div { color: rgb(4, 5, 6); }"#,
         );
@@ -762,9 +761,9 @@ mod tests {
 
     #[test]
     fn parse_stylesheet_ignores_unrecognized_properties_with_url_values() {
-        // `url()`参照を含む値を持つが、本実装が対応していないプロパティが
-        // あっても、そのプロパティ宣言だけが無視され、同じルール内の他の宣言・
-        // 後続のルールは正常にパースされることを確認する。
+        // Even with a property this implementation does not support whose value contains a
+        // `url()` reference, only that declaration is ignored, and the other declarations in
+        // the same rule and the rules that follow still parse.
         let sheet =
             parse_stylesheet(r#"div { border-image: url("border.png") 30; color: rgb(1, 2, 3); }"#);
         assert_eq!(sheet.rules.len(), 1);
@@ -787,8 +786,8 @@ mod tests {
 
     #[test]
     fn deeply_nested_calc_is_rejected_instead_of_overflowing_the_stack() {
-        // 再帰下降パーサなので、深さがそのままスタックの消費になる。
-        // 上限(32段)までは通し、それより深い値は宣言ごと捨てる。
+        // This is a recursive descent parser, so depth translates directly into stack use.
+        // Up to the limit (32 levels) is accepted; anything deeper drops the declaration.
         let nested = |n: usize| {
             format!(
                 "p {{ padding-left: {}1px{} }}",
@@ -796,13 +795,17 @@ mod tests {
                 ")".repeat(n)
             )
         };
-        assert_eq!(parse_stylesheet(&nested(32)).rules.len(), 1, "32段は通す");
+        assert_eq!(
+            parse_stylesheet(&nested(32)).rules.len(),
+            1,
+            "32 levels are accepted"
+        );
         assert!(
             parse_stylesheet(&nested(33)).rules.is_empty(),
-            "33段は捨てる"
+            "33 levels are dropped"
         );
 
-        // 括弧も`calc()`と同じ深さに数える。
+        // Parentheses count towards the same depth as `calc()`.
         let parens = format!(
             "p {{ padding-left: calc({}1px{}) }}",
             "(".repeat(40),
@@ -813,7 +816,7 @@ mod tests {
 
     #[test]
     fn negative_padding_is_rejected() {
-        // CSSでは`padding`に負の値を書けない。宣言ごと捨てる。
+        // CSS does not allow a negative `padding`. Drop the declaration.
         for css in [
             "p { padding-left: -5px }",
             "p { padding: -5px }",
@@ -827,7 +830,7 @@ mod tests {
                 "negative padding should be dropped: {css}"
             );
         }
-        // 0と正の値、`calc()`(符号は解決するまで決まらない)は通す。
+        // Zero, positive values and `calc()` (whose sign is unknown until resolved) are accepted.
         for css in [
             "p { padding-left: 0 }",
             "p { padding: 5px }",
@@ -854,7 +857,7 @@ mod tests {
     #[test]
     fn nested_rule_with_explicit_parent_selector_is_flattened() {
         let sheet = parse_stylesheet(".wrap { & .probe { color: rgb(1, 2, 3) } }");
-        // 宣言を持たない親(`.wrap`)はルールとして残らない。
+        // A parent with no declarations (`.wrap`) does not survive as a rule.
         assert_eq!(selector_texts(&sheet), [":is(.wrap) .probe"]);
         assert_eq!(sheet.rules[0].declarations.len(), 1);
     }
@@ -897,8 +900,8 @@ mod tests {
 
     #[test]
     fn declarations_around_nested_rules_keep_their_source_order() {
-        // 前の宣言は親ルール、ネストしたルール、後ろの宣言は親と同じセレクタの
-        // 別ルールとしてこの順に並ぶ(後ろの宣言を先頭へ巻き上げない)。
+        // The earlier declarations become the parent rule, then the nested rule, then the later
+        // declarations as a separate rule with the same selector, in that order (not hoisted).
         let sheet = parse_stylesheet(
             ".wrap { color: rgb(1, 2, 3); .probe { color: rgb(4, 5, 6) } margin-left: 5px }",
         );
@@ -919,14 +922,14 @@ mod tests {
     #[test]
     fn a_parent_with_only_nested_rules_has_no_trailing_rule() {
         let sheet = parse_stylesheet(".wrap { .probe { color: rgb(1, 2, 3) } }");
-        assert_eq!(sheet.rules.len(), 1, "空の末尾ルールを作らない");
+        assert_eq!(sheet.rules.len(), 1, "no empty trailing rule is created");
     }
 
     #[test]
     fn declarations_after_a_nested_rule_use_the_resolved_parent_selector() {
-        // ネストしたルールより後ろの宣言は`&`と同じセレクタを持つ。
-        // 親がセレクタリストなら`:is(.p, #q)`にまとまり、詳細度は
-        // 最も強いセレクタ(ここでは`#q`の(1,0,0))で揃う。
+        // Declarations after a nested rule have the same selector as `&`.
+        // With a selector list parent they collapse into `:is(.p, #q)`, and the specificity
+        // levels up to the strongest selector (here `#q`'s (1,0,0)).
         let sheet = parse_stylesheet(".p, #q { .c { color: rgb(1, 2, 3) } margin-left: 5px }");
         assert_eq!(selector_texts(&sheet), [":is(.p, #q) .c", ":is(.p, #q)"]);
         let trailing = &sheet.rules[1].selectors;
@@ -942,7 +945,7 @@ mod tests {
 
     #[test]
     fn rules_without_declarations_are_dropped() {
-        // 宣言の無いルールはカスケードに寄与しないので索引にも入れない。
+        // A rule with no declarations does not contribute to the cascade, so it is not indexed.
         let sheet = parse_stylesheet(".a { } .b { color: rgb(1, 2, 3) } .c { }");
         assert_eq!(selector_texts(&sheet), [".b"]);
     }

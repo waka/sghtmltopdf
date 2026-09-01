@@ -1,8 +1,8 @@
-//! Ruby拡張のエントリポイント。
+//! The Ruby extension's entry point.
 //!
-//! この層は薄く保つ。オプションの引数列(argv)への組み立てはRuby側が
-//! 行い、ここは受け取ったargvをCLI・HTTPサーバと同じパーサへ通して
-//! レンダリングするだけ。
+//! This layer is kept thin. Assembling the option argument list (argv) is done on the Ruby
+//! side, and this merely runs the argv it receives through the same parser as the CLI and
+//! the HTTP server, and renders.
 
 mod callback_sink;
 mod errors;
@@ -19,23 +19,23 @@ use sghtmltopdf_core::sink::{FileSink, MemorySink};
 
 use callback_sink::{pump_to_block, BlockSlot, PendingUnwind, ValueSlot};
 
-/// HTMLを変換してPDFのバイト列を返す。
+/// Convert HTML and return the PDF bytes.
 fn render(html: RString, argv: Vec<String>) -> Result<RString, Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
-    // GVLを解放する前にRust側へコピーする。解放中はRubyのオブジェクトに
-    // 触れないため、`RString`のままでは持ち込めない。
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
+    // Copy to the Rust side before releasing the GVL. Ruby objects cannot be touched while
+    // it is released, so an `RString` cannot be carried in.
     let html = unsafe { html.as_slice() }.to_vec();
     errors::catch_panic(&ruby, move || render_inner(html, argv))
 }
 
 fn render_inner(html: Vec<u8>, argv: Vec<String>) -> Result<RString, Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
     let (args, fonts) = cli::parse_convert_argv(&argv).map_err(|e| errors::to_ruby(&ruby, e))?;
 
-    // GVLを解放したうえで、さらにレンダリング専用のスタックを確保した
-    // スレッドへ移す。Rubyのスレッドのマシンスタックは既定1MiBしかなく、
-    // レイアウト・描画の再帰に耐えられないため(`callback_sink`のモジュール
-    // doc参照)。この経路はRubyへコールバックしないので、そのまま移せる。
+    // Release the GVL and then move onto a thread with a stack allocated specifically for
+    // rendering. A Ruby thread's machine stack is only 1MiB by default and cannot survive the
+    // recursion of layout and drawing (see the module docs of `callback_sink`).
+    // This path never calls back into Ruby, so it can be moved as-is.
     let pdf = gvl::without_gvl(move || {
         render_stack::with_render_stack(move || {
             convert::render_to_memory(&args, &fonts, Cursor::new(html), MemorySink::new())
@@ -46,48 +46,50 @@ fn render_inner(html: Vec<u8>, argv: Vec<String>) -> Result<RString, Error> {
     Ok(ruby.str_from_slice(&pdf))
 }
 
-/// HTMLを変換して`path`へ書き出す。
+/// Convert HTML and write it to `path`.
 ///
-/// 出力先は[`FileSink`]が決めるので、argvの`--output`は使われない
-/// (一時ファイルへ書いて成功時だけrenameするため、途中で失敗しても
-/// 壊れたPDFが残らない)。
+/// The destination is decided by [`FileSink`], so argv's `--output` is unused
+/// (it writes to a temporary file and renames only on success, so a failure part-way through
+/// leaves no broken PDF).
 fn render_to_file(html: RString, argv: Vec<String>, path: String) -> Result<(), Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
     let html = unsafe { html.as_slice() }.to_vec();
     errors::catch_panic(&ruby, move || render_to_file_inner(html, argv, path))
 }
 
 fn render_to_file_inner(html: Vec<u8>, argv: Vec<String>, path: String) -> Result<(), Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
     let (args, fonts) = cli::parse_convert_argv(&argv).map_err(|e| errors::to_ruby(&ruby, e))?;
 
     let path = PathBuf::from(path);
     let sink = FileSink::create(&path).map_err(|e| {
         errors::to_ruby(
             &ruby,
-            cli::CliError::Input(format!("{}の作成に失敗しました: {e}", path.display())),
+            cli::CliError::Input(format!("failed to create {}: {e}", path.display())),
         )
     })?;
 
     gvl::without_gvl(move || {
-        render_stack::with_render_stack(move || convert::render(&args, &fonts, Cursor::new(html), sink))
+        render_stack::with_render_stack(move || {
+            convert::render(&args, &fonts, Cursor::new(html), sink)
+        })
     })
     .map_err(|e| errors::to_ruby(&ruby, e))?;
     Ok(())
 }
 
-/// HTMLを変換し、確定したPDFのバイト列を`chunk_size`ごとに`block`へ渡す。
+/// Convert HTML and hand the settled PDF bytes to `block` in `chunk_size` pieces.
 ///
-/// レンダリングの間はGVLを解放し、ブロックを呼ぶ瞬間だけ取り戻す。ブロックが
-/// 例外を投げた場合は、その例外をそのまま呼び出し元へ伝える(エンジン側は
-/// 通常のエラーパスで巻き戻る)。
+/// The GVL is released during rendering and reacquired only for the moment the block is
+/// called. If the block throws an exception, that exception is propagated to the caller
+/// unchanged (the engine unwinds through its ordinary error path).
 fn render_each(
     html: RString,
     argv: Vec<String>,
     block: Proc,
     chunk_size: usize,
 ) -> Result<(), Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
     let html = unsafe { html.as_slice() }.to_vec();
     errors::catch_panic(&ruby, move || {
         render_each_inner(html, argv, block, chunk_size)
@@ -100,11 +102,11 @@ fn render_each_inner(
     block: Proc,
     chunk_size: usize,
 ) -> Result<(), Error> {
-    let ruby = Ruby::get().expect("GVLを保持したまま呼ばれるはず");
+    let ruby = Ruby::get().expect("it should be called while holding the GVL");
     let (args, fonts) = cli::parse_convert_argv(&argv).map_err(|e| errors::to_ruby(&ruby, e))?;
 
-    // ブロックはGVL解放区間をまたいで生きる必要があるため、GCへ登録する
-    // (解放後にスタックへ積んだ値は保守的GCの走査対象外)。
+    // The block has to survive across the GVL-released region, so it is registered with the
+    // GC (a value pushed onto the stack after the release is outside the conservative GC's scan).
     let block = ValueSlot::new(block.as_raw());
     let mut pending = PendingUnwind::default();
 
@@ -112,9 +114,9 @@ fn render_each_inner(
         let slot = BlockSlot::new(&block);
         let pending = &mut pending;
         gvl::without_gvl(move || {
-            // レンダリングは専用スタックのスレッドで走り、確定したチャンクだけが
-            // ここへ戻ってくる。ブロックの呼び出し(=GVLの再取得)は、GVLを
-            // 手放したこのスレッドで行う必要があるため`pump_to_block`に任せる。
+            // Rendering runs on a thread with a dedicated stack, and only the settled chunks
+            // come back here. Calling the block (that is, reacquiring the GVL) has to happen
+            // on this thread, the one that released it, so it is left to `pump_to_block`.
             pump_to_block(slot, pending, chunk_size, move |sink| {
                 convert::render(&args, &fonts, Cursor::new(html), sink)
             })
@@ -122,32 +124,32 @@ fn render_each_inner(
     };
     drop(block);
 
-    // ブロック由来の中断は、エンジンが返すエラーより優先して伝える
-    // (`Sink::Error`が`io::Error`固定のため、理由はこちらに載っている)。
-    // `break`等の脱出は`into_error`の中で`rb_jump_tag`し戻らないので、
-    // Rust側の値はここで落としきってから呼ぶ。
+    // An interruption from the block is propagated in preference to whatever error the engine
+    // returns (`Sink::Error` is fixed to `io::Error`, so the reason rides on this instead).
+    // A non-local exit such as `break` calls `rb_jump_tag` inside `into_error` and never
+    // returns, so the Rust-side values are all dropped before it is called.
     if pending.is_pending() {
         drop(result);
         return Err(pending
             .into_error()
-            .expect("is_pendingがtrueなら中断が入っている"));
+            .expect("with is_pending true, an interruption is present"));
     }
     result.map_err(|e| errors::to_ruby(&ruby, e))
 }
 
-/// coreへリンクできていることの確認用(疎通確認)。
+/// For confirming we can link against the core (a connectivity check).
 fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
-/// coreのシンボルを実際に1つ呼んでリンクを確かめる。
+/// Really call one of the core's symbols to confirm the link.
 fn default_page_size() -> String {
     let settings = sghtmltopdf_core::layout::PageSettings::default();
     format!("{}x{}", settings.size.width, settings.size.height)
 }
 
-/// GVLを解放して実行できることの確認用。解放中も他のRubyスレッドが
-/// 進めることをRuby側のテストで検証する。
+/// For confirming it can run with the GVL released. That other Ruby threads make progress
+/// during the release is checked by a test on the Ruby side.
 fn sleep_without_gvl(ms: u64) {
     gvl::without_gvl(|| std::thread::sleep(std::time::Duration::from_millis(ms)));
 }

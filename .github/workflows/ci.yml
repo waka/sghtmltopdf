@@ -23,15 +23,15 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: cargo test
         run: cargo test --workspace
-      # `svg-text`は既定オフ(rustybuzz・resvg等25クレートを引き込むため)。
-      # 既定featureのテストだけではSVG内の`<text>`まわりが1つも走らないので、
-      # このfeatureを足した組み合わせも回す(tests/svg_fonts.rsの大半はここ)。
+      # `svg-text` is off by default (it pulls in rustybuzz, resvg and ~25 other crates).
+      # Testing only the default features would never exercise `<text>` inside SVG,
+      # so we also run a combination with that feature on (most of tests/svg_fonts.rs lives there).
       - name: cargo clippy (svg-text)
         run: cargo clippy -p sghtmltopdf-core --features svg-text --all-targets -- -D warnings
       - name: cargo test (svg-text)
         run: cargo test -p sghtmltopdf-core --features svg-text
 
-  # 依存クレートのアドバイザリ照合(RustSec)
+  # Check dependency crates against advisories (RustSec)
   audit:
     runs-on: ubuntu-latest
     steps:
@@ -40,11 +40,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: cargo install cargo-audit
         run: cargo install cargo-audit --locked
-      # `--deny warnings`が無いと、unmaintained/yankedはexit 0で素通りする。
-      # 判断済みのアドバイザリは`.cargo/audit.toml`にIDを明記して除外している。
+      # Without `--deny warnings`, unmaintained/yanked advisories pass with exit 0.
+      # Advisories we have already ruled on are excluded by ID in `.cargo/audit.toml`.
       #
-      # coreとRuby拡張はCargo.lockが別なので両方見る。`--file`でルートから
-      # 指すことで、設定ファイル1つが両方に効く。
+      # core and the Ruby extension have separate Cargo.lock files, so we check both.
+      # Pointing at them from the root with `--file` lets one config file cover both.
       - name: cargo audit (core)
         run: cargo audit --deny warnings
       - name: cargo audit (bindings/ruby)
@@ -60,17 +60,17 @@ jobs:
         ruby: ["3.2", "3.4", "4.0"]
     steps:
       - uses: actions/checkout@v4
-      # rb-sysのビルドに要るRustとlibclangまで面倒を見てくれる
+      # Takes care of the Rust toolchain and libclang that rb-sys needs to build
       - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-          # 既定(tarball)でビルド成果物をキャッシュする
+          # Cache the build artifacts with the default (tarball) strategy
           cargo-cache: default
           working-directory: bindings/ruby
-      # CLIとgemの出力がバイト単位で一致することを見るspecと、実サーバとの結合specはrelease版のバイナリが要る
-      # 無ければskipされるので、1つの組み合わせでだけビルドする
-      - name: cargo build --release (CLI比較・実サーバ結合specのため)
+      # The spec that checks the CLI and gem outputs match byte for byte, and the specs that talk to a real server, need a release binary.
+      # They skip themselves when it is missing, so we only build it for one combination.
+      - name: cargo build --release (for the CLI comparison and real-server integration specs)
         if: matrix.ruby == '4.0'
         run: cargo build --release --locked
       - name: rake (compile → spec)

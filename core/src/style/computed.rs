@@ -1,7 +1,7 @@
-//! カスケード済み宣言(T3)から、要素ごとの計算スタイルを算出する。
+//! Computing each element's style from the cascaded declarations (T3).
 //!
-//! プロパティごとに「宣言があればそれを採用(カスケード順で最後に勝ったもの)、
-//! なければ継承プロパティは親から継承、そうでなければ初期値」= CSSの計算値算出手順
+//! Per property: "take the declaration if there is one (whichever won in cascade order);
+//! otherwise inherit from the parent for inherited properties, else use the initial value" - the CSS computed-value procedure
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ use super::values::{
     WordBreak, ZIndex,
 };
 
-/// `color`/`background-color`の計算値。パース時と異なり`currentcolor`は解決済み。
+/// The computed value of `color`/`background-color`. Unlike at parse time, `currentcolor` is already resolved.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RgbaColor {
     pub red: u8,
@@ -40,7 +40,7 @@ pub struct RgbaColor {
 }
 
 impl RgbaColor {
-    /// 完全に透明(`background-color`の初期値`transparent`)。
+    /// Fully transparent (the initial value of `background-color`, `transparent`).
     pub const TRANSPARENT: Self = Self {
         red: 0,
         green: 0,
@@ -49,17 +49,17 @@ impl RgbaColor {
     };
 }
 
-/// `line-height`の計算値。CSS2.1 §10.8.1: `<number>`/`<percentage>`の計算値は
-/// 「指定値の数値そのもの」(親のfont-sizeで先に乗算した絶対値ではない)。
-/// 継承時はこの値のまま伝わり、使用側(`layout::inline`)がそのテキストランの
-/// font-sizeで乗算する。
+/// The computed value of `line-height`. CSS2.1 section 10.8.1: the computed value of a
+/// `<number>`/`<percentage>` is "the specified number itself", not an absolute value
+/// pre-multiplied by the parent's font-size. It is inherited as-is, and the consumer
+/// (`layout::inline`) multiplies it by that text run's font-size.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum LineHeight {
     #[default]
     Normal,
-    /// `<number>`。`<percentage>`は`p/100.0`に正規化した上でこの値に入れる。
+    /// `<number>`. A `<percentage>` is normalised to `p/100.0` and stored here.
     Number(f32),
-    /// `<length>`。em/rem解決済みの絶対px、そのまま継承される。
+    /// `<length>`. Absolute px with em/rem resolved, inherited unchanged.
     Length(f32),
 }
 
@@ -68,14 +68,14 @@ pub struct ComputedStyle {
     pub display: Display,
     pub width: LengthPercentageOrAuto,
     pub height: LengthPercentageOrAuto,
-    /// `min-width`/`min-height`。非継承プロパティ、初期値`0`。
+    /// `min-width`/`min-height`. Not inherited; initial value `0`.
     pub min_width: LengthPercentage,
     pub min_height: LengthPercentage,
-    /// `max-width`/`max-height`。非継承プロパティ、初期値`none`(上限なし)。
+    /// `max-width`/`max-height`. Not inherited; initial value `none` (no upper bound).
     pub max_width: MaxSize,
     pub max_height: MaxSize,
-    /// `aspect-ratio`。非継承プロパティ、初期値`auto`。置換要素(`<img>`)では
-    /// 寸法解決の入口で内在比が`ratio`へ焼き込まれる。
+    /// `aspect-ratio`. Not inherited; initial value `auto`. For a replaced element (`<img>`)
+    /// the intrinsic ratio is baked into `ratio` at the entry to size resolution.
     pub aspect_ratio: AspectRatio,
     pub margin_top: LengthPercentageOrAuto,
     pub margin_right: LengthPercentageOrAuto,
@@ -89,8 +89,8 @@ pub struct ComputedStyle {
     pub border_right_width: Length,
     pub border_bottom_width: Length,
     pub border_left_width: Length,
-    /// 初期値は`currentcolor`(仕様通り)。宣言がなければこの要素自身の
-    /// 計算済み`color`を使う(`resolve_color`で解決)。
+    /// The initial value is `currentcolor` (as the spec says). With no declaration, the
+    /// element's own computed `color` is used (resolved by `resolve_color`).
     pub border_top_color: RgbaColor,
     pub border_right_color: RgbaColor,
     pub border_bottom_color: RgbaColor,
@@ -99,204 +99,203 @@ pub struct ComputedStyle {
     pub border_right_style: BorderStyle,
     pub border_bottom_style: BorderStyle,
     pub border_left_style: BorderStyle,
-    /// 水平/垂直の半径を持つ(真円は水平=垂直)。
+    /// Holds a horizontal and a vertical radius (a true circle has the two equal).
     pub border_top_left_radius: CornerRadius,
     pub border_top_right_radius: CornerRadius,
     pub border_bottom_right_radius: CornerRadius,
     pub border_bottom_left_radius: CornerRadius,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub font_size: Length,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub font_family: Vec<String>,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub font_weight: FontWeight,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub font_style: FontStyle,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub color: RgbaColor,
     pub background_color: RgbaColor,
-    /// `url(...)`(生の値、解決は呼び出し側任せ)。非継承プロパティ、初期値`None`。
+    /// `url(...)` (the raw value; resolving it is left to the caller). Not inherited; initial value `None`.
     pub background_image: Option<String>,
-    /// 非継承プロパティ。
+    /// Not inherited.
     pub background_position: BackgroundPosition,
-    /// 非継承プロパティ。
+    /// Not inherited.
     pub background_size: BackgroundSize,
-    /// 非継承プロパティ。
+    /// Not inherited.
     pub background_repeat: BackgroundRepeat,
-    /// 非継承プロパティ。`fixed`は`scroll`と同一視して描画する。
+    /// Not inherited. `fixed` is drawn the same as `scroll`.
     pub background_attachment: BackgroundAttachment,
-    /// `text-decoration-line`。仕様上は非継承プロパティだが、代わりに祖先の
-    /// 装飾線が子孫のボックスへ「伝播」する特殊規則を持つ。この伝播を
-    /// 別途実装する代わりに、継承プロパティとして扱うことで
-    /// (`<u>bold <b>text</b></u>`のような)一般的なネストケースで見た目を一致させる
-    /// 簡略実装。子孫側で明示的に上書きされれば通常の継承同様そちらが勝つ。
+    /// `text-decoration-line`. The spec makes it non-inherited but gives it a special rule
+    /// whereby an ancestor's decoration line "propagates" onto descendant boxes. Rather
+    /// than implement that propagation separately, we treat it as an inherited property, a
+    /// simplification that matches the appearance in the common nesting cases (such as
+    /// `<u>bold <b>text</b></u>`). An explicit override on a descendant still wins, as with ordinary inheritance.
     pub text_decoration_line: TextDecorationLine,
-    /// `::before { content: "..." }`の生成コンテンツ。この要素自身のスタイルを
-    /// そのまま流用して描画する(擬似要素専用の計算スタイルは持たない簡略実装)。
+    /// The generated content of `::before { content: "..." }`. It is drawn reusing the
+    /// element's own style (a simplification: pseudo-elements have no computed style of their own).
     pub pseudo_before_content: Option<String>,
-    /// `::after { content: "..." }`の生成コンテンツ。
+    /// The generated content of `::after { content: "..." }`.
     pub pseudo_after_content: Option<String>,
-    /// CSS Fragmentation。非継承プロパティ(仕様)。
+    /// CSS Fragmentation. Not inherited (per the spec).
     pub break_before: BreakBetween,
     pub break_after: BreakBetween,
     pub break_inside: BreakInside,
-    /// ページ末尾に残せる最小行数。非継承プロパティ、初期値2(仕様)。
+    /// Minimum number of lines that may be left at the end of a page. Not inherited; initial value 2 (per the spec).
     pub orphans: u32,
-    /// ページ先頭に送れる最小行数。非継承プロパティ、初期値2(仕様)。
+    /// Minimum number of lines that may be carried to the start of a page. Not inherited; initial value 2 (per the spec).
     pub widows: u32,
-    /// `float`。非継承プロパティ。`none`以外なら`display`はblock-levelとして
-    /// 計算される(CSS2.1 9.7、下記`compute_element_style`で適用)。
+    /// `float`. Not inherited. Anything but `none` makes `display` compute to block-level
+    /// (CSS2.1 9.7, applied in `compute_element_style` below).
     pub float: Float,
-    /// `clear`。非継承プロパティ。
+    /// `clear`. Not inherited.
     pub clear: Clear,
-    /// `position`。非継承プロパティ。
+    /// `position`. Not inherited.
     pub position: Position,
     pub top: LengthPercentageOrAuto,
     pub right: LengthPercentageOrAuto,
     pub bottom: LengthPercentageOrAuto,
     pub left: LengthPercentageOrAuto,
-    /// 継承プロパティ。IFC内では先頭`InlineSpan`の計算値で代表する。
+    /// An inherited property. Inside an IFC the first `InlineSpan`'s computed value represents it.
     pub text_align: TextAlign,
-    /// 継承プロパティ。`Number`/`Percentage`は未乗算のまま継承し、使用側
-    /// (`layout::inline`)がテキストランのfont-sizeで乗算する。
+    /// An inherited property. `Number`/`Percentage` are inherited unmultiplied, and the
+    /// consumer (`layout::inline`) multiplies by the text run's font-size.
     pub line_height: LineHeight,
-    /// 継承プロパティ。パーセンテージはcontaining block幅が未解決のため
-    /// fractionのまま保持する(`width`/`margin`と同じ「使用値は使う側で解決」
-    /// パターン)。IFC内では先頭`InlineSpan`の計算値で代表する。
+    /// An inherited property. Percentages are kept as fractions, the containing block width
+    /// being unresolved (the same "the used value is resolved by the consumer" pattern as
+    /// `width`/`margin`). Inside an IFC the first `InlineSpan`'s computed value represents it.
     pub text_indent: LengthPercentage,
-    /// 継承プロパティ。IFC内では先頭`InlineSpan`の計算値で代表する。
+    /// An inherited property. Inside an IFC the first `InlineSpan`'s computed value represents it.
     pub white_space: WhiteSpace,
-    /// 継承プロパティ。解決済みpx、`normal`は`0.0`。
+    /// An inherited property. Resolved px; `normal` is `0.0`.
     pub letter_spacing: f32,
-    /// 継承プロパティ。解決済みpx、`normal`は`0.0`。
+    /// An inherited property. Resolved px; `normal` is `0.0`.
     pub word_spacing: f32,
-    /// 継承プロパティ。
+    /// An inherited property.
     pub text_transform: TextTransform,
-    /// `text-shadow`。継承プロパティ、空のVecは`none`。色は解決済み。
+    /// `text-shadow`. Inherited; an empty Vec means `none`. Colours are resolved.
     pub text_shadow: Vec<ComputedTextShadow>,
-    /// `text-overflow`。非継承プロパティ(仕様)。`overflow`が
-    /// `visible`以外のときにのみ効く。
+    /// `text-overflow`. Not inherited (per the spec). It applies only when `overflow` is
+    /// something other than `visible`.
     pub text_overflow: TextOverflow,
-    /// `word-break`。継承プロパティ。
+    /// `word-break`. An inherited property.
     pub word_break: WordBreak,
-    /// `overflow-wrap`(別名`word-wrap`)。継承プロパティ。
+    /// `overflow-wrap` (also known as `word-wrap`). An inherited property.
     pub overflow_wrap: OverflowWrap,
-    /// `hyphens`。継承プロパティ。
+    /// `hyphens`. An inherited property.
     pub hyphens: Hyphens,
-    /// `text-emphasis-style`。継承プロパティ。
+    /// `text-emphasis-style`. An inherited property.
     pub text_emphasis_style: EmphasisStyle,
-    /// `text-emphasis-color`。継承プロパティ、初期値は`currentcolor`。
+    /// `text-emphasis-color`. Inherited; the initial value is `currentcolor`.
     pub text_emphasis_color: RgbaColor,
-    /// `text-emphasis-position`。継承プロパティ、初期値`over`。
+    /// `text-emphasis-position`. Inherited; initial value `over`.
     pub text_emphasis_position: EmphasisPosition,
-    /// `grid-template-columns`/`grid-template-rows`。非継承プロパティ、
-    /// 空なら`none`。
+    /// `grid-template-columns`/`grid-template-rows`. Not inherited;
+    /// empty means `none`.
     pub grid_template_columns: TrackList,
     pub grid_template_rows: TrackList,
-    /// `grid-auto-columns`/`grid-auto-rows`。非継承、空なら初期値`auto`。
+    /// `grid-auto-columns`/`grid-auto-rows`. Not inherited; empty means the initial value `auto`.
     pub grid_auto_columns: Vec<TrackSize>,
     pub grid_auto_rows: Vec<TrackSize>,
-    /// `grid-auto-flow`。非継承、初期値`row`。
+    /// `grid-auto-flow`. Not inherited; initial value `row`.
     pub grid_auto_flow: GridAutoFlow,
-    /// `grid-template-areas`。非継承、空なら`none`。
+    /// `grid-template-areas`. Not inherited; empty means `none`.
     pub grid_template_areas: Vec<GridArea>,
-    /// `grid-row-start`等。非継承、初期値`auto`。
+    /// `grid-row-start` and friends. Not inherited; initial value `auto`.
     pub grid_row_start: GridLine,
     pub grid_row_end: GridLine,
     pub grid_column_start: GridLine,
     pub grid_column_end: GridLine,
-    /// `justify-items`/`justify-self`。非継承。Gridでのみ意味を持つ
-    /// (flexアイテムには適用されない)。
+    /// `justify-items`/`justify-self`. Not inherited. Meaningful only in Grid
+    /// (it does not apply to flex items).
     pub justify_items: AlignItems,
     pub justify_self: AlignSelf,
-    /// `border-collapse`。継承プロパティ。見た目の枠線描画のみ統合する。
+    /// `border-collapse`. Inherited. It only unifies how borders are drawn.
     pub border_collapse: BorderCollapse,
-    /// `border-spacing`の水平方向。継承プロパティ、`border-collapse: collapse`
-    /// 時は無視され0として扱う(仕様、`layout::table`側で解決)。
+    /// The horizontal component of `border-spacing`. Inherited; ignored and treated as 0
+    /// under `border-collapse: collapse` (per the spec, resolved in `layout::table`).
     pub border_spacing_horizontal: Length,
-    /// `border-spacing`の垂直方向。継承プロパティ。
+    /// The vertical component of `border-spacing`. An inherited property.
     pub border_spacing_vertical: Length,
-    /// `caption-side`。継承プロパティ。
+    /// `caption-side`. An inherited property.
     pub caption_side: CaptionSide,
-    /// `table-layout`。非継承プロパティ、テーブル要素自身の値を使う。
+    /// `table-layout`. Not inherited; the table element's own value is used.
     pub table_layout: TableLayout,
-    /// `empty-cells`。継承プロパティ、`border-collapse: separate`でのみ意味を持つ。
+    /// `empty-cells`. Inherited; meaningful only with `border-collapse: separate`.
     pub empty_cells: EmptyCells,
-    /// `vertical-align`(テーブルセル文脈専用)。非継承プロパティ。
+    /// `vertical-align` (in the table-cell context). Not inherited.
     pub vertical_align: VerticalAlign,
-    /// `list-style-type`。継承プロパティ。
+    /// `list-style-type`. An inherited property.
     pub list_style_type: ListStyleType,
-    /// `list-style-position`。継承プロパティ。
+    /// `list-style-position`. An inherited property.
     pub list_style_position: ListStylePosition,
-    /// `list-style-image`(`url(...)`の生の値)。継承プロパティだが、実際には
-    /// 常に`list_style_type`のテキストマーカーへ
-    /// フォールバックし描画されない。
+    /// `list-style-image` (the raw `url(...)` value). Inherited, but in practice it always
+    /// falls back to the `list_style_type` text marker and is never drawn.
     pub list_style_image: Option<String>,
-    /// `overflow`。非継承プロパティ。`hidden`/`scroll`/`auto`は区別せず全て
-    /// クリップ対象として扱う。
+    /// `overflow`. Not inherited. `hidden`/`scroll`/`auto` are not distinguished and all
+    /// clip.
     pub overflow: Overflow,
-    /// `box-sizing`。非継承プロパティ。
+    /// `box-sizing`. Not inherited.
     pub box_sizing: BoxSizing,
-    /// `z-index`。非継承プロパティ。`position: static`の要素には効果を持たない
-    /// (仕様、`layout`/`pdf`側で判定する)。
+    /// `z-index`. Not inherited. It has no effect on a `position: static` element
+    /// (per the spec; decided in `layout`/`pdf`).
     pub z_index: ZIndex,
-    /// `visibility`。継承プロパティ。`collapse`は`hidden`と同一視する。
+    /// `visibility`. Inherited. `collapse` is treated as `hidden`.
     pub visibility: Visibility,
-    /// `outline-width`。非継承プロパティ。
+    /// `outline-width`. Not inherited.
     pub outline_width: Length,
-    /// `outline-style`。非継承プロパティ、初期値`none`。
+    /// `outline-style`. Not inherited; initial value `none`.
     pub outline_style: BorderStyle,
-    /// `outline-color`。非継承プロパティ、初期値は`currentcolor`相当
-    /// (`border-color`と同じ解決規則)。
+    /// `outline-color`. Not inherited; the initial value amounts to `currentcolor`
+    /// (the same resolution rule as `border-color`).
     pub outline_color: RgbaColor,
-    /// `quotes`。継承プロパティ。`None`は`none`(常に空文字列を生成する)。
+    /// `quotes`. Inherited. `None` means `none` (always generating an empty string).
     pub quotes: Option<Vec<QuotePair>>,
-    /// `::first-letter`の限定的な上書きスタイル。
-    /// マッチする宣言が一つも無ければ`None`。
+    /// The limited override style for `::first-letter`.
+    /// `None` if no declaration matched.
     pub first_letter_style: Option<FirstLetterStyle>,
-    /// `object-fit`。非継承プロパティ、`<img>`にのみ意味を持つ。
+    /// `object-fit`. Not inherited; meaningful only on `<img>`.
     pub object_fit: ObjectFit,
-    /// `object-position`。非継承プロパティ、初期値`50% 50%`
-    /// (`background-position`の初期値`0% 0%`とは異なる)。
+    /// `object-position`. Not inherited; initial value `50% 50%`
+    /// (unlike `background-position`, whose initial value is `0% 0%`).
     pub object_position: BackgroundPosition,
-    /// `box-shadow`。非継承プロパティ、初期値は空(影なし)。カンマ区切りの
-    /// 複数指定に対応、先頭が最前面。
+    /// `box-shadow`. Not inherited; the initial value is empty (no shadow). Comma-separated
+    /// multiples are supported, the first being frontmost.
     pub box_shadow: Vec<ComputedBoxShadow>,
-    /// `flex-direction`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `flex-direction`. Not inherited; meaningful only on the flex container itself.
     pub flex_direction: FlexDirection,
-    /// `flex-wrap`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `flex-wrap`. Not inherited; meaningful only on the flex container itself.
     pub flex_wrap: FlexWrap,
-    /// `justify-content`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `justify-content`. Not inherited; meaningful only on the flex container itself.
     pub justify_content: JustifyContent,
-    /// `align-items`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `align-items`. Not inherited; meaningful only on the flex container itself.
     pub align_items: AlignItems,
-    /// `align-content`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `align-content`. Not inherited; meaningful only on the flex container itself.
     pub align_content: AlignContent,
-    /// `align-self`。非継承プロパティ、flexアイテムにのみ意味を持つ。
+    /// `align-self`. Not inherited; meaningful only on a flex item.
     pub align_self: AlignSelf,
-    /// `flex-grow`。非継承プロパティ、flexアイテムにのみ意味を持つ。
+    /// `flex-grow`. Not inherited; meaningful only on a flex item.
     pub flex_grow: f32,
-    /// `flex-shrink`。非継承プロパティ、flexアイテムにのみ意味を持つ。
+    /// `flex-shrink`. Not inherited; meaningful only on a flex item.
     pub flex_shrink: f32,
-    /// `flex-basis`。非継承プロパティ、flexアイテムにのみ意味を持つ。
+    /// `flex-basis`. Not inherited; meaningful only on a flex item.
     pub flex_basis: FlexBasis,
-    /// `row-gap`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `row-gap`. Not inherited; meaningful only on the flex container itself.
     pub row_gap: LengthPercentage,
-    /// `column-gap`。非継承プロパティ、flexコンテナ自身にのみ意味を持つ。
+    /// `column-gap`. Not inherited; meaningful only on the flex container itself.
     pub column_gap: LengthPercentage,
-    /// `transform`。非継承プロパティ。パーセンテージ(`translate`系)は
-    /// 要素自身のborder-boxサイズが確定してから解決するため未解決のまま
-    /// 保持する。空のVecは`none`。
+    /// `transform`. Not inherited. Percentages (on the `translate` family) are kept
+    /// unresolved, since they resolve only once the element's own border-box size is final.
+    /// An empty Vec means `none`.
     pub transform: Vec<TransformFunction>,
-    /// `transform-origin`。非継承プロパティ、初期値
-    /// `50% 50%`(`background-position`の初期値`0% 0%`とは異なる)。
+    /// `transform-origin`. Not inherited; initial value
+    /// `50% 50%` (unlike `background-position`, whose initial value is `0% 0%`).
     pub transform_origin: BackgroundPosition,
-    /// `opacity`。非継承プロパティ、0〜1にクランプ済み、初期値1.0 。
+    /// `opacity`. Not inherited; already clamped to 0-1; initial value 1.0.
     pub opacity: f32,
 }
 
-/// `box-shadow`1つ分の計算値。長さはpx解決済み、`color`は`currentcolor`を
-/// 解決済み(`resolve_color`、この要素自身の計算済み`color`を基準にする)。
+/// The computed value of one `box-shadow`. Lengths are resolved to px and `color` has
+/// `currentcolor` resolved (`resolve_color`, against the element's own computed `color`).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedBoxShadow {
     pub offset_x: f32,
@@ -304,11 +303,11 @@ pub struct ComputedBoxShadow {
     pub blur_radius: f32,
     pub spread_radius: f32,
     pub color: RgbaColor,
-    /// `inset`キーワード。パースはするが描画は非対応(既知の簡略化)。
+    /// The `inset` keyword. It parses, but drawing it is not supported (a known simplification).
     pub inset: bool,
 }
 
-/// `grid-auto-columns`/`grid-auto-rows`の`em`/`rem`解決。
+/// `em`/`rem` resolution for `grid-auto-columns`/`grid-auto-rows`.
 fn resolve_track_sizes(
     sizes: &[SpecifiedTrackSize],
     font_size: f32,
@@ -320,8 +319,8 @@ fn resolve_track_sizes(
         .collect()
 }
 
-/// `text-shadow`1つ分の計算値。長さはpx
-/// 解決済み、`color`は`currentcolor`を解決済み。
+/// The computed value of one `text-shadow`. Lengths are resolved to px and `color` has
+/// `currentcolor` resolved.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ComputedTextShadow {
     pub offset_x: f32,
@@ -330,10 +329,10 @@ pub struct ComputedTextShadow {
     pub color: RgbaColor,
 }
 
-/// `::first-letter`用の限定的な上書きスタイル。実装コストと需要のバランスを
-/// 取り、フォント系・color・text-decoration-line・text-transformのみ対応する
-/// (`float`/box model系プロパティは非対応)。各フィールドが`None`の場合は
-/// ホスト要素自身の計算値をそのまま使う。
+/// The limited override style for `::first-letter`. Balancing implementation cost against
+/// demand, only the font properties, color, text-decoration-line and text-transform are
+/// supported (`float` and the box model properties are not). A field that is `None` uses
+/// the host element's own computed value as-is.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct FirstLetterStyle {
     pub font_size: Option<Length>,
@@ -346,9 +345,9 @@ pub struct FirstLetterStyle {
 }
 
 impl Default for ComputedStyle {
-    /// CSSの初期値。`border-width`の初期値は仕様上`medium`(実装依存の太さ、
-    /// 概ね3px相当)だが、意図しない既定枠線の描画を避けるためここでは`0`とする
-    /// (どのみち`border-style`の初期値`none`により、幅があっても描画はされない)。
+    /// The CSS initial value. The spec makes the initial `border-width` `medium` (an
+    /// implementation-defined thickness, roughly 3px), but we use `0` here to avoid drawing
+    /// an unintended default border (nothing is drawn anyway, the initial `border-style` being `none`).
     fn default() -> Self {
         let zero_lp = LengthPercentage::Length(0.0);
         Self {
@@ -372,8 +371,8 @@ impl Default for ComputedStyle {
             border_right_width: Length(0.0),
             border_bottom_width: Length(0.0),
             border_left_width: Length(0.0),
-            // currentcolorの初期解決先(このデフォルト値自体が親を持たない場合の
-            // 基準になる)。実際の解決は`resolve_color`が行う。
+            // Where currentcolor initially resolves to (the basis when this default value
+            // itself has no parent). The actual resolution is done by `resolve_color`.
             border_top_color: RgbaColor {
                 red: 0,
                 green: 0,
@@ -407,9 +406,9 @@ impl Default for ComputedStyle {
             border_bottom_right_radius: CornerRadius::default(),
             border_bottom_left_radius: CornerRadius::default(),
             font_size: Length(16.0),
-            // 既定は「未指定」を表す空 Vec。`select_for_char`は空なら呼び出し
-            // 側フォント(`--font`/`@font-face`)へフォールバックする
-            // (`sans-serif`は明示時のみゴシック解決)。
+            // The default is an empty Vec, meaning "unspecified". When empty,
+            // `select_for_char` falls back to the caller's font (`--font`/`@font-face`)
+            // (`sans-serif` resolves to a gothic face only when written explicitly).
             font_family: Vec::new(),
             font_weight: FontWeight::Normal,
             font_style: FontStyle::Normal,
@@ -475,8 +474,8 @@ impl Default for ComputedStyle {
             grid_row_end: GridLine::Auto,
             grid_column_start: GridLine::Auto,
             grid_column_end: GridLine::Auto,
-            // `justify-items`の初期値は`legacy`(実質`stretch`)、
-            // `justify-self`は`auto`(親の`justify-items`に従う)。
+            // The initial value of `justify-items` is `legacy` (effectively `stretch`),
+            // and of `justify-self` is `auto` (following the parent's `justify-items`).
             justify_items: AlignItems::Stretch,
             justify_self: AlignSelf::Auto,
             border_collapse: BorderCollapse::Separate,
@@ -501,7 +500,7 @@ impl Default for ComputedStyle {
                 blue: 0,
                 alpha: 1.0,
             },
-            // 一般的なブラウザ既定値と同じ曲線引用符。
+            // The same curly quotes as the common browser defaults.
             quotes: Some(vec![
                 QuotePair {
                     open: "\u{201C}".to_string(),
@@ -540,31 +539,31 @@ impl Default for ComputedStyle {
     }
 }
 
-/// DOM全体の計算スタイルを求める。要素以外のノード(テキスト等)には
-/// ボックスに関するプロパティは意味を持たないため、単純に親の計算スタイルを
-/// (= 継承プロパティも含めてそのまま)引き継ぐ。
+/// Compute the styles for the whole DOM. Box-related properties mean nothing on non-element
+/// nodes (text and so on), so those simply take the parent's computed style
+/// (that is, unchanged, inherited properties included).
 ///
-/// `rem`の基準となるルート要素(`<html>`)のフォントサイズは、木を辿りながら
-/// 最初に見つかった要素で確定する。それより前の(まだ確定していない)時点では
-/// 初期値`16px`を仮の基準として使うが、ルート要素自身が`rem`単位で
-/// 自分自身のfont-sizeを指定するような通常あり得ない記述を除けば、
-/// ルート要素の子孫は必ずルート確定後に処理されるため実用上問題ない。
-/// 同じ計算結果になったスタイルを1つの`Rc`にまとめる小さなキャッシュ。
+/// The font size of the root element (`<html>`), which `rem` is relative to, is fixed at
+/// the first element found while walking the tree. Before that point (while it is still
+/// undecided) the initial value `16px` stands in, which is fine in practice: barring the
+/// unheard-of case of the root element specifying its own font-size in `rem`, the root's
+/// descendants are always processed after the root has been fixed.
+/// A small cache that shares identical computed styles behind a single `Rc`.
 ///
-/// 帳票のように同じ体裁の行が並ぶ文書では、要素ごとに計算しても結果は数種類に
-/// 収束する。1件が1KB強あるため、共有しないとノード数に比例してメモリを食う
-/// (10万セルの表でスタイルだけが数百MBになる)。
+/// In a document such as a business form, where rows share one style, computing per element
+/// still converges on a handful of distinct results. Each is a little over 1KB, so without
+/// sharing the memory grows with the node count (hundreds of MB of styles on a 100,000-cell table).
 ///
-/// 直近に使ったものから線形に比較し、見つかったら先頭へ移す(MRU)。
-/// 走査コストを抑えるため保持数に上限を設け、あふれたら最後尾を捨てる。
-/// 捨てても共有し損ねるだけで、結果は変わらない。
+/// Comparison is linear from the most recently used, and a hit is moved to the front (MRU).
+/// To bound the scanning cost the number kept is capped, and the last entry is dropped on
+/// overflow. Dropping one only misses a chance to share; it never changes the result.
 #[derive(Default)]
 struct StyleInterner {
     recent: Vec<Rc<ComputedStyle>>,
 }
 
-/// インターナが覚えておくスタイルの数。表の列数や見出しの種類より十分大きく、
-/// かつ線形比較が問題にならない程度に小さい値。
+/// How many styles the interner remembers. Comfortably more than a table's column count or
+/// the variety of headings, and small enough that linear comparison is not a problem.
 const STYLE_CACHE_LIMIT: usize = 64;
 
 impl StyleInterner {
@@ -592,8 +591,8 @@ pub fn compute_styles(
         author,
         root_font_size: Cell::new(ComputedStyle::default().font_size.0),
     };
-    // カウンタ・quote深度はいずれも文書全体で1つ(バッチ処理は文書全体を1回の
-    // 走査で処理するため、ここで新規に用意すれば足りる)。
+    // Counters and quote depth are each one per document (batch processing handles the whole
+    // document in a single walk, so creating them here is enough).
     let mut counters = HashMap::new();
     let mut quote_depth = 0;
     compute_recursive(
@@ -610,16 +609,15 @@ pub fn compute_styles(
     styles
 }
 
-/// [`compute_styles`]のバリアント: `dom`のルート(`document()`)から辿るの
-/// ではなく、任意の`root`(とその子孫)を、既知の親スタイル`parent_style`・
-/// 確定済みの`root_font_size`(`rem`の基準)を起点に計算する。
+/// A variant of [`compute_styles`]: rather than walking from `dom`'s root (`document()`),
+/// it computes an arbitrary `root` (and its descendants) starting from a known parent style
+/// `parent_style` and an already-fixed `root_font_size` (the basis for `rem`).
 ///
-/// ストリーミング処理で、`<body>`直下のトップレベル要素が
-/// 確定するたびに、そのノードだけを対象に、事前に計算済みの`<body>`の
-/// スタイルを引き継いでスタイル計算するために使う。`dom`自体は文書全体の
-/// ものをそのまま渡してよい(`root`とその子孫だけが辿られる)。`root`は
-/// `<html>`のようなルート候補ではないため、`rem`基準を上書きしない
-/// (`is_root_candidate: false`で呼ぶ)。
+/// Streaming uses it to compute styles for just one node, each time a top-level element
+/// directly under `<body>` becomes final, carrying over the already-computed style of
+/// `<body>`. `dom` itself may be passed as the whole document (only `root` and its
+/// descendants are walked). `root` is not a root candidate such as `<html>`, so it does not
+/// override the `rem` basis (it is called with `is_root_candidate: false`).
 #[allow(clippy::too_many_arguments)]
 pub fn compute_styles_with_parent(
     dom: &Dom,
@@ -651,13 +649,13 @@ pub fn compute_styles_with_parent(
     styles
 }
 
-/// `element`単体の計算スタイルを、既知の親スタイルを起点に計算する。
+/// Compute the style of `element` alone, starting from a known parent style.
 ///
-/// ストリーミング処理で、`<html>`/`<body>`要素自身の
-/// スタイルを(それぞれの子孫全体を再帰的に辿ることなく)個別に確定させる
-/// ために使う。[`compute_element_style`]をそのまま公開したもの
-/// (この要素がpushしたカウンタ名の一覧はpop対象として追跡しない。
-/// `<html>`/`<body>`レベルの`counter-reset`は文書全体に永続して構わないため)。
+/// Streaming uses it to fix the styles of the `<html>`/`<body>` elements themselves
+/// individually, without recursing through all of their descendants. It simply exposes
+/// [`compute_element_style`] (the list of counter names this element pushed is not tracked
+/// for popping: a `counter-reset` at the `<html>`/`<body>` level may safely persist for the
+/// whole document).
 #[allow(clippy::too_many_arguments)]
 pub fn compute_single_element_style(
     dom: &Dom,
@@ -682,24 +680,24 @@ pub fn compute_single_element_style(
     .0
 }
 
-/// `compute_recursive`/`compute_element_style`の再帰全体で共有する、
-/// 木を辿る間変化しない(または`Cell`経由で一方向にのみ更新される)値。
-/// 引数の数を抑えるための単純なまとめ役。
+/// Values shared across the whole `compute_recursive`/`compute_element_style` recursion
+/// that do not change while walking the tree (or are updated one way only, through a
+/// `Cell`). A simple grouping to keep the argument count down.
 struct StyleContext<'a> {
     ua: &'a Stylesheet,
     author: &'a Stylesheet,
-    /// `rem`の基準となるルート要素(`<html>`)の計算済みフォントサイズ。
-    /// 木を辿りながら最初に見つかった要素で確定する。
+    /// The computed font size of the root element (`<html>`), which `rem` is relative to.
+    /// Fixed at the first element found while walking the tree.
     root_font_size: Cell<f32>,
 }
 
-/// 戻り値は`node`自身が`counter-reset`(または暗黙生成)でpushしたカウンタ名の
-/// 一覧。CSSの仕様上、この push が作るスコープは「`node`自身とそれに続く
-/// 兄弟要素」(`node`の親の子要素列の残り)まで及ぶため、popできるのは
-/// `node`の親であって`node`自身ではない。よって`node`はここではpopせず、
-/// そのまま呼び出し元(親の`compute_recursive`)へ返す。一方、`node`の直接の
-/// 子が同様にpushしたカウンタは、`node`の子要素列の走査(=兄弟スコープ)が
-/// 終わるこの関数の末尾でpopしてよい。
+/// The return value is the list of counter names `node` itself pushed via `counter-reset`
+/// (or implicit creation). Under the CSS spec the scope that push creates extends to
+/// "`node` itself and the siblings that follow it" (the rest of `node`'s parent's child
+/// list), so the one that can pop is `node`'s parent, not `node` itself. So `node` does not
+/// pop here and returns them to the caller (the parent's `compute_recursive`). Counters
+/// pushed the same way by `node`'s direct children, on the other hand, may be popped at the
+/// end of this function, where the walk of `node`'s child list (their sibling scope) ends.
 #[allow(clippy::too_many_arguments)]
 fn compute_recursive(
     dom: &Dom,
@@ -724,7 +722,7 @@ fn compute_recursive(
                 counters,
                 quote_depth,
             );
-            // ドキュメント直下の最初の要素(通常は<html>)がルート要素。
+            // The first element directly under the document (usually <html>) is the root element.
             if is_root_candidate {
                 ctx.root_font_size.set(style.font_size.0);
             }
@@ -733,7 +731,7 @@ fn compute_recursive(
         _ => (parent_style.cloned().unwrap_or_default(), Vec::new(), None),
     };
 
-    // `node`がドキュメントノードであれば、その直下の子(通常は<html>)がルート要素候補。
+    // If `node` is the document node, its direct child (usually <html>) is the root element candidate.
     let children_are_root_candidates = node == dom.document();
     let mut children_pushed_counter_names = Vec::new();
     for child in dom.children(node) {
@@ -751,17 +749,17 @@ fn compute_recursive(
         children_pushed_counter_names.extend(pushed_by_child);
     }
 
-    // 直接の子(とその兄弟スコープ全体)がpushしたカウンタのスコープを終了する。
-    // `node`自身がpushした分はここではpopしない(呼び出し元=`node`の親が
-    // popする、上記のコメント参照)。
+    // End the scope of the counters pushed by the direct children (and their whole sibling scope).
+    // What `node` itself pushed is not popped here (the caller, `node`'s parent, pops it;
+    // see the comment above).
     for name in &children_pushed_counter_names {
         if let Some(stack) = counters.get_mut(name) {
             stack.pop();
         }
     }
 
-    // `::after`のcontentを、子孫の処理が終わった今の状態(counter()/quotesが
-    // 子孫による変更を反映済み)で解決する。
+    // Resolve the `::after` content against the state as it now stands (with counter()/quotes
+    // reflecting any changes made by the descendants).
     let quotes = style.quotes.clone();
     style.pseudo_after_content =
         resolve_content_parts(after_parts, dom, node, counters, quote_depth, &quotes);
@@ -770,19 +768,19 @@ fn compute_recursive(
     own_pushed_counter_names
 }
 
-/// `element`の計算スタイルを求める。戻り値は`(スタイル, pushしたカウンタ名の
-/// 一覧, 未解決の::after content)`の3つ組。
+/// Compute the style of `element`. Returns the triple (style, list of pushed counter names,
+/// unresolved ::after content).
 ///
-/// `Vec<String>`は、この要素が`counter-reset`(または未定義カウンタへの
-/// `counter-increment`による暗黙生成)で`counters`にpushしたカウンタ名の
-/// 一覧で、呼び出し側(`compute_recursive`)が
-/// 子孫の処理後に同じ数だけpopするために使う。
+/// The `Vec<String>` is the list of counter names this element pushed onto `counters` via
+/// `counter-reset` (or implicit creation from a `counter-increment` on an undefined
+/// counter), which the caller (`compute_recursive`) uses to pop the same number after
+/// processing the descendants.
 ///
-/// `::after`の`content`は、この関数の時点では解決せず`Option<Vec<ContentPart>>`
-/// のまま返す。`::after`はDOM順で子孫より後に現れるため、`counter()`/`quotes`
-/// (子孫による変更を反映すべき)は子孫の処理が終わってから解決する必要がある
-/// (呼び出し側の`compute_recursive`が子ループの後に`resolve_content_parts`を
-/// 呼び、`ComputedStyle::pseudo_after_content`を埋める)。
+/// The `content` of `::after` is not resolved at this point and comes back as an
+/// `Option<Vec<ContentPart>>`. `::after` appears after the descendants in DOM order, so
+/// `counter()`/`quotes` (which should reflect changes made by the descendants) can only be
+/// resolved once those are processed (the caller's `compute_recursive` calls
+/// `resolve_content_parts` after the child loop and fills in `ComputedStyle::pseudo_after_content`).
 #[allow(clippy::too_many_arguments)]
 fn compute_element_style(
     dom: &Dom,
@@ -797,8 +795,8 @@ fn compute_element_style(
     let (ua_declarations, author_declarations) =
         matching_declarations_by_origin(dom, element, ua, author);
     let inline_declarations = inline_style_declarations(dom, element);
-    // レガシー表示属性(`bgcolor`/`align`等)と`data-page-break`糖衣は、
-    // UAスタイルシートより強く作者CSSより弱い位置に置く。
+    // Legacy presentational attributes (`bgcolor`/`align` and friends) and the
+    // `data-page-break` sugar sit stronger than the UA stylesheet and weaker than author CSS.
     let mut attribute_declarations = presentational_hint_declarations(dom, element);
     attribute_declarations.extend(data_page_break_declarations(dom, element));
 
@@ -922,11 +920,11 @@ fn compute_element_style(
     let mut transform_origin = None;
     let mut opacity = None;
 
-    // カスケード順(優先度昇順)に走査するので、後で見つかったものが自然に勝つ。
-    // HTML属性由来の宣言(レガシー表示属性・`data-page-break`糖衣)は
-    // 「UAスタイルシートより強く、作者CSSでは上書きできる既定のヒント」という
-    // 位置づけなので両者の間に置く。インラインstyle属性はセレクタベースのどの
-    // 宣言よりも優先度が高いため、最後に置く。
+    // We walk in cascade order (ascending priority), so a later find naturally wins.
+    // Declarations from HTML attributes (legacy presentational attributes and the
+    // `data-page-break` sugar) count as "default hints, stronger than the UA stylesheet but
+    // overridable by author CSS", so they sit between the two. An inline style attribute
+    // outranks every selector-based declaration, so it goes last.
     for decl in ua_declarations
         .into_iter()
         .chain(attribute_declarations.iter())
@@ -980,8 +978,8 @@ fn compute_element_style(
             PropertyDeclaration::BackgroundRepeat(v) => background_repeat = Some(*v),
             PropertyDeclaration::BackgroundAttachment(v) => background_attachment = Some(*v),
             PropertyDeclaration::TextDecorationLine(v) => text_decoration_line = Some(*v),
-            // `content`は`::before`/`::after`専用で、通常の要素では効果を持たない
-            // (`matching_pseudo_content`が別途、擬似要素向けのマッチングを行う)。
+            // `content` is for `::before`/`::after` only and has no effect on an ordinary
+            // element (`matching_pseudo_content` does the pseudo-element matching separately).
             PropertyDeclaration::Content(_) => {}
             PropertyDeclaration::BreakBefore(v) => break_before = Some(*v),
             PropertyDeclaration::BreakAfter(v) => break_after = Some(*v),
@@ -1105,12 +1103,12 @@ fn compute_element_style(
     let inherited_visibility = parent.map_or(initial.visibility, |p| p.visibility);
     let inherited_quotes = parent.map_or_else(|| initial.quotes.clone(), |p| p.quotes.clone());
 
-    // font-sizeは他の長さ系プロパティより先に解決する。`em`の基準は仕様上
-    // 「親要素の計算済みfont-size」(自分自身の値ではない、循環を避けるため)。
+    // font-size is resolved before the other length properties. Per the spec, `em` is
+    // relative to "the parent element's computed font-size" (not its own value, to avoid a cycle).
     let resolved_font_size = font_size
         .map(|specified| specified.resolve(inherited_font_size.0, root_font_size))
         .unwrap_or(inherited_font_size);
-    // font-size以外の長さ系プロパティの`em`基準は、この要素自身の(今解決した)font-size。
+    // For length properties other than font-size, `em` is relative to this element's own (just-resolved) font-size.
     let own_font_size = resolved_font_size.0;
     let resolve_lp_or_auto = |v: Option<SpecifiedLengthPercentageOrAuto>,
                               initial: LengthPercentageOrAuto| {
@@ -1140,9 +1138,9 @@ fn compute_element_style(
         .map(|specified| specified.resolve(own_font_size, root_font_size))
         .unwrap_or(initial.background_size);
 
-    // `line-height`の`<number>`/`<percentage>`は未乗算のまま継承する。
-    // `<percentage>`は既にfraction(50%→0.5)としてパース済みのため
-    // `<number>`と同じ扱いでよい。
+    // The `<number>`/`<percentage>` of `line-height` is inherited unmultiplied.
+    // A `<percentage>` is already parsed as a fraction (50% -> 0.5), so it can be handled
+    // exactly like a `<number>`.
     let resolved_line_height = match line_height {
         Some(SpecifiedLineHeight::Normal) => LineHeight::Normal,
         Some(SpecifiedLineHeight::Number(n) | SpecifiedLineHeight::Percentage(n)) => {
@@ -1179,25 +1177,25 @@ fn compute_element_style(
             blue,
             alpha,
         },
-        // `background-color: currentcolor`は、この要素自身の計算済みcolorを使う。
+        // `background-color: currentcolor` uses this element's own computed color.
         Some(Color::CurrentColor) => resolved_color,
         None => initial.background_color,
     };
-    // `border-color`の初期値は仕様上`currentcolor`なので、未指定時も
-    // (`currentcolor`指定時と同様に)この要素自身の計算済みcolorへ解決する。
+    // The initial value of `border-color` is `currentcolor` per the spec, so even when
+    // unspecified it resolves to this element's own computed color (as it would if written explicitly).
     let resolved_border_top_color = resolve_color(border_top_color, resolved_color);
     let resolved_border_right_color = resolve_color(border_right_color, resolved_color);
     let resolved_border_bottom_color = resolve_color(border_bottom_color, resolved_color);
     let resolved_border_left_color = resolve_color(border_left_color, resolved_color);
-    // `outline-color`の初期値も`currentcolor`(仕様通り)。
+    // The initial value of `outline-color` is `currentcolor` too (per the spec).
     let resolved_outline_color = resolve_color(outline_color, resolved_color);
 
     let resolved_object_position = object_position
         .map(|specified| specified.resolve(own_font_size, root_font_size))
         .unwrap_or(initial.object_position);
-    // `text-shadow`は継承プロパティなので、宣言が無ければ親の解決済みの値を
-    // そのまま引き継ぐ(色は親の`color`で解決済みのまま。CSS仕様でも
-    // `currentcolor`は継承時点の値で固定される)。
+    // `text-shadow` is inherited, so with no declaration the parent's already-resolved value
+    // carries over unchanged (its colour stays resolved against the parent's `color`; the
+    // CSS spec also fixes `currentcolor` at the value it had when inherited).
     let resolved_text_shadow: Vec<ComputedTextShadow> = match text_shadow {
         Some(shadows) => shadows
             .into_iter()
@@ -1214,16 +1212,16 @@ fn compute_element_style(
         None => parent.map(|p| p.text_shadow.clone()).unwrap_or_default(),
     };
 
-    // `text-emphasis-color`も継承プロパティ。初期値は`currentcolor`
-    // (=この要素自身の`color`)。
+    // `text-emphasis-color` is inherited too. Its initial value is `currentcolor`
+    // (that is, this element's own `color`).
     let resolved_text_emphasis_color = match text_emphasis_color {
         Some(color) => resolve_color(Some(color), resolved_color),
         None => parent.map_or(resolved_color, |p| p.text_emphasis_color),
     };
 
-    // `box-shadow`のカンマ区切り各要素のem/rem解決と`currentcolor`解決。
-    // `blur-radius`は仕様上負値は無効だが、パース時点では拒否せずここで0
-    // 未満をクランプする(簡易な頑健性、既存パターンに倣う)。
+    // em/rem and `currentcolor` resolution for each comma-separated `box-shadow` entry.
+    // The spec makes a negative `blur-radius` invalid, but rather than reject it at parse
+    // time we clamp anything below 0 here (simple robustness, following the existing pattern).
     let resolved_box_shadow: Vec<ComputedBoxShadow> = box_shadow
         .unwrap_or_default()
         .into_iter()
@@ -1240,8 +1238,8 @@ fn compute_element_style(
         })
         .collect();
 
-    // flexbox関連。いずれも非継承プロパティなので
-    // 初期値との比較に`inherited_*`は不要。
+    // Flexbox-related. All are non-inherited properties, so no `inherited_*` is needed to
+    // compare against the initial value.
     let resolved_flex_basis = flex_basis
         .map(|specified| specified.resolve(own_font_size, root_font_size))
         .unwrap_or(initial.flex_basis);
@@ -1252,7 +1250,7 @@ fn compute_element_style(
         .map(|specified| specified.resolve(own_font_size, root_font_size))
         .unwrap_or(initial.column_gap);
 
-    // `transform`/`transform-origin`/`opacity`。いずれも非継承プロパティ。
+    // `transform`/`transform-origin`/`opacity`. All are non-inherited properties.
     let resolved_transform = transform
         .map(|specified| {
             specified
@@ -1268,11 +1266,11 @@ fn compute_element_style(
 
     let resolved_float = float.unwrap_or(initial.float);
     let resolved_position = position.unwrap_or(initial.position);
-    // CSS2.1 9.7: floatが`none`以外、または`position: absolute`/`fixed`なら
-    // 要素は自動的にblock-levelとして計算される(`display: inline`でも)。
-    // これにより`box_tree.rs::child_kind`の`Block`分岐がそのまま機能し、
-    // インライン要素(`<span style="position: absolute">`)も`box_tree`の
-    // Blocksループで捕捉できる。
+    // CSS2.1 9.7: with a float other than `none`, or `position: absolute`/`fixed`, the
+    // element automatically computes to block-level (even with `display: inline`).
+    // That lets the `Block` arm of `box_tree.rs::child_kind` work unchanged, so an inline
+    // element (`<span style="position: absolute">`) is also picked up by `box_tree`'s
+    // Blocks loop.
     let resolved_display = match display.unwrap_or(initial.display) {
         Display::Inline if resolved_float != Float::None || resolved_position.is_out_of_flow() => {
             Display::Block
@@ -1282,10 +1280,10 @@ fn compute_element_style(
 
     let resolved_quotes = quotes.unwrap_or(inherited_quotes);
 
-    // `counter-reset`/`counter-increment`の適用。`content`の
-    // `counter`/`counters`解決より先に行う必要がある(この要素自身が
-    // reset/incrementした値を、この要素の
-    // `content`が参照できるようにするため)。
+    // Applying `counter-reset`/`counter-increment`. It has to happen before the
+    // `counter`/`counters` in `content` are resolved, so that the values this element itself
+    // reset or incremented are visible to this element's
+    // `content`.
     let mut pushed_counter_names = Vec::new();
     if let Some(resets) = &counter_reset {
         for (name, value) in resets {
@@ -1297,9 +1295,9 @@ fn compute_element_style(
         for (name, value) in increments {
             let stack = counters.entry(name.clone()).or_default();
             if stack.is_empty() {
-                // スコープ内にその名前のカウンタが一つも無い場合の暗黙生成
-                // (簡略化: 本来はドキュメント全体に永続すべきだが、この要素の
-                // 部分木を抜けたらpopされる、既知の簡略化)。
+                // Implicit creation when no counter of that name exists in scope
+                // (a simplification: it should really persist for the whole document, but
+                // it is popped on leaving this element's subtree; a known simplification).
                 stack.push(0);
                 pushed_counter_names.push(name.clone());
             }
@@ -1307,14 +1305,14 @@ fn compute_element_style(
         }
     }
 
-    // `content`(::before)の解決。カウンタ・quote深度の「今の状態」を見る
-    // 必要があるため、上のreset/increment適用より後で行う。`::before`は
-    // 子孫より先にDOM順で現れるため、ここ(子孫を辿る前)で解決してよい。
+    // Resolving `content` (::before). It needs the "current" state of the counters and quote
+    // depth, so it comes after the reset/increment above. `::before` appears before the
+    // descendants in DOM order, so resolving it here (before walking them) is correct.
     //
-    // `::after`は逆に子孫より後にDOM順で現れるため、ここでは解決しない
-    // (`counter()`/`quotes`の状態は子孫による変更を反映すべき)。パーツの列を
-    // 未解決のまま呼び出し元(`compute_recursive`)へ返し、子孫の処理が
-    // 終わった後に解決してもらう。
+    // `::after`, conversely, appears after the descendants in DOM order, so it is not
+    // resolved here (the `counter()`/`quotes` state should reflect changes made by the
+    // descendants). The list of parts is returned unresolved to the caller
+    // (`compute_recursive`), which resolves it once the descendants are processed.
     let before_parts = matching_pseudo_content(dom, element, PseudoElement::Before, ua, author);
     let after_parts = matching_pseudo_content(dom, element, PseudoElement::After, ua, author);
     let pseudo_before_content = resolve_content_parts(
@@ -1326,7 +1324,7 @@ fn compute_element_style(
         &resolved_quotes,
     );
 
-    // `::first-letter`。対応プロパティのみの限定的な上書きスタイル。
+    // `::first-letter`. A limited override style covering only the supported properties.
     let first_letter_declarations =
         matching_pseudo_declarations(dom, element, PseudoElement::FirstLetter, ua, author);
     let first_letter_style = compute_first_letter_style(
@@ -1393,8 +1391,8 @@ fn compute_element_style(
         background_attachment: background_attachment.unwrap_or(initial.background_attachment),
         text_decoration_line: text_decoration_line.unwrap_or(inherited_text_decoration_line),
         pseudo_before_content,
-        // 子孫の処理後に`compute_recursive`が解決してこのフィールドを埋める
-        // (未解決の`after_parts`は戻り値の3つ目として返す)。
+        // `compute_recursive` resolves it after processing the descendants and fills in this
+        // field (the unresolved `after_parts` are returned as the third element).
         pseudo_after_content: None,
         break_before: break_before.unwrap_or(initial.break_before),
         break_after: break_after.unwrap_or(initial.break_after),
@@ -1486,9 +1484,9 @@ fn compute_element_style(
     (style, pushed_counter_names, after_parts)
 }
 
-/// `content`パーツの列を実際の文字列へ解決する。`counters`/`quote_depth`はこ
-/// の時点で当該要素自身の`counter-reset`/`counter-increment`
-/// 適用済みの状態を渡すこと。
+/// Resolve a list of `content` parts into an actual string. `counters`/`quote_depth` must be
+/// passed in the state they are in after this element's own `counter-reset`/
+/// `counter-increment` have been applied.
 fn resolve_content_parts(
     parts: Option<Vec<ContentPart>>,
     dom: &Dom,
@@ -1539,8 +1537,8 @@ fn resolve_content_parts(
     Some(result)
 }
 
-/// `quotes`の`depth`階層目の開き/閉じ引用符。`quotes: none`または未指定は
-/// 常に空文字列。深度が指定ペア数を超えた場合は最後のペアを繰り返す。
+/// The open and close quotes at nesting level `depth` of `quotes`. `quotes: none` or
+/// unspecified always gives an empty string. Past the number of pairs given, the last pair repeats.
 fn quote_text(quotes: &Option<Vec<QuotePair>>, depth: i32, is_open: bool) -> String {
     let Some(pairs) = quotes else {
         return String::new();
@@ -1557,10 +1555,10 @@ fn quote_text(quotes: &Option<Vec<QuotePair>>, depth: i32, is_open: bool) -> Str
     }
 }
 
-/// `list-style-type`の値からカウンタ表記(`content: counter()`用)を生成する。
-/// `list-style-type`の同名のマーカー生成([`crate::layout::box_tree`])と異なり、
-/// 末尾に`.`を付けない。`disc`/`circle`/`square`/`none`はカウンタ表記として
-/// 意味を持たないため空文字列を返す(仕様通り)。
+/// Generate the counter representation (for `content: counter()`) from a `list-style-type`
+/// value. Unlike the identically named marker generation for `list-style-type`
+/// ([`crate::layout::box_tree`]), no trailing `.` is added. `disc`/`circle`/`square`/`none`
+/// mean nothing as a counter representation and return an empty string (as the spec says).
 pub(crate) fn format_counter_value(style: ListStyleType, n: i32) -> String {
     let n = n.max(0) as usize;
     match style {
@@ -1577,10 +1575,10 @@ pub(crate) fn format_counter_value(style: ListStyleType, n: i32) -> String {
     }
 }
 
-/// margin box(`@top-left`等)の`content`を解決する。本文の`content:
-/// counter`(DOM順カウンタスコープ、`compute_recursive`)とはタイミングが根本的に異なる(ページ分割後)ため、別経路として実装する。
-/// `counter(page)`/`counter(pages)`(`counters`形式も含む、区切り文字は意味を持たない)のみ値を持ち、
-/// それ以外の名前付きカウンタ・`attr`・引用符は常に空文字列になる
+/// Resolve the `content` of a margin box (`@top-left` and friends). The timing differs
+/// fundamentally from `content: counter` in the body (a DOM-order counter scope, `compute_recursive`), being after pagination, so this is a separate path.
+/// Only `counter(page)`/`counter(pages)` have a value (the `counters` form included, where the separator means nothing);
+/// any other named counter, `attr` and quotes are always empty
 pub fn resolve_margin_box_content(
     parts: &[ContentPart],
     page_number: usize,
@@ -1615,7 +1613,7 @@ fn page_counter_value(name: &str, page_number: usize, total_pages: Option<usize>
     }
 }
 
-/// `element`のHTML属性値を読む(`content: attr(name)`用)。
+/// Read an HTML attribute value from `element` (for `content: attr(name)`).
 fn read_element_attr(dom: &Dom, element: NodeId, name: &str) -> Option<String> {
     let NodeData::Element { attrs, .. } = &dom.node(element).data else {
         return None;
@@ -1626,10 +1624,10 @@ fn read_element_attr(dom: &Dom, element: NodeId, name: &str) -> Option<String> {
         .map(|attr| attr.value.to_string())
 }
 
-/// `::first-letter`にマッチした宣言列から、対応するプロパティのみを抜き出して
-/// [`FirstLetterStyle`]を組み立てる(フルの`ComputedStyle`解決は行わない軽量な
-/// 実装)。`own_font_size`は`em`単位解決の
-/// 基準(ホスト要素自身の計算済みfont-size)。
+/// Build a [`FirstLetterStyle`] by picking out only the supported properties from the
+/// declarations that matched `::first-letter` (a lightweight implementation that does no
+/// full `ComputedStyle` resolution). `own_font_size` is the basis for resolving `em`
+/// (the host element's own computed font-size).
 fn compute_first_letter_style(
     declarations: &[&PropertyDeclaration],
     own_font_size: f32,
@@ -1658,9 +1656,9 @@ fn compute_first_letter_style(
                 style.font_style = Some(*v);
                 any = true;
             }
-            // `currentcolor`はホスト要素自身の色をそのまま使うのと実質的に
-            // 同じ結果になるため、明示的な解決をせず「未指定」と同一視する
-            // (既知の簡略化)。
+            // `currentcolor` gives effectively the same result as using the host element's
+            // own colour, so it is not resolved explicitly and is treated as "unspecified"
+            // (a known simplification).
             PropertyDeclaration::Color(Color::Rgba {
                 red,
                 green,
@@ -1689,8 +1687,8 @@ fn compute_first_letter_style(
     any.then_some(style)
 }
 
-/// `color`は継承プロパティなので、指定がない場合・`currentcolor`が指定された場合
-/// (仕様上は循環するため、継承値をそのまま使う)のいずれも親の計算値を使う。
+/// `color` is an inherited property, so the parent's computed value is used both when it is
+/// unspecified and when `currentcolor` is given (which the spec makes circular, so the inherited value is used).
 fn resolve_color(declared: Option<Color>, inherited: RgbaColor) -> RgbaColor {
     match declared {
         Some(Color::Rgba {
@@ -1708,7 +1706,7 @@ fn resolve_color(declared: Option<Color>, inherited: RgbaColor) -> RgbaColor {
     }
 }
 
-/// 要素の`style="..."`属性をパースする(属性がなければ空)。
+/// Parse an element's `style="..."` attribute (empty if the attribute is absent).
 fn inline_style_declarations(dom: &Dom, element: NodeId) -> Vec<PropertyDeclaration> {
     let NodeData::Element { attrs, .. } = &dom.node(element).data else {
         return Vec::new();
@@ -1720,9 +1718,9 @@ fn inline_style_declarations(dom: &Dom, element: NodeId) -> Vec<PropertyDeclarat
         .unwrap_or_default()
 }
 
-/// `data-page-break="before|after|avoid"`属性の糖衣API。対応する`break-before`/
-/// `break-after`/`break-inside: avoid`宣言へ変換する(値は大文字小文字を区別しない)。
-/// 認識できない値は無視する(通常のCSSの不正値と同様、宣言なしとして扱う)。
+/// Sugar for the `data-page-break="before|after|avoid"` attribute. Converted into the
+/// corresponding `break-before`/`break-after`/`break-inside: avoid` declarations (the value
+/// is case-insensitive). An unrecognised value is ignored (treated as no declaration, like any invalid CSS).
 fn data_page_break_declarations(dom: &Dom, element: NodeId) -> Vec<PropertyDeclaration> {
     let NodeData::Element { attrs, .. } = &dom.node(element).data else {
         return Vec::new();
@@ -1935,7 +1933,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // `left right`は両方水平軸のキーワードで無効 → 宣言ごと無視され初期値のまま。
+        // `left right` is invalid, both being horizontal keywords -> the declaration is ignored and the initial value stands.
         let author = parse_stylesheet("div { background-position: left right; }");
         let styles = compute_styles(&dom, &ua, &author);
         let position = styles[&div].background_position;
@@ -2008,7 +2006,7 @@ mod tests {
         assert_eq!(styles[&c].object_fit, ObjectFit::Cover);
         assert_eq!(styles[&d].object_fit, ObjectFit::None);
         assert_eq!(styles[&e].object_fit, ObjectFit::ScaleDown);
-        // 未指定時の初期値は`fill`。
+        // The initial value when unspecified is `fill`.
         assert_eq!(styles[&f].object_fit, ObjectFit::Fill);
     }
 
@@ -2086,7 +2084,7 @@ mod tests {
         let styles = compute_styles(&dom, &ua, &author);
         let shadows = &styles[&div].box_shadow;
         assert_eq!(shadows.len(), 2);
-        // 1つ目: 色省略時は`currentcolor`(この要素の計算済み`color`)へ解決される。
+        // First: with the colour omitted it resolves to `currentcolor` (this element's computed `color`).
         assert_eq!(
             shadows[0].color,
             RgbaColor {
@@ -2098,7 +2096,7 @@ mod tests {
         );
         assert_eq!(shadows[0].blur_radius, 0.0);
         assert!(!shadows[0].inset);
-        // 2つ目: `inset`はパースされる(描画は非対応)。
+        // Second: `inset` parses (drawing it is not supported).
         assert!(shadows[1].inset);
     }
 
@@ -2141,8 +2139,8 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // 先に個別プロパティで背景画像・repeatを設定した後、`background`
-        // ショートハンドが色だけを指定 → 仕様通り他の値は初期値へ戻るはず。
+        // After setting the background image and repeat via the individual properties, the
+        // `background` shorthand gives only a colour -> per the spec the rest reset to their initial values.
         let author = parse_stylesheet(
             r#"div { background-image: url("bg.png"); background-repeat: no-repeat; }
                div { background: red; }"#,
@@ -2194,7 +2192,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // 純粋な赤(hue=0, saturation=100%, lightness=50%) = rgb(255, 0, 0)。
+        // Pure red (hue=0, saturation=100%, lightness=50%) = rgb(255, 0, 0).
         let author = parse_stylesheet("div { color: hsl(0deg 100% 50%); }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2215,7 +2213,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // 白100% -> 完全な白 rgb(255, 255, 255)。
+        // 100% white -> pure white, rgb(255, 255, 255).
         let author = parse_stylesheet("div { color: hwb(0deg 100% 0%); }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2250,7 +2248,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // lab(53.2408% 80.0925 67.2032) は純粋な赤 rgb(255, 0, 0) に相当する。
+        // lab(53.2408% 80.0925 67.2032) is pure red, rgb(255, 0, 0).
         let author = parse_stylesheet("div { color: lab(53.2408% 80.0925 67.2032); }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2266,7 +2264,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // lch(53.2408% 104.5518 39.999deg) は純粋な赤 rgb(255, 0, 0) に相当する。
+        // lch(53.2408% 104.5518 39.999deg) is pure red, rgb(255, 0, 0).
         let author = parse_stylesheet("div { color: lch(53.2408% 104.5518 39.999deg); }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2282,7 +2280,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // oklab(62.8% 0.2249 0.1258) は純粋な赤 rgb(255, 0, 0) に相当する。
+        // oklab(62.8% 0.2249 0.1258) is pure red, rgb(255, 0, 0).
         let author = parse_stylesheet("div { color: oklab(62.8% 0.2249 0.1258); }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2298,7 +2296,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // oklch(59.686% 0.15619 49.7694deg)は#ba5d06相当(rgb(198, 93, 6))。
+        // oklch(59.686% 0.15619 49.7694deg) is #ba5d06, that is rgb(198, 93, 6).
         let author =
             parse_stylesheet("div { background-color: oklch(59.686% 0.15619 49.7694deg / 50%); }");
 
@@ -2359,8 +2357,8 @@ mod tests {
 
     #[test]
     fn inline_style_overrides_stylesheet_rules_regardless_of_specificity() {
-        // #idセレクタは通常どのクラス/type選択子よりも詳細度が高いが、
-        // インラインstyleはそれよりもさらに優先されるはず。
+        // An #id selector normally outranks any class or type selector in specificity, but
+        // an inline style should outrank even that.
         let dom = html::parse(br#"<div id="x" style="color: rgb(9, 9, 9);">t</div>"#);
         let p = find(&dom, dom.document(), "div").expect("div not found");
 
@@ -2413,7 +2411,7 @@ mod tests {
         assert_eq!(styles[&p].font_weight, super::FontWeight::Normal);
         assert_eq!(styles[&b].font_weight, super::FontWeight::Bold);
         assert_eq!(styles[&b].font_style, super::FontStyle::Normal);
-        // <i>は<b>からfont-weight: boldを継承しつつ、自身のfont-style: italicを追加する。
+        // <i> inherits font-weight: bold from <b> and adds its own font-style: italic.
         assert_eq!(styles[&i].font_weight, super::FontWeight::Bold);
         assert_eq!(styles[&i].font_style, super::FontStyle::Italic);
     }
@@ -2450,8 +2448,8 @@ mod tests {
 
     #[test]
     fn text_decoration_line_propagates_to_descendants_like_font_weight() {
-        // 仕様上は非継承だが、祖先の装飾線が子孫へ伝播する特殊規則の代わりに
-        // このリポジトリでは継承として扱う簡略実装(computed.rsのコメント参照)。
+        // The spec makes it non-inherited, but instead of the special rule propagating an
+        // ancestor's decoration to descendants, this repository treats it as inherited (see the comment in computed.rs).
         let dom = html::parse(br#"<u>bold <b>text</b></u>"#);
         let u = find(&dom, dom.document(), "u").expect("u not found");
         let b = find(&dom, u, "b").expect("b not found");
@@ -2600,7 +2598,7 @@ mod tests {
                 alpha: 1.0
             }
         );
-        // 他の辺には影響しない。
+        // The other edges are unaffected.
         assert_eq!(style.border_top_width.0, 0.0);
         assert_eq!(style.border_top_style, super::BorderStyle::None);
     }
@@ -2626,7 +2624,7 @@ mod tests {
                 alpha: 1.0
             }
         );
-        // 他の辺には影響しない(初期値のまま)。
+        // The other edges are unaffected (they keep their initial values).
         assert_eq!(style.border_right_width.0, 0.0);
         assert_eq!(style.border_right_style, super::BorderStyle::None);
     }
@@ -2770,7 +2768,7 @@ mod tests {
         let p = find(&dom, div, "p").expect("p not found");
 
         let ua = Stylesheet::default();
-        // div: 20px、p: divの1.5倍 = 30px。
+        // div: 20px; p: 1.5x div = 30px.
         let author = parse_stylesheet("div { font-size: 20px; } p { font-size: 1.5em; }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2784,7 +2782,7 @@ mod tests {
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
         let ua = Stylesheet::default();
-        // font-sizeが先に20pxへ解決され、border-widthの2emはそれを基準にする = 40px。
+        // font-size resolves to 20px first, and border-width's 2em is relative to that = 40px.
         let author = parse_stylesheet("div { font-size: 20px; border: 2em solid black; }");
 
         let styles = compute_styles(&dom, &ua, &author);
@@ -2797,8 +2795,8 @@ mod tests {
         let p = find(&dom, dom.document(), "p").expect("p not found");
 
         let ua = Stylesheet::default();
-        // ルート(<html>)のfont-sizeを10pxにし、ネストしたpのmargin: 2remが
-        // 親(div/body)のfont-sizeに影響されず常に20pxになることを確認する。
+        // Set the root (<html>) font-size to 10px and check that a nested p's margin: 2rem
+        // is always 20px, unaffected by the parent's (div/body) font-size.
         let author = parse_stylesheet(
             "html { font-size: 10px; } div { font-size: 30px; } p { margin: 2rem; }",
         );
@@ -2851,7 +2849,7 @@ mod tests {
 
     #[test]
     fn break_before_page_keyword_is_treated_as_always() {
-        // 単一ページサイズしか扱わないため、`page`は`always`と同じ効果として扱う。
+        // Only a single page size is handled, so `page` is treated as having the same effect as `always`.
         let dom = html::parse(br#"<p>a</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
 
@@ -2917,7 +2915,7 @@ mod tests {
         let dom = html::parse(br#"<p>a</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
 
-        // 無効な値は宣言ごと無視され、初期値のままになる。
+        // An invalid value makes the whole declaration ignored, leaving the initial value.
         let styles = compute_styles(
             &dom,
             &Stylesheet::default(),
@@ -2984,8 +2982,8 @@ mod tests {
 
     #[test]
     fn stylesheet_rule_overrides_data_page_break_attribute() {
-        // 属性糖衣は「スタイルシートで個別に上書きできる既定のヒント」という
-        // 位置づけなので、通常のCSSルールの方が優先される。
+        // The attribute sugar counts as "a default hint that a stylesheet can override
+        // individually", so an ordinary CSS rule takes priority.
         let dom = html::parse(br#"<p data-page-break="before">a</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
 
@@ -3039,8 +3037,8 @@ mod tests {
         let span = find(&dom, dom.document(), "span").expect("span not found");
 
         let ua = Stylesheet::default();
-        // クラスセレクタで文字列を指定していても、詳細度の高い#idセレクタが
-        // 後から`content: none`にすれば生成ボックスは無くなるはず。
+        // Even with a string given by a class selector, a more specific #id selector coming
+        // later with `content: none` should remove the generated box.
         let author =
             parse_stylesheet(r#".badge::before { content: "x"; } #x::before { content: none; }"#);
 
@@ -3076,7 +3074,7 @@ mod tests {
         assert_eq!(
             styles[&span].display,
             Display::Block,
-            "CSS2.1 9.7: floatが指定された要素は自動的にblock-levelになる"
+            "CSS2.1 9.7: an element with a float automatically becomes block-level"
         );
     }
 
@@ -3162,7 +3160,7 @@ mod tests {
             &Stylesheet::default(),
             &parse_stylesheet("div { font-size: 20px; margin-left: calc(2em + 5px); }"),
         );
-        // 2em(=40px)+ 5px = 45px、パーセンテージ成分なし。
+        // 2em (= 40px) + 5px = 45px, with no percentage component.
         match styles[&div].margin_left {
             super::LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Calc {
                 px,
@@ -3185,7 +3183,7 @@ mod tests {
             &Stylesheet::default(),
             &parse_stylesheet("div { width: calc((100% - 20px) / 2 + 3px * 2); }"),
         );
-        // (100% - 20px)/2 = 50% - 10px、+ 6px = 50% - 4px。
+        // (100% - 20px)/2 = 50% - 10px, plus 6px = 50% - 4px.
         match styles[&div].width {
             super::LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Calc {
                 px,
@@ -3202,7 +3200,7 @@ mod tests {
     fn calc_with_a_bare_number_or_dimension_product_is_rejected() {
         let dom = html::parse(br#"<div>x</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
-        // `calc(2)`は裸の数値、`calc(2px * 3px)`は次元×次元でどちらも無効。
+        // `calc(2)` leaves a bare number and `calc(2px * 3px)` is dimension times dimension; both invalid.
         for css in ["div { width: calc(2); }", "div { width: calc(2px * 3px); }"] {
             let styles = compute_styles(&dom, &Stylesheet::default(), &parse_stylesheet(css));
             assert_eq!(
@@ -3215,25 +3213,25 @@ mod tests {
 
     #[test]
     fn calc_accepts_a_nested_calc_as_a_term() {
-        // CSS Values 4: `calc()`は`calc()`の項として使える(括弧と同等)。
-        // Tailwind v4の`space-y-*`/`divide-*`がこの形を出力する。
+        // CSS Values 4: a `calc()` may be a term of a `calc()` (equivalent to parentheses).
+        // Tailwind v4's `space-y-*`/`divide-*` emit this form.
         use crate::style::LengthPercentage;
         let dom = html::parse(br#"<div>x</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         for css in [
-            // 左右両方の項
+            // Both terms
             "div { margin-left: calc(calc(45px * 2) * calc(1 - 0)); }",
-            // 左の項のみ
+            // Left term only
             "div { margin-left: calc(calc(45px * 2) * 1); }",
-            // 右の項のみ
+            // Right term only
             "div { margin-left: calc(90px * calc(1 - 0)); }",
-            // 加算
+            // Addition
             "div { margin-left: calc(calc(45px) + calc(45px)); }",
-            // 冗長な1段ネスト
+            // A redundant single level of nesting
             "div { margin-left: calc(calc(90px)); }",
-            // 2段ネスト
+            // Two levels of nesting
             "div { margin-left: calc(calc(calc(30px) * 3)); }",
-            // 括弧との混在
+            // Mixed with parentheses
             "div { margin-left: calc((calc(45px) + 45px) * calc(2 / 2)); }",
         ] {
             let styles = compute_styles(&dom, &Stylesheet::default(), &parse_stylesheet(css));
@@ -3252,8 +3250,8 @@ mod tests {
 
     #[test]
     fn nested_calc_overrides_an_earlier_declaration_in_the_cascade() {
-        // 無効な宣言として捨てられると、直前の`margin-left: 20px`が残ってしまう
-        // (issue #17のケース4)。有効な宣言なので後勝ちで90pxになるべき。
+        // If it were dropped as an invalid declaration, the preceding `margin-left: 20px`
+        // would survive (case 4 of issue #17). It is valid, so later-wins gives 90px.
         use crate::style::LengthPercentage;
         let dom = html::parse(br#"<div>x</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
@@ -3272,7 +3270,7 @@ mod tests {
 
     #[test]
     fn nested_calc_still_rejects_invalid_expressions() {
-        // ネストしても型検査は維持: 裸の数値・次元×次元・不明な関数は無効。
+        // Type checking survives nesting: a bare number, dimension times dimension, and an unknown function are all invalid.
         let dom = html::parse(br#"<div>x</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         for css in [
@@ -3292,8 +3290,8 @@ mod tests {
 
     #[test]
     fn absolute_and_fixed_are_block_level() {
-        // CSS2.1 9.7: absolute/fixedはdisplayをblock化する。これにより
-        // インライン要素(span)も絶対配置の対象になる。
+        // CSS2.1 9.7: absolute/fixed make display block-level, which brings inline elements
+        // (span) into absolute positioning too.
         let dom = html::parse(br#"<span>x</span>"#);
         let span = find(&dom, dom.document(), "span").expect("span not found");
         for value in ["absolute", "fixed"] {
@@ -3385,9 +3383,9 @@ mod tests {
 
     #[test]
     fn line_height_number_and_percentage_are_inherited_unmultiplied() {
-        // CSS2.1 10.8.1: <number>/<percentage>の計算値は指定値そのもの
-        // (親のfont-sizeで先に乗算した絶対値ではない)。子が異なるfont-sizeを
-        // 持っていても、継承される`LineHeight::Number`の値自体は変わらないはず。
+        // CSS2.1 10.8.1: the computed value of a <number>/<percentage> is the specified value
+        // itself (not an absolute value pre-multiplied by the parent's font-size). Even with a
+        // child at a different font-size, the inherited `LineHeight::Number` value should not change.
         let dom = html::parse(br#"<div><p>text</p></div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         let p = find(&dom, div, "p").expect("p not found");
@@ -3558,12 +3556,12 @@ mod tests {
         assert_eq!(table_style.vertical_align, super::VerticalAlign::Middle);
 
         let td_style = &styles[&td];
-        // 継承プロパティ: border-collapse/border-spacing/caption-side/empty-cells。
+        // Inherited properties: border-collapse/border-spacing/caption-side/empty-cells.
         assert_eq!(td_style.border_collapse, super::BorderCollapse::Collapse);
         assert_eq!(td_style.border_spacing_horizontal.0, 3.0);
         assert_eq!(td_style.caption_side, super::CaptionSide::Bottom);
         assert_eq!(td_style.empty_cells, super::EmptyCells::Hide);
-        // 非継承プロパティ: table-layout/vertical-align(tdは初期値のまま)。
+        // Non-inherited properties: table-layout/vertical-align (the td keeps the initial values).
         assert_eq!(td_style.table_layout, super::TableLayout::Auto);
         assert_eq!(td_style.vertical_align, super::VerticalAlign::Baseline);
     }
@@ -3611,7 +3609,7 @@ mod tests {
 
     #[test]
     fn pseudo_content_ignores_declarations_on_the_real_element() {
-        // `::before`/`::after`を伴わない通常のセレクタでの`content`宣言は無効。
+        // A `content` declaration on an ordinary selector, without `::before`/`::after`, is invalid.
         let dom = html::parse(br#"<span class="badge">Text</span>"#);
         let span = find(&dom, dom.document(), "span").expect("span not found");
 
@@ -3724,8 +3722,8 @@ mod tests {
 
     #[test]
     fn list_style_shorthand_type_then_bare_none_means_image_none() {
-        // `type`が先に確定した後に出てくる`none`は`list-style-image: none`と
-        // 解釈されるべき(`list-style-type`を上書きしない)。
+        // A `none` appearing after `type` is already decided should be read as
+        // `list-style-image: none` (it must not override `list-style-type`).
         let dom = html::parse(br#"<li>a</li>"#);
         let li = find(&dom, dom.document(), "li").expect("li not found");
 
@@ -3751,8 +3749,8 @@ mod tests {
 
     #[test]
     fn padding_left_and_margin_left_longhands_parse_directly() {
-        // ショートハンド(`padding`/`margin`)を経由しない単独のロングハンドの
-        // パース(`list-style`実装中に発見・修正したギャップの回帰テスト)。
+        // Parsing a standalone longhand without going through a shorthand (`padding`/`margin`)
+        // (a regression test for a gap found and fixed while implementing `list-style`).
         let dom = html::parse(br#"<div>a</div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
 
@@ -3914,7 +3912,7 @@ mod tests {
         );
         assert_eq!(styles[&div].outline_width.0, 3.0);
         assert_eq!(styles[&div].outline_style, super::BorderStyle::Dashed);
-        // 色を省略した場合は`currentcolor`(この要素自身のcolor)へ解決される。
+        // With the colour omitted it resolves to `currentcolor` (this element's own color).
         assert_eq!(
             styles[&div].outline_color,
             RgbaColor {
@@ -3964,7 +3962,7 @@ mod tests {
         assert_eq!(style.border_top_left_radius.vertical.0, 30.0);
         assert_eq!(style.border_top_right_radius.horizontal.0, 20.0);
         assert_eq!(style.border_top_right_radius.vertical.0, 40.0);
-        // 2値指定は(top-left/bottom-right, top-right/bottom-left)の順。
+        // Two values are in the order (top-left/bottom-right, top-right/bottom-left).
         assert_eq!(style.border_bottom_right_radius.horizontal.0, 10.0);
         assert_eq!(style.border_bottom_right_radius.vertical.0, 30.0);
     }
@@ -4032,8 +4030,8 @@ mod tests {
 
     #[test]
     fn counter_increments_across_siblings_and_resets_are_scoped_to_the_parent() {
-        // 兄弟間ではカウンタが引き継がれ(counter-incrementが累積する)、
-        // 親が異なればcounter-resetにより独立したスコープになる。
+        // Counters carry over between siblings (counter-increment accumulates), and a
+        // different parent gives an independent scope through counter-reset.
         let dom = html::parse(
             br#"<div>
                 <section>
@@ -4066,7 +4064,7 @@ mod tests {
             styles[&h2s[1]].pseudo_before_content.as_deref(),
             Some("2. ")
         );
-        // 2つ目の`section`は独立したスコープなので1から数え直す。
+        // The second `section` is an independent scope, so it counts from 1 again.
         assert_eq!(
             styles[&h2s[2]].pseudo_before_content.as_deref(),
             Some("1. ")
@@ -4075,10 +4073,10 @@ mod tests {
 
     #[test]
     fn counter_reset_on_an_element_stays_visible_to_its_following_siblings() {
-        // 回帰テスト: 実装当初、`counter-reset`をpushした要素自身の処理が
-        // 終わった時点で即popしてしまい、後続の兄弟要素からカウンタが
-        // 見えなくなるバグがあった(「スコープは
-        // 要素自身とそれに続く兄弟要素まで及ぶ」)。
+        // Regression test: originally there was a bug where the counter pushed by
+        // `counter-reset` was popped as soon as that element itself finished, making it
+        // invisible to the following siblings ("the scope extends to the element itself
+        // and the siblings that follow it").
         let dom = html::parse(
             br#"<div>
                 <h2 class="reset">Intro</h2>
@@ -4187,9 +4185,9 @@ mod tests {
 
     #[test]
     fn after_content_is_resolved_after_descendants_so_it_reflects_their_counter_changes() {
-        // 回帰テスト: `::after`をDOM順で子孫より先に(この要素自身の処理中に)
-        // 解決すると、子孫による`counter-increment`/`quotes`の変更を反映
-        // できないバグがあった。
+        // Regression test: resolving `::after` before the descendants in DOM order (during
+        // this element's own processing) meant changes made by the descendants via
+        // `counter-increment`/`quotes` were not reflected.
         let dom = html::parse(br#"<div><span>x</span></div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
         let span = find(&dom, dom.document(), "span").expect("span not found");
@@ -4212,8 +4210,8 @@ mod tests {
 
     #[test]
     fn nested_quotes_use_the_pair_matching_their_nesting_depth() {
-        // `::after`(close-quote)の深度更新が子孫の処理より先に
-        // 行われてしまい、ネストした`<q>`が常に深度0のペアを使ってしまわないように
+        // The depth update for `::after` (close-quote) must not happen before the descendants
+        // are processed, or a nested `<q>` would always use the depth-0 pair.
         let dom = html::parse(br#"<div><q class="outer">a<q class="inner">b</q>c</q></div>"#);
         let outer = find(&dom, dom.document(), "q").expect("outer q not found");
         let mut qs = Vec::new();
@@ -4289,7 +4287,7 @@ mod tests {
                 alpha: 1.0
             })
         );
-        // `float`はサポート対象外のプロパティなので無視される。
+        // `float` is an unsupported property here, so it is ignored.
         assert_eq!(fl.font_weight, None);
     }
 
@@ -4317,9 +4315,9 @@ mod tests {
 
     #[test]
     fn resolve_margin_box_content_leaves_pages_empty_when_total_is_unknown() {
-        // ストリーミングモードでは`counter(pages)`自体がエラーになる
-        // 想定だが、この関数自身は`total_pages: None`を渡された場合に単に
-        // 空文字列を返すだけの安全な挙動にしておく。
+        // In streaming mode `counter(pages)` is expected to be an error in itself, but this
+        // function is written to behave safely and simply return an empty string when it is
+        // handed `total_pages: None`.
         let parts = vec![ContentPart::Counter(
             "pages".to_string(),
             ListStyleType::Decimal,
@@ -4368,7 +4366,7 @@ mod tests {
         );
         assert_eq!(styles[&div].min_width, LengthPercentage::Length(10.0));
         assert_eq!(styles[&div].min_height, LengthPercentage::Percentage(0.5));
-        // `em`はカスケード時に既定font-size(16px)基準でpxへ畳まれる。
+        // `em` is folded into px during the cascade against the default font-size (16px).
         assert_eq!(
             styles[&div].max_width,
             MaxSize::LengthPercentage(LengthPercentage::Length(320.0))
@@ -4376,8 +4374,8 @@ mod tests {
         assert_eq!(styles[&div].max_height, MaxSize::None);
     }
 
-    /// キーワード値(`auto`/`min-content`等)は非対応で、宣言ごと無視される。
-    /// 同じルール内の他の宣言には影響しない。
+    /// Keyword values (`auto`/`min-content` and so on) are not supported and the declaration
+    /// is ignored, leaving the other declarations in the same rule unaffected.
     #[test]
     fn min_and_max_size_reject_intrinsic_sizing_keywords() {
         let dom = html::parse(br#"<div>a</div>"#);
@@ -4427,7 +4425,7 @@ mod tests {
                     ratio: Some(16.0 / 9.0),
                 },
             ),
-            // 分母省略は`/ 1`。
+            // An omitted denominator means `/ 1`.
             (
                 "2",
                 AspectRatio {
@@ -4442,7 +4440,7 @@ mod tests {
                     ratio: Some(16.0 / 9.0),
                 },
             ),
-            // `auto`と`<ratio>`は順序を問わない。
+            // `auto` and `<ratio>` may come in either order.
             (
                 "16 / 9 auto",
                 AspectRatio {
@@ -4460,7 +4458,7 @@ mod tests {
         }
     }
 
-    /// 0や負の数を含む比(degenerate ratio)は無効な宣言として無視する。
+    /// A degenerate ratio containing zero or a negative number is an invalid declaration and is ignored.
     #[test]
     fn aspect_ratio_rejects_degenerate_ratios() {
         let dom = html::parse(br#"<div>a</div>"#);
@@ -4531,7 +4529,7 @@ mod tests {
         assert_eq!(styles[&div].text_emphasis_color.red, 4);
         assert_eq!(styles[&div].text_emphasis_position, EmphasisPosition::Under);
 
-        // 継承する/しないの区別(`text-overflow`だけ非継承)。
+        // Which are inherited and which are not (`text-overflow` alone is non-inherited).
         assert_eq!(styles[&p].text_shadow.len(), 1);
         assert_eq!(styles[&p].word_break, WordBreak::BreakAll);
         assert_eq!(styles[&p].overflow_wrap, OverflowWrap::BreakWord);
@@ -4545,8 +4543,8 @@ mod tests {
         );
     }
 
-    /// `word-wrap`は`overflow-wrap`のレガシー別名、`hyphens: auto`は
-    /// `manual`と同じ挙動。
+    /// `word-wrap` is the legacy alias of `overflow-wrap`, and `hyphens: auto` behaves the
+    /// same as `manual`.
     #[test]
     fn text_detail_property_aliases() {
         let dom = html::parse(br#"<div>a</div>"#);
@@ -4561,7 +4559,7 @@ mod tests {
         assert_eq!(styles[&div].hyphens, Hyphens::Manual);
     }
 
-    /// `text-emphasis-style: <string>`は先頭1文字だけを使う。
+    /// `text-emphasis-style: <string>` uses only the first character.
     #[test]
     fn text_emphasis_style_accepts_a_string() {
         let dom = html::parse(br#"<div>a</div>"#);
@@ -4593,7 +4591,7 @@ mod tests {
 
     #[test]
     fn absolute_length_units_resolve_to_px() {
-        // 帳票のCSSは寸法をmm/ptで書くことが多い。1in = 96px換算で畳まれること。
+        // Business-document CSS often writes dimensions in mm/pt. Check they fold at 1in = 96px.
         let dom = html::parse(
             br#"<div class="mm"></div><div class="cm"></div><div class="in"></div>
                 <div class="pt"></div><div class="pc"></div><div class="q"></div>"#,
@@ -4612,7 +4610,7 @@ mod tests {
                  .pt { width: 72pt; } .pc { width: 6pc; } .q { width: 101.6q; }",
             ),
         );
-        // いずれも1インチ = 96px。
+        // Each of these is one inch = 96px.
         for node in [mm, cm, inch, pt, pc, q] {
             assert_eq!(
                 styles[&node].width,
@@ -4631,7 +4629,7 @@ mod tests {
             &Stylesheet::default(),
             &parse_stylesheet("div { width: calc(1in - 24pt); }"),
         );
-        // 96px - 32px。calcは`Calc`のまま保持される(pxへ畳むのはパース段階の単位換算だけ)。
+        // 96px - 32px. The calc stays a `Calc` (only the unit conversion is folded at parse time).
         assert_eq!(
             styles[&div].width,
             LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Calc {
@@ -4643,7 +4641,7 @@ mod tests {
 
     #[test]
     fn viewport_units_are_still_rejected() {
-        // ビューポート単位は印刷に概念が無いため非対応のまま(宣言ごと無視)。
+        // Viewport units stay unsupported, print having no concept of one (the declaration is ignored).
         let dom = html::parse(br#"<div></div>"#);
         let div = find(&dom, dom.document(), "div").expect("div not found");
 

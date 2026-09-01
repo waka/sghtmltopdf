@@ -1,28 +1,27 @@
-//! フォントのPDF埋め込み(CIDFontType2 + Type0 `/Encoding /Identity-H`)。
+//! Embedding fonts in the PDF (CIDFontType2 plus a Type0 with `/Encoding /Identity-H`).
 //!
-//! `core/examples/spike_pdf_font_embedding.rs`で検証した方式をベースに、
-//! 実際に使用したグリフだけへのサブセット化(`subsetter`クレート)と、
-//! `/ToUnicode` CMapによるテキスト抽出対応を追加している。
+//! Based on the approach validated in `core/examples/spike_pdf_font_embedding.rs`, with
+//! subsetting to only the glyphs actually used (the `subsetter` crate) and text extraction
+//! support via a `/ToUnicode` CMap added on top.
 //!
-//! `subsetter::subset`はサブセット後のフォントから`cmap`テーブルを取り除く仕様
-//! (PDF埋め込み専用の割り切った設計)のため、サブセット後のグリフIDは元の
-//! グリフIDとは異なる(コンパクトに詰め直された)ものになる。埋め込み方式は
-//! 2通りある:
+//! `subsetter::subset` removes the `cmap` table from the subsetted font by design (a
+//! deliberate choice for PDF embedding), so the subsetted glyph IDs differ from the original
+//! ones (they are repacked compactly). There are two embedding approaches:
 //!
-//! - [`embed_font`](一括処理・`pdf::document::encode_pdf`向け): コンテンツ
-//!   ストリームを書く前に全ページを見てグリフ使用状況を確定できるため、
-//!   CIDそのものをサブセット後のグリフIDに詰め替える(`/CIDToGIDMap
-//!   /Identity`)。「元のグリフID→サブセット後のグリフID(=CID)」の対応表を
-//!   返し、呼び出し側がコンテンツストリームを書く際にこの対応表でグリフIDを
-//!   変換する
-//! - [`embed_font_streaming_chunks`](ストリーミング処理向け):
-//!   コンテンツストリームは各ページ確定時点で即座に書き出すため、
-//!   CIDは常に元のグリフIDのまま(詰め替えない)。フォント埋め込み側だけ
-//!   全ページ処理後にサブセット化し、`/CIDToGIDMap`をCID(=元GID)→
-//!   サブセット後GIDの対応表を持つ明示的なストリームにすることで整合させる
+//! - [`embed_font`] (batch processing, for `pdf::document::encode_pdf`): glyph usage can be
+//!   settled by scanning every page before the content streams are written, so the CIDs
+//!   themselves are repacked into the subsetted glyph IDs (`/CIDToGIDMap /Identity`). It
+//!   returns a mapping from original glyph ID to subsetted glyph ID (= CID), which the
+//!   caller uses to translate glyph IDs while writing the content streams
 //!
-//! `pdf-writer`は圧縮を自前で行わないため、サブセット後のフォントバイト列は
-//! `flate2`でzlib(`/FlateDecode`)圧縮してから埋め込む。
+//! - [`embed_font_streaming_chunks`] (for streaming): the content stream is written
+//!   immediately as each page is settled, so a CID is always the original glyph ID
+//!   (never repacked). Only the font embedding is subsetted after every page is processed,
+//!   and the two are reconciled by making `/CIDToGIDMap` an explicit stream holding the
+//!   CID (= original GID) to subsetted GID mapping
+//!
+//! `pdf-writer` does no compression of its own, so the subsetted font bytes are zlib
+//! (`/FlateDecode`) compressed with `flate2` before embedding.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -36,23 +35,23 @@ use subsetter::GlyphRemapper;
 
 use crate::fonts::Font;
 
-/// `/ToUnicode` CMapの`/CMapName`と埋め込みプログラム側の`CMapName`双方に
-/// 使用する名前。両者が一致しないとPDF仕様上ill-formedになるので、
-/// 単一の定数からすべての利用箇所に配る。
+/// The name used both for `/CMapName` in the `/ToUnicode` CMap and for `CMapName` inside the
+/// embedded program. A mismatch would be ill-formed per the PDF spec, so every use is fed
+/// from a single constant.
 const TO_UNICODE_CMAP_NAME: Name<'static> = Name(b"Custom");
 
-/// `/ToUnicode` CMapの`/CIDSystemInfo`と埋め込みプログラム側の`CIDSystemInfo`
-/// 双方に使用する値(Adobe-UCS-0固定)。同上の理由で単一の定数から配る。
+/// The value used both for `/CIDSystemInfo` in the `/ToUnicode` CMap and for `CIDSystemInfo`
+/// inside the embedded program (always Adobe-UCS-0). Fed from a single constant for the same reason.
 const TO_UNICODE_SYSTEM_INFO: SystemInfo<'static> = SystemInfo {
     registry: Str(b"Adobe"),
     ordering: Str(b"UCS"),
     supplement: 0,
 };
 
-/// 埋め込むフォント一式のオブジェクトID。
+/// The object IDs of one embedded font.
 ///
-/// `cid_to_gid_map`は[`embed_font_streaming_chunks`]専用(`embed_font`は
-/// `/CIDToGIDMap /Identity`を使うため参照しない)。
+/// `cid_to_gid_map` is specific to [`embed_font_streaming_chunks`] (`embed_font` uses
+/// `/CIDToGIDMap /Identity` and never refers to it).
 #[derive(Debug, Clone, Copy)]
 pub struct FontIds {
     pub font_file: Ref,
@@ -63,26 +62,25 @@ pub struct FontIds {
     pub cid_to_gid_map: Ref,
 }
 
-/// 1フォント分の使用状況(文書全体を1パス目で走査して集める)。
+/// The usage of one font (collected by scanning the whole document in a first pass).
 #[derive(Debug, Default)]
 pub struct FontUsage {
-    /// 元のグリフID -> (幅[1000unit/emグリフ空間], そのグリフが表す元テキスト)。
+    /// Original glyph ID -> (width in 1000-unit/em glyph space, the original text that glyph represents).
     glyphs: BTreeMap<u16, (f32, String)>,
 }
 
 impl FontUsage {
-    /// `glyph_id`の使用を記録する。`text`は`/ToUnicode`生成用の元テキスト
-    /// (`ShapedGlyph::cluster`から逆引きしたクラスタの文字列)。
+    /// Record a use of `glyph_id`. `text` is the original text for `/ToUnicode` generation
+    /// (the cluster string recovered from `ShapedGlyph::cluster`).
     ///
-    /// 1文字とは限らないのは合字のため(`fl`が1グリフになる等)。1文字しか
-    /// 持たせないと、PDFのテキスト抽出・検索で"float"が"foat"になる。
+    /// It is not necessarily one character, because of ligatures (`fl` becoming one glyph,
+    /// say). Keeping only one character would make "float" extract and search as "foat".
     ///
-    /// 複数の文字が同じグリフを共有することもある。フォントが`&nbsp;`の
-    /// グリフを持たない場合、シェイパーはspaceのグリフで代替する(HarfBuzzの
-    /// space fallback)ため、そのグリフは文書内でU+0020とU+00A0の両方を表す。
-    /// 先勝ちのままだと、文書中で`&nbsp;`が先に現れただけで以後すべての空白が
-    /// U+00A0として抽出され、テキスト検索やコピーが壊れる。衝突したときは
-    /// 普通のspaceを優先する。
+    /// Several characters can also share one glyph. When a font lacks a `&nbsp;` glyph the
+    /// shaper substitutes the space glyph (HarfBuzz's space fallback), so that glyph
+    /// represents both U+0020 and U+00A0 in the document. Leaving it first-wins would mean
+    /// that one `&nbsp;` appearing earlier makes every later space extract as U+00A0,
+    /// breaking text search and copying. On a collision, the ordinary space wins.
     pub fn record(&mut self, font: &Font, glyph_id: u16, text: &str) {
         match self.glyphs.entry(glyph_id) {
             Entry::Vacant(slot) => {
@@ -99,9 +97,9 @@ impl FontUsage {
     }
 }
 
-/// `font`をPDFへ埋め込む(`usage`に記録されたグリフだけにサブセット化する)。
+/// Embed `font` in the PDF (subsetting to only the glyphs recorded in `usage`).
 ///
-/// 返り値は「元のグリフID→サブセット後のグリフID(CID)」の対応表。
+/// Returns the mapping from original glyph ID to subsetted glyph ID (CID).
 pub fn embed_font(
     pdf: &mut Pdf,
     font: &Font,
@@ -123,7 +121,7 @@ pub fn embed_font(
     if compress {
         font_file.filter(Filter::FlateDecode);
     }
-    // Length1はフォントプログラム本体の「圧縮前」の長さ(PDF仕様上の規定)。
+    // Length1 is the length of the font program itself *before* compression (as the PDF spec requires).
     font_file.pair(Name(b"Length1"), subset_data.len() as i32);
     font_file.finish();
 
@@ -155,7 +153,7 @@ pub fn embed_font(
         .map(|&old_gid| {
             let new_gid = remapper
                 .get(old_gid)
-                .expect("usageに記録済みのグリフは必ずremapされている");
+                .expect("a glyph recorded in usage is always remapped");
             (old_gid, new_gid)
         })
         .collect();
@@ -203,14 +201,14 @@ pub fn embed_font(
     old_to_new
 }
 
-/// [`embed_font`]のストリーミング版。CIDをサブセット後のグリフIDに詰め替えず、
-/// 常に元のグリフIDのまま扱う。かわりに`/CIDToGIDMap`を、CID(元GID)から
-/// サブセット後GIDへの対応を持つ明示的なストリームにする。
+/// The streaming version of [`embed_font`]. CIDs are not repacked into subsetted glyph IDs
+/// and always stay the original glyph IDs. Instead `/CIDToGIDMap` becomes an explicit stream
+/// holding the mapping from CID (the original GID) to the subsetted GID.
 ///
-/// 返り値は、各オブジェクトを`(Ref, Chunk)`の列として返す。1つの`Chunk`には
-/// 1つの間接オブジェクトのみを含める(呼び出し側がオブジェクトごとに
-/// `Sink`へ書き出し、その開始オフセットをxrefのために記録できるようにする
-/// ため)。呼び出し順に書き出せば十分で、並べ替えは不要。
+/// The return value is each object as a `(Ref, Chunk)` pair. One `Chunk` contains exactly
+/// one indirect object (so the caller can write each object to the `Sink` and record its
+/// starting offset for the xref table). Writing them in the order returned is enough; no
+/// reordering is needed.
 pub fn embed_font_streaming_chunks(
     font: &Font,
     ids: FontIds,
@@ -262,14 +260,14 @@ pub fn embed_font_streaming_chunks(
         .font_file2(ids.font_file);
     chunks.push((ids.descriptor, chunk));
 
-    // CIDToGIDMap: CID(=元GID)でインデックスした2バイトのGID値のテーブル。
-    // 未使用のCIDは0(.notdef)のままにする。
+    // CIDToGIDMap: a table of two-byte GID values indexed by CID (= the original GID).
+    // Unused CIDs stay 0 (.notdef).
     let max_gid = usage.glyphs.keys().copied().max().unwrap_or(0);
     let mut cid_to_gid_bytes = vec![0u8; (max_gid as usize + 1) * 2];
     for &old_gid in usage.glyphs.keys() {
         let new_gid = remapper
             .get(old_gid)
-            .expect("usageに記録済みのグリフは必ずremapされている");
+            .expect("a glyph recorded in usage is always remapped");
         let idx = old_gid as usize * 2;
         cid_to_gid_bytes[idx..idx + 2].copy_from_slice(&new_gid.to_be_bytes());
     }
@@ -294,15 +292,15 @@ pub fn embed_font_streaming_chunks(
     cid_font.font_descriptor(ids.descriptor);
     cid_font.default_width(0.0);
     {
-        // /Wは元のグリフID(=CID)をキーに、サブセット前と同じ値をそのまま
-        // 書ける(幅はusage収集時点で元GIDベースに記録済みのため変換不要)。
+        // `/W` can be keyed on the original glyph ID (= CID) and written with the same
+        // values as before subsetting (widths were recorded against original GIDs, so no conversion).
         let mut w = cid_font.widths();
         for (&old_gid, (width, _)) in &usage.glyphs {
             w.same(old_gid, old_gid, *width);
         }
         w.finish();
     }
-    // Identityではなく、サブセット後の実グリフ位置への明示マップを使う。
+    // Rather than Identity, use an explicit map to the real subsetted glyph positions.
     cid_font.cid_to_gid_map_stream(ids.cid_to_gid_map);
     cid_font.finish();
     chunks.push((ids.cid_font, chunk));
@@ -334,9 +332,9 @@ pub fn embed_font_streaming_chunks(
     chunks
 }
 
-/// zlib(`/FlateDecode`)圧縮する。`compress`がfalseなら無圧縮のまま返す
-/// (`--no-pdf-compression`)。呼び出し側は同じ
-/// 条件で`/Filter`を書くかどうかを決める。
+/// Compress with zlib (`/FlateDecode`). Returns the data uncompressed when `compress` is
+/// false (`--no-pdf-compression`). The caller decides whether to write `/Filter` on the same
+/// condition.
 pub(super) fn maybe_deflate(data: &[u8], compress: bool) -> Vec<u8> {
     if compress {
         deflate(data)
@@ -349,10 +347,10 @@ pub(super) fn deflate(data: &[u8]) -> Vec<u8> {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder
         .write_all(data)
-        .expect("インメモリバッファへの書き込みは失敗しない");
+        .expect("writing to an in-memory buffer cannot fail");
     encoder
         .finish()
-        .expect("インメモリバッファへの書き込みは失敗しない")
+        .expect("writing to an in-memory buffer cannot fail")
 }
 
 #[cfg(test)]
@@ -373,22 +371,21 @@ mod tests {
 
     const TEST_FONT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
-    /// `&nbsp;`のグリフを持たないフォントでは、シェイパーがspaceのグリフで
-    /// 代替するため1つのグリフが両方を表す。その場合でも`/ToUnicode`は
-    /// 普通のspaceを指すようにする(そうしないと文書中の空白すべてが
-    /// U+00A0として抽出され、テキスト検索やコピーが壊れる)。
+    /// In a font with no `&nbsp;` glyph the shaper substitutes the space glyph, so one glyph
+    /// represents both. Even then `/ToUnicode` should point at the ordinary space (otherwise
+    /// every space in the document extracts as U+00A0 and text search and copying break).
     #[test]
     fn a_glyph_shared_by_a_space_and_a_no_break_space_maps_to_the_space() {
         let font = Font::load(TEST_FONT).expect("should load bundled test font");
         let space_glyph = 3;
 
-        // `&nbsp;`が先に現れた場合でもspaceが勝つ。
+        // The space wins even when the `&nbsp;` came first.
         let mut nbsp_first = FontUsage::default();
         nbsp_first.record(&font, space_glyph, "\u{a0}");
         nbsp_first.record(&font, space_glyph, " ");
         assert_eq!(nbsp_first.glyphs[&space_glyph].1, " ");
 
-        // 逆順でもspaceのまま(`&nbsp;`で上書きしない)。
+        // And stays the space in the reverse order too (`&nbsp;` does not overwrite it).
         let mut space_first = FontUsage::default();
         space_first.record(&font, space_glyph, " ");
         space_first.record(&font, space_glyph, "\u{a0}");
@@ -397,7 +394,7 @@ mod tests {
 
     #[test]
     fn a_ligature_cluster_keeps_the_text_it_was_first_recorded_with() {
-        // 合字は複数文字を1グリフで表す。空白の優先は合字の記録を壊さない。
+        // A ligature represents several characters with one glyph. Preferring the space must not break that record.
         let font = Font::load(TEST_FONT).expect("should load bundled test font");
         let mut usage = FontUsage::default();
         usage.record(&font, 100, "fl");

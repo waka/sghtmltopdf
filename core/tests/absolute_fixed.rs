@@ -1,7 +1,7 @@
-//! `position: absolute`/`fixed`のE2Eテスト。
+//! E2E tests for `position: absolute`/`fixed`.
 //!
-//! 絶対配置は`Mode::Batch`でのみ有効。オーバーレイは全ページ確定後に
-//! 足すため、ページ分割結果(`paginate_document`)とレイアウト結果で検証する。
+//! Absolute positioning only works under `Mode::Batch`. The overlays are added once every
+//! page is settled, so they are checked against the pagination result (`paginate_document`) and the layout result.
 
 use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
 use sghtmltopdf_core::fonts::{Font, FontCollection};
@@ -69,7 +69,7 @@ fn pages_of(html_src: &str) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// 指定のテキストを含むボックスの border box を、全ページから探す。
+/// Find, across every page, the border box of the box containing the given text.
 fn find_box_rect(html_src: &str, needle: &str) -> (usize, sghtmltopdf_core::layout::Rect) {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
@@ -139,14 +139,14 @@ fn an_absolute_element_only_appears_once() {
         .map(|texts| texts.iter().filter(|t| t.contains("ABS")).count())
         .sum();
     assert_eq!(count, 1, "an absolute element must not repeat");
-    // positioned祖先が無いので initial containing block = 最初のページ。
+    // With no positioned ancestor, the initial containing block is the first page.
     assert!(per_page[0].iter().any(|t| t.contains("ABS")));
 }
 
 #[test]
 fn an_absolute_child_is_placed_relative_to_its_positioned_ancestor() {
-    // カード(relative, ページ幅いっぱい)の右上に absolute のバッジ。祖先の
-    // padding box基準で right 配置されるので、バッジはページの右寄りに来る。
+    // An absolute badge at the top right of a card (relative, full page width). It is
+    // positioned with `right` against the ancestor's padding box, so it lands towards the right of the page.
     let content_width = PageSettings::default().content_width();
     let with_right = r#"<body>
         <div style="position: relative; margin: 20px; padding: 10px; height: 100px;">
@@ -160,7 +160,7 @@ fn an_absolute_child_is_placed_relative_to_its_positioned_ancestor() {
         badge_right.x
     );
 
-    // 同じ祖先で left 配置なら左寄りになる(祖先の左端 = margin 20 + padding 10)。
+    // With `left` against the same ancestor it lands towards the left (the ancestor's left edge = margin 20 + padding 10).
     let with_left = with_right.replace("right: 5px", "left: 5px");
     let (_, badge_left) = find_box_rect(&with_left, "BADGE");
     assert!(
@@ -184,12 +184,12 @@ fn a_left_absolute_sits_at_the_left_and_a_right_absolute_at_the_right() {
 
 #[test]
 fn a_fixed_footer_uses_bottom() {
-    // fixed は cb 高さ(ページ高さ)が確定するので bottom が効く。
+    // For fixed the cb height (the page height) is settled, so `bottom` works.
     let html_src = r#"<body><p>content</p>
         <div style="position: fixed; bottom: 20px; left: 40px;">FOOTER</div></body>"#;
     let (_, footer) = find_box_rect(html_src, "FOOTER");
     let page_height = PageSettings::default().size.height;
-    // フッタはページ下部にある。
+    // The footer is at the bottom of the page.
     assert!(
         footer.y > page_height * 0.7,
         "footer at y={} should be near the bottom of {page_height}",
@@ -199,7 +199,7 @@ fn a_fixed_footer_uses_bottom() {
 
 #[test]
 fn absolute_elements_do_not_take_space_in_the_normal_flow() {
-    // absolute はフローから外れるので、後続の通常フロー要素の位置に影響しない。
+    // absolute is out of flow, so it does not affect the position of the normal-flow elements that follow.
     let without = find_box_rect("<body><p>A</p><p>B</p></body>", "B").1;
     let with = find_box_rect(
         r#"<body><p>A</p><div style="position: absolute; top: 0;">X</div><p>B</p></body>"#,
@@ -239,11 +239,11 @@ fn a_document_with_absolute_and_fixed_encodes_to_a_valid_pdf_in_batch_mode() {
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
 
-/// 以下4つは、新しいフォーマッティングコンテキストを作る箱
-/// (flexアイテム・gridアイテム・テーブルセル・inline-block)の中に置いた
-/// `absolute`が、無言で消えずに出てくることの回帰テスト。
-/// いずれもレイアウトが「結果を捨てる採寸パス」を持つため、消えないことに
-/// 加えて、重複して二重に出ないことも同時に確かめる。
+/// The four below are regression tests that an `absolute` placed inside a box establishing a
+/// new formatting context (a flex item, a grid item, a table cell, an inline-block) comes
+/// out rather than vanishing silently.
+/// Layout has a "measuring pass whose result is thrown away" for all of them, so as well as
+/// not vanishing, they must not come out twice either.
 fn absolute_count(html_src: &str, needle: &str) -> usize {
     pages_of(html_src)
         .iter()
@@ -253,7 +253,7 @@ fn absolute_count(html_src: &str, needle: &str) -> usize {
 
 #[test]
 fn an_absolute_inside_a_flex_item_is_placed_relative_to_that_item() {
-    // 2カラムのflex。右のアイテムだけをpositionedにして、その左端に貼る。
+    // A two-column flex. Only the right item is positioned, and the badge is pinned to its left edge.
     let content_width = PageSettings::default().content_width();
     let html_src = r#"<body><div style="display: flex; margin: 0;">
         <div style="flex: 1; height: 100px;">left column</div>
@@ -266,15 +266,15 @@ fn an_absolute_inside_a_flex_item_is_placed_relative_to_that_item() {
     assert_eq!(
         absolute_count(html_src, "BADGE"),
         1,
-        "flexアイテム内のabsoluteは1つだけ出る(採寸パスの分が重複してはならない)"
+        "only one absolute comes out of a flex item (the measuring pass must not duplicate it)"
     );
 
-    // containing blockが右のアイテムなので、ページの右半分に来る。
-    // 収集していなかった頃はここに到達する前に消えていた。
+    // The containing block is the right item, so it lands in the right half of the page.
+    // Before they were collected it vanished before reaching here.
     let (_, badge) = find_box_rect(html_src, "BADGE");
     assert!(
         badge.x > content_width * 0.4,
-        "バッジは右カラムの左端に付くはず: x={} of {content_width}",
+        "the badge should sit at the left edge of the right column: x={} of {content_width}",
         badge.x
     );
 }
@@ -294,7 +294,7 @@ fn an_absolute_inside_a_grid_item_is_placed_relative_to_that_item() {
     let (_, badge) = find_box_rect(html_src, "BADGE");
     assert!(
         badge.x > content_width * 0.4,
-        "バッジは右のグリッドアイテムの左端に付くはず: x={badge:?}"
+        "the badge should sit at the left edge of the right grid item: x={badge:?}"
     );
 }
 
@@ -313,7 +313,7 @@ fn an_absolute_inside_a_table_cell_is_placed_relative_to_that_cell() {
     let (_, badge) = find_box_rect(html_src, "BADGE");
     assert!(
         badge.x > content_width * 0.4,
-        "バッジは右のセルの左端に付くはず: x={badge:?}"
+        "the badge should sit at the left edge of the right cell: x={badge:?}"
     );
 }
 

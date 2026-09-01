@@ -1,18 +1,18 @@
-//! スパイク: JPEGをHTTP経由で取得し、デコードせずにDCTDecodeフィルタとして
-//! そのままPDFへ埋め込むPoC。
+//! Spike: a PoC fetching a JPEG over HTTP and embedding it in a PDF as-is with the DCTDecode
+//! filter, without decoding it.
 //!
-//! 検証したいこと:
-//! - `ureq`が同期(非async)APIでHTTP(S)フェッチを完結できるか。ローカルの
-//!   ループバックHTTPサーバ(std::netのみ、外部ネットワーク接続は使わない)に
-//!   対して実際にTCP往復させて確認する
-//! - JPEGバイト列を一切デコードせず、SOF0/SOF2マーカーだけを読んで
-//!   width/height/コンポーネント数を取り出せるか(画像デコードクレートを
-//!   追加せずに済むかどうかの検証が主目的)
-//! - `pdf-writer`の`ImageXObject`が`Filter::DctDecode`を受け付け、
-//!   生のJPEGバイト列をそのままストリームとして埋め込めるか
+//! What we want to check:
+//! - Whether `ureq` can complete an HTTP(S) fetch through a synchronous (non-async) API.
+//!   Confirmed with a real TCP round trip against a local loopback HTTP server (std::net
+//!   only; no external network connection is used)
+//! - Whether the width, height and component count can be extracted from the SOF0/SOF2
+//!   marker alone, without decoding the JPEG bytes at all (the main point being whether we
+//!   can avoid adding an image decoding crate)
+//! - Whether `pdf-writer`'s `ImageXObject` accepts `Filter::DctDecode` and lets the raw JPEG
+//!   bytes be embedded directly as the stream
 //!
-//! 実行: `cargo run --example spike_image_jpeg_passthrough`
-//! (`tests/fixtures/images/spike_gradient.jpg`を使用。ベースラインJPEG)
+//! Run with: `cargo run --example spike_image_jpeg_passthrough`
+//! (it uses `tests/fixtures/images/spike_gradient.jpg`, a baseline JPEG)
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -24,11 +24,11 @@ const JPEG_PATH: &str = concat!(
     "/tests/fixtures/images/spike_gradient.jpg"
 );
 
-/// SOF0(ベースライン)/SOF2(プログレッシブ)マーカーだけを読んでwidth/height/
-/// コンポーネント数を取り出す。ピクセルデータのデコードは一切行わない。
+/// Read only the SOF0 (baseline) / SOF2 (progressive) marker to extract the width, height
+/// and component count. No pixel data is decoded at all.
 fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u16, u16, u8)> {
     if data.len() < 4 || data[0..2] != [0xFF, 0xD8] {
-        return None; // SOIマーカーが無い
+        return None; // no SOI marker
     }
     let mut i = 2;
     while i + 4 <= data.len() {
@@ -37,8 +37,8 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u16, u16, u8)> {
             continue;
         }
         let marker = data[i + 1];
-        // SOF0..SOF3, SOF5..SOF7, SOF9..SOF11, SOF13..SOF15 がSOF系。
-        // ここではベースライン(0xC0)とプログレッシブ(0xC2)のみ対応する。
+        // SOF0..SOF3, SOF5..SOF7, SOF9..SOF11 and SOF13..SOF15 are the SOF family.
+        // Only baseline (0xC0) and progressive (0xC2) are handled here.
         if marker == 0xC0 || marker == 0xC2 {
             let height = u16::from_be_bytes([data[i + 5], data[i + 6]]);
             let width = u16::from_be_bytes([data[i + 7], data[i + 8]]);
@@ -46,7 +46,7 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u16, u16, u8)> {
             return Some((width, height, components));
         }
         if marker == 0xD8 || marker == 0xD9 || (0xD0..=0xD7).contains(&marker) {
-            i += 2; // 長さフィールドを持たないマーカー
+            i += 2; // a marker with no length field
             continue;
         }
         let segment_len = u16::from_be_bytes([data[i + 2], data[i + 3]]) as usize;
@@ -55,16 +55,16 @@ fn parse_jpeg_dimensions(data: &[u8]) -> Option<(u16, u16, u8)> {
     None
 }
 
-/// 外部ネットワークに依存せず、ループバック上に1回だけ応答するHTTPサーバを起動する。
-/// 実運用のフェッチはこれと同じ`ureq`の同期API呼び出しで置き換わる想定。
+/// Start an HTTP server on loopback that answers exactly once, with no dependency on the
+/// external network. A real fetch is expected to be the same synchronous `ureq` API call.
 fn spawn_single_response_server(body: Vec<u8>) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("ループバックへのbindに失敗");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind to loopback");
     let addr = listener.local_addr().unwrap();
 
     std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("接続の受理に失敗");
+        let (mut stream, _) = listener.accept().expect("failed to accept the connection");
         let mut buf = [0u8; 1024];
-        let _ = stream.read(&mut buf); // リクエストの中身は読み捨てる(スパイクなので検証しない)
+        let _ = stream.read(&mut buf); // the request body is discarded (this is a spike and does not check it)
 
         let header = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -78,25 +78,25 @@ fn spawn_single_response_server(body: Vec<u8>) -> String {
 }
 
 fn main() {
-    let jpeg_bytes = std::fs::read(JPEG_PATH).expect("テスト用JPEGフィクスチャの読み込みに失敗");
+    let jpeg_bytes = std::fs::read(JPEG_PATH).expect("failed to read the JPEG test fixture");
     let url = spawn_single_response_server(jpeg_bytes.clone());
 
-    // 実際のfetch抽象化と同じく、ureqの同期APIで完結する
-    // (asyncランタイムやスレッドプールを別途持ち込む必要が無い)。
+    // As in the real fetch abstraction, this is all done through ureq's synchronous API
+    // (no separate async runtime or thread pool has to be brought in).
     let fetched: Vec<u8> = ureq::get(&url)
         .call()
-        .expect("HTTPフェッチに失敗")
+        .expect("the HTTP fetch failed")
         .body_mut()
         .read_to_vec()
-        .expect("レスポンスボディの読み込みに失敗");
+        .expect("failed to read the response body");
 
     assert_eq!(
         fetched, jpeg_bytes,
-        "フェッチしたバイト列が元のJPEGと一致しない"
+        "the fetched bytes do not match the original JPEG"
     );
 
     let (width, height, components) =
-        parse_jpeg_dimensions(&fetched).expect("SOFマーカーからのサイズ解析に失敗");
+        parse_jpeg_dimensions(&fetched).expect("failed to parse the size from the SOF marker");
     eprintln!("JPEG: {width}x{height}, components={components}");
 
     let mut ids = 0..;
@@ -120,15 +120,15 @@ fn main() {
     page.finish();
 
     let mut content = Content::new();
-    // 画像1枚をページ全体に敷き詰める(cm行列でwidth/height分だけ拡大)。
+    // One image tiled over the whole page (scaled to width/height by the cm matrix).
     content.save_state();
     content.transform([width as f32, 0.0, 0.0, height as f32, 0.0, 0.0]);
     content.x_object(Name(b"Im0"));
     content.restore_state();
     pdf.stream(content_id, &content.finish());
 
-    // ここが検証の核心: JPEGバイト列を一切デコードせず、そのままDCTDecode
-    // フィルタのストリームとして埋め込む。
+    // The heart of the check: the JPEG bytes are embedded directly as a DCTDecode filter
+    // stream, with no decoding at all.
     let mut image = pdf.image_xobject(image_id, &fetched);
     image.width(width as i32);
     image.height(height as i32);
@@ -136,7 +136,7 @@ fn main() {
         1 => image.color_space().device_gray(),
         3 => image.color_space().device_rgb(),
         4 => image.color_space().device_cmyk(),
-        other => panic!("未対応のコンポーネント数: {other}"),
+        other => panic!("unsupported component count: {other}"),
     }
     image.bits_per_component(8);
     image.filter(Filter::DctDecode);

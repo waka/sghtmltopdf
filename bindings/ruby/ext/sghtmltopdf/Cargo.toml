@@ -6,16 +6,16 @@ publish = false
 description = "Ruby binding for sghtmltopdf (see bindings/ruby)"
 
 [lib]
-# Rubyの拡張ライブラリ(.so/.bundle)として読み込まれる。
+# Loaded as a Ruby extension library (.so/.bundle).
 crate-type = ["cdylib"]
 
 [dependencies]
-# `rb-sys` featureで`AsRawValue`/`FromRawValue`が使えるようになる
+# The `rb-sys` feature is what makes `AsRawValue`/`FromRawValue` available.
 magnus = { version = "0.8", features = ["rb-sys"] }
-# GVL解放(`rb_thread_call_without_gvl`)はmagnusに無いので直接呼ぶ。
+# magnus has no way to release the GVL (`rb_thread_call_without_gvl`), so we call it directly.
 rb-sys = "0.9"
-# HTTPサーバ(tiny_http)は要らないので`server` featureは外す。
-# `svg`はCLIと同じ既定に揃える(gemからもSVGを描画できるようにする)。
+# The HTTP server (tiny_http) is not needed here, so the `server` feature is left out.
+# `svg` matches the CLI default, so the gem can render SVG too.
 sghtmltopdf-core = { path = "../../../../core", default-features = false, features = [
     "cli",
     "svg",

@@ -1,8 +1,8 @@
-//! テーブルセルの`rowspan`のE2Eテスト。
+//! E2E tests for `rowspan` on table cells.
 //!
-//! `table_caption.rs`/`table_vertical_align.rs`と同じ方針: 実際の
-//! パイプラインを通して回帰を検知する。座標の詳細な検証は`layout_document`
-//! (ページ分割前)の結果に対して行う。
+//! The same approach as `table_caption.rs`/`table_vertical_align.rs`: catch regressions by
+//! going through the real pipeline. The detailed coordinate checks run against the result of
+//! `layout_document` (before pagination).
 
 use std::collections::HashMap;
 
@@ -106,8 +106,8 @@ fn rowspan_cell_spans_two_rows_and_the_next_row_flows_around_it_end_to_end() {
         "the rowspan cell should span the combined height of both rows: {}",
         tall.layout.margin_box_height()
     );
-    // "b"は"tall"が占有する列(col0)を避けて"a"と同じ列(col1)に流れ、
-    // "tall"の直下(y=40px)から始まるはず。
+    // "b" avoids the column "tall" occupies (col0) and flows into the same column as "a"
+    // (col1), starting directly below "tall" (y=40px).
     assert!(
         (b.layout.border_box().x - a.layout.border_box().x).abs() < 0.5,
         "cell b should land in the same column as cell a, skipping the rowspan cell's column"
@@ -152,8 +152,8 @@ fn table_without_rowspan_behaves_as_before_end_to_end() {
 
 #[test]
 fn a_row_whose_only_cell_has_a_rowspan_still_opens_a_column_for_the_next_row() {
-    // 1行目がrowspan=2のセル1つだけの場合、テーブルの列数は「行ごとのcolspan
-    // 合計の最大値」では1にしかならず、2行目のセルは行き場を失って消えていた。
+    // Where the first row is a single rowspan=2 cell, "the maximum colspan sum per row"
+    // gives a column count of only 1, and the second row's cell had nowhere to go and vanished.
     let html_src = r#"<table style="width: 400px;">
         <tr><td rowspan="2" style="width: 150px;">Logo</td></tr>
         <tr><td>Second row text</td></tr>
@@ -168,8 +168,8 @@ fn a_row_whose_only_cell_has_a_rowspan_still_opens_a_column_for_the_next_row() {
     let logo = find_laid_out(&laid, tds[0]).expect("rowspan cell not found");
     let second = find_laid_out(&laid, tds[1]).expect("second row cell not found");
 
-    // 2行目のセルはrowspanが占有するcol0を避けてcol1へ回るため、"Logo"の
-    // 右隣に、幅を持った状態で置かれるはず。
+    // The second row's cell goes to col1, avoiding the col0 the rowspan occupies, so it
+    // should be placed to the right of "Logo" with a width of its own.
     let logo_box = logo.layout.border_box();
     let logo_right = logo_box.x + logo_box.width;
     assert!(
@@ -183,8 +183,7 @@ fn a_row_whose_only_cell_has_a_rowspan_still_opens_a_column_for_the_next_row() {
         "the second row's cell should get a share of the table width, got {}",
         second.layout.content.width
     );
-    // テキストが行として実際にレイアウトされていること(幅0の列に潰れると
-    // 行そのものが失われる)。
+    // The text really is laid out as a line (collapsing to a zero-width column would lose the line itself).
     let LaidOutContent::Inline(lines) = &second.content else {
         panic!("expected inline content in the second row's cell");
     };

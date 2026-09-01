@@ -1,24 +1,24 @@
-//! レンダリング用スタックの確保。
+//! Allocation of the rendering stack.
 //!
-//! スタイル計算・ボックスツリー構築・レイアウト・PDF描画はDOMの深さぶん
-//! 再帰するため、呼び出し元のスレッドのスタックが小さいと深い文書で落ちる。
-//! CLI・HTTPサーバ・Rubyバインディング・エンジンのテストが共通で使う。
+//! Style computation, box tree construction, layout and PDF drawing all recurse as deep
+//! as the DOM, so a deep document crashes if the calling thread's stack is small.
+//! Shared by the CLI, the HTTP server, the Ruby binding and the engine tests.
 
-/// レンダリングを走らせるスレッドに確保するスタックサイズ。
+/// Stack size allocated for the thread that runs rendering.
 ///
-/// 必要量は[`crate::html::MAX_ELEMENT_DEPTH`]で決まる。上限256段は
-/// デバッグビルド換算で約2.8MiBなので、5倍以上の余裕を取ってこの値にしている。
+/// How much is needed follows from [`crate::html::MAX_ELEMENT_DEPTH`]. Its cap of 256
+/// levels is about 2.8MiB in debug-build terms, so this value leaves over 5x headroom.
 ///
-/// 既定任せにしないのは、スレッドの既定スタックが実行環境で大きく変わるため
-/// (Rustの生成スレッドは2MiB、`ulimit -s`次第でmainはもっと小さくなりうる、
-/// Rubyのスレッドは1MiB程度)。ここで固定しておけば、上限の判定が
-/// 「実際に耐えられる深さ」と食い違わない。
+/// We do not rely on the default because a thread's default stack varies widely by
+/// environment (2MiB for threads Rust spawns; main can be smaller depending on
+/// `ulimit -s`; Ruby threads get about 1MiB). Fixing it here keeps the depth cap in
+/// line with the depth we can actually survive.
 pub const STACK_SIZE: usize = 16 * 1024 * 1024;
 
-/// `f`を[`STACK_SIZE`]のスタックを持つスレッド上で実行し、結果を返す。
+/// Run `f` on a thread with a [`STACK_SIZE`] stack and return its result.
 ///
-/// `f`がパニックした場合は、そのパニックを呼び出し元スレッドへ伝播させる
-/// (スレッドを挟んだことで挙動が変わらないようにする)。
+/// If `f` panics, the panic is propagated to the calling thread
+/// (so interposing a thread does not change behaviour).
 pub fn with_render_stack<F, R>(f: F) -> R
 where
     F: FnOnce() -> R + Send,
@@ -28,7 +28,7 @@ where
         std::thread::Builder::new()
             .stack_size(STACK_SIZE)
             .spawn_scoped(scope, f)
-            .expect("レンダリング用スレッドを作れませんでした")
+            .expect("failed to create the rendering thread")
             .join()
             .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
     })

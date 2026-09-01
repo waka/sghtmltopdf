@@ -1,12 +1,12 @@
 name: gem
 
-# 毎PRで回すには重い(5プラットフォーム×複数Ruby ABI)ので、タグを打ったときと手動実行のときだけ動かす
+# Too heavy to run on every PR (5 platforms x several Ruby ABIs), so it only runs on tags and manual dispatch
 
 on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "publishせずにビルドと検証だけ行う"
+        description: "Build and verify only, without publishing"
         type: boolean
         default: true
   push:
@@ -32,18 +32,18 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      # rb-sys-dockのコンテナへリポジトリルートごとマウントされるので、extクレートの`../../../../core`へのpath依存も解決できる
+      # The repository root is mounted into the rb-sys-dock container, so the ext crate's `../../../../core` path dependency resolves
       - uses: oxidize-rb/actions/cross-gem@v1
         id: cross-gem
         with:
           platform: ${{ matrix.platform }}
           working-directory: bindings/ruby
-          # 焼き込むRuby ABIを明示する。既定(`default`)はrb-sysのイメージが対応する
-          # 全ABI(3.0から)になり、rake-compilerがその範囲でgemspecの
-          # `required_ruby_version`を上書きするため、gemspecの`>= 3.2.0`より緩い
-          # precompiled gemが出てしまう。ABI1つあたり9MB増える点でも絞る意味がある。
+          # Spell out which Ruby ABIs to build for. The default (`default`) covers
+          # every ABI the rb-sys image supports (3.0 and up), and rake-compiler then
+          # overrides the gemspec's `required_ruby_version` to that range, producing a
+          # precompiled gem looser than the gemspec's `>= 3.2.0`. Each ABI also adds 9MB.
           ruby-versions: "3.2,3.3,3.4,4.0"
-      - name: 同梱されたRuby ABIを表示する
+      - name: Show the bundled Ruby ABIs
         run: |
           gem=$(find bindings/ruby/pkg -name '*-${{ matrix.platform }}.gem')
           echo "### $(basename "$gem")" >> "$GITHUB_STEP_SUMMARY"
@@ -51,7 +51,7 @@ jobs:
             spec = Gem::Package.new(ARGV[0]).spec
             abis = spec.files.grep(%r{\Alib/sghtmltopdf/(\d+\.\d+)/}) { $1 }.uniq.sort
             puts "- platform: #{spec.platform}"
-            puts "- ruby ABI: #{abis.empty? ? "(なし)" : abis.join(", ")}"
+            puts "- ruby ABI: #{abis.empty? ? "(none)" : abis.join(", ")}"
             puts "- required_ruby_version: #{spec.required_ruby_version}"
           ' "$gem" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
@@ -60,7 +60,7 @@ jobs:
           path: bindings/ruby/pkg/*-${{ matrix.platform }}.gem
           if-no-files-found: error
 
-  # x86_64-linux: ランナー上でそのままインストール
+  # x86_64-linux: install directly on the runner
   smoke-linux:
     needs: cross-gem
     runs-on: ubuntu-latest
@@ -77,12 +77,12 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: ${{ matrix.ruby }}
-      - name: gem install して変換する
+      - name: gem install and convert
         run: |
           gem install --no-document ./pkg/*.gem
           ruby bindings/ruby/script/smoke.rb
 
-  # aarch64-linux: QEMUでarm64のコンテナを動かす
+  # aarch64-linux: run an arm64 container under QEMU
   smoke-linux-arm64:
     needs: cross-gem
     runs-on: ubuntu-latest
@@ -95,7 +95,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      - name: gem install して変換する(linux/arm64)
+      - name: gem install and convert (linux/arm64)
         run: |
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/work" -w /work ruby:3.4-slim \
@@ -108,9 +108,9 @@ jobs:
               ruby bindings/ruby/script/smoke.rb
             '
 
-  # x86_64-linux-musl: Alpineのコンテナで確かめる
-  # ローカルの.gemでも`gem install`はプラットフォーム一致を見るので、
-  # Alpine側のRubyGemsがmusl向けgemを受け付けることの確認も兼ねる
+  # x86_64-linux-musl: verify in an Alpine container.
+  # `gem install` checks platform match even for a local .gem, so this also confirms
+  # that Alpine's RubyGems accepts the musl-targeted gem
   smoke-linux-musl:
     needs: cross-gem
     runs-on: ubuntu-latest
@@ -120,7 +120,7 @@ jobs:
         with:
           name: gem-x86_64-linux-musl
           path: pkg
-      - name: gem install して変換する(Alpine)
+      - name: gem install and convert (Alpine)
         run: |
           docker run --rm -v "$PWD:/work" -w /work ruby:3.4-alpine \
             sh -c '
@@ -130,7 +130,7 @@ jobs:
               ruby bindings/ruby/script/smoke.rb
             '
 
-  # aarch64-linux-musl: QEMUでarm64のAlpineコンテナを動かす
+  # aarch64-linux-musl: run an arm64 Alpine container under QEMU
   smoke-linux-musl-arm64:
     needs: cross-gem
     runs-on: ubuntu-latest
@@ -143,7 +143,7 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      - name: gem install して変換する(Alpine, linux/arm64)
+      - name: gem install and convert (Alpine, linux/arm64)
         run: |
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/work" -w /work ruby:3.4-alpine \
@@ -154,7 +154,7 @@ jobs:
               ruby bindings/ruby/script/smoke.rb
             '
 
-  # arm64-darwin: macOSランナーはApple Silicon
+  # arm64-darwin: the macOS runner is Apple Silicon
   smoke-macos-arm64:
     needs: cross-gem
     runs-on: macos-latest
@@ -167,13 +167,13 @@ jobs:
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: "3.4"
-      - name: gem install して変換する
+      - name: gem install and convert
         run: |
           gem install --no-document ./pkg/*.gem
           ruby bindings/ruby/script/smoke.rb
 
-  # rubygems.orgへのpublish
-  # 認証はtrusted publishing(OIDC)で、APIキーはリポジトリに置かない
+  # Publish to rubygems.org
+  # Authentication is trusted publishing (OIDC); no API key is stored in the repository
   publish:
     needs:
       - cross-gem
@@ -184,15 +184,15 @@ jobs:
       - smoke-macos-arm64
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    # rubygems.orgのtrusted publisher設定でenvironmentを指定する
+    # The environment named in the trusted publisher settings on rubygems.org
     environment: rubygems
     permissions:
       id-token: write # trusted publishing(OIDC)
-      contents: write # GitHub Releaseの作成
+      contents: write # Creating the GitHub Release
     steps:
       - uses: actions/checkout@v4
         with:
-          # release-gemはgit操作に自前のtokenを使う
+          # release-gem uses its own token for git operations
           persist-credentials: false
       - uses: oxidize-rb/actions/setup-ruby-and-rust@v1
         with:
@@ -200,40 +200,40 @@ jobs:
           bundler-cache: true
           cargo-cache: "false"
           working-directory: bindings/ruby
-      # クロスビルドした5プラットフォーム分を`pkg/`へ集める
+      # Collect the five cross-built platforms into `pkg/`
       - uses: actions/download-artifact@v4
         with:
           pattern: gem-*
           merge-multiple: true
           path: bindings/ruby/pkg
-      - name: タグとgemのバージョンが一致することを確かめる
+      - name: Check the tag matches the gem's version
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version=$(ruby -e 'require "./bindings/ruby/lib/sghtmltopdf/version"; print Sghtmltopdf::VERSION')
           echo "tag=$tag version=$version"
           if [ "$tag" != "$version" ]; then
-            echo "::error::タグ($tag)とSghtmltopdf::VERSION($version)が一致しません" >&2
+            echo "::error::the tag ($tag) does not match Sghtmltopdf::VERSION ($version)" >&2
             exit 1
           fi
-      # プラットフォームが合わない環境向けのフォールバック
-      - name: ソースgemも作る
+      # Fallback for environments with no matching platform
+      - name: Build the source gem too
         working-directory: bindings/ruby
         run: bundle exec rake build
-      - name: publishするgemの一覧
+      - name: List the gems to publish
         run: |
           {
-            echo "### publish対象"
+            echo "### To publish"
             echo '```'
             ls -l bindings/ruby/pkg/*.gem
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      # Ruby公式のリリースアクション
-      # trusted publishing(OIDC)の設定・sigstore attestations・rubygems.orgへの反映をやる
+      # Ruby's official release action
+      # Handles trusted publishing (OIDC), sigstore attestations, and pushing to rubygems.org
       - uses: rubygems/release-gem@v1
         if: github.event.inputs.dry_run != 'true'
         with:
           working-directory: bindings/ruby
-      - name: GitHub Releaseを作る
+      - name: Create the GitHub Release
         if: github.event.inputs.dry_run != 'true'
         env:
           GH_TOKEN: ${{ github.token }}

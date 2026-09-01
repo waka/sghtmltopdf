@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-# `render pdf:`の結合テスト用。
+# For the integration tests of `render pdf:`.
 class InvoicesController < ActionController::Base
-  # 既定のテンプレート(invoices/show)をPDFにする。
+  # Render the default template (invoices/show) as a PDF.
   def show
     render pdf: "invoice"
   end
 
-  # ファイル名・添付・変換オプションの受け渡し。
+  # Passing through a file name, attachment disposition and conversion options.
   def download
     render pdf: "invoice",
       template: "invoices/show",
@@ -16,29 +16,29 @@ class InvoicesController < ActionController::Base
       page_size: "A5"
   end
 
-  # レイアウトを指定する(wicked_pdfからの移行で使われるキー)。
+  # Specifying a layout (a key used when migrating from wicked_pdf).
   def with_layout
     render pdf: "invoice", template: "invoices/show", layout: "pdf"
   end
 
-  # PDFにせずHTMLのまま返すデバッグ用オプション。
+  # The debugging option that returns HTML rather than a PDF.
   def as_html
     render pdf: "invoice", template: "invoices/show", show_as_html: true
   end
 
-  # `public/`のCSSを`<style>`へ展開するビューヘルパ。
+  # The view helper inlining a CSS file from `public/` into a `<style>`.
   def with_stylesheet
     render pdf: "invoice", template: "invoices/with_stylesheet"
   end
 
-  # `examples/receipt.html`をそのままビューにしたもの。CLIの出力と
-  # 突き合わせるために使う(CSSは`<link>`のまま。`public/main.css`を
-  # `--base-url`経由で解決する)。
+  # `examples/receipt.html` used directly as a view. Used to check against the CLI's output
+  # (the CSS stays a `<link>`, resolving `public/main.css` through `--base-url`).
+
   def receipt
     render pdf: "receipt", template: "invoices/receipt"
   end
 
-  # 未知のオプションはclapが弾く(Sghtmltopdf::UsageError)。
+  # An unknown option is rejected by clap (Sghtmltopdf::UsageError).
   def bad_option
     render pdf: "invoice", template: "invoices/show", no_such_option: "x"
   end

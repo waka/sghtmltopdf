@@ -2,14 +2,14 @@
 
 require "tmpdir"
 
-# サーバモードへの委譲。
+# Delegating to server mode.
 RSpec.describe "server_url" do
   let(:html) { "<h1>Invoice</h1>" }
 
   after { Sghtmltopdf.reset_config! }
 
-  describe "リクエストの組み立て" do
-    it "POST /pdf にHTMLをボディで送る" do
+  describe "building the request" do
+    it "sends the HTML as the body of POST /pdf" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url)
 
@@ -19,7 +19,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "オプションをクエリ文字列にする(CLIのフラグ名と同じ)" do
+    it "turns the options into a query string (the same flag names as the CLI)" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url, page_size: "A4", margin_top: "20mm", toc: true)
 
@@ -28,7 +28,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "値はパーセントエンコードする" do
+    it "percent-encodes the values" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url, title: "請求書 2026")
 
@@ -36,7 +36,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "server_url自体やタイムアウトはクエリに出さない" do
+    it "keeps server_url itself and the timeout out of the query" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url, server_read_timeout: 5, server_open_timeout: 1)
 
@@ -44,7 +44,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "偽の値は指定なしと同じ" do
+    it "treats a false value the same as not given" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url, grayscale: false, toc: nil)
 
@@ -52,7 +52,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "グローバル設定でも指定できる" do
+    it "can be set through the global configuration too" do
       FakeServer.run do |server|
         Sghtmltopdf.configure do |c|
           c.server_url = server.url
@@ -64,9 +64,9 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "流し込まれた既定値はサーバへ送らない(サーバでは指定できないキーのため)" do
+    it "does not send the injected defaults to the server (they cannot be set there)" do
       FakeServer.run do |server|
-        # Railtieが入れる既定値と同じ形。
+        # The same shape as the defaults the Railtie injects.
         Sghtmltopdf.config.apply_defaults(base_url: "/app/public", allow: ["/app"])
         Sghtmltopdf.render(html, server_url: server.url, page_size: "A4")
 
@@ -74,7 +74,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "明示的に設定した値は送る(可否の判断はサーバに任せる)" do
+    it "sends an explicitly set value (leaving the decision to the server)" do
       FakeServer.run do |server|
         Sghtmltopdf.configure { |c| c.base_url = "/app/public" }
         Sghtmltopdf.render(html, server_url: server.url)
@@ -84,12 +84,12 @@ RSpec.describe "server_url" do
     end
   end
 
-  describe "レスポンス" do
-    it "200のボディをそのまま返す" do
+  describe "the response" do
+    it "returns a 200's body unchanged" do
       FakeServer.run { |server| expect(Sghtmltopdf.render(html, server_url: server.url)).to start_with("%PDF-") }
     end
 
-    it "返り値はASCII-8BITにする" do
+    it "makes the return value ASCII-8BIT" do
       FakeServer.run do |server|
         expect(Sghtmltopdf.render(html, server_url: server.url).encoding).to eq(Encoding::ASCII_8BIT)
       end
@@ -103,45 +103,45 @@ RSpec.describe "server_url" do
       504 => Sghtmltopdf::ServerError,
       404 => Sghtmltopdf::ServerError,
     }.each do |status, error|
-      it "#{status}は#{error}にして、サーバの文言をそのまま伝える" do
-        FakeServer.run(->(_req) { [status, "サーバからの説明"] }) do |server|
+      it "turns #{status} into #{error} and passes the server's wording through" do
+        FakeServer.run(->(_req) { [status, "an explanation from the server"] }) do |server|
           expect { Sghtmltopdf.render(html, server_url: server.url) }
-            .to raise_error(error, /サーバからの説明/)
+            .to raise_error(error, /an explanation from the server/)
         end
       end
     end
 
-    it "ServerErrorもSghtmltopdf::Errorを継承する" do
+    it "makes ServerError inherit Sghtmltopdf::Error too" do
       expect(Sghtmltopdf::ServerError.ancestors).to include(Sghtmltopdf::Error, StandardError)
     end
   end
 
-  describe "到達できないとき" do
-    it "接続を拒否されたらServerErrorにする(ローカルへフォールバックしない)" do
-      # 待ち受けていないポートを確実に得るため、開いた直後に閉じる。
+  describe "when it cannot be reached" do
+    it "makes a refused connection a ServerError (it does not fall back to local)" do
+      # Open and immediately close, to be sure of a port nothing is listening on.
       socket = TCPServer.new("127.0.0.1", 0)
       port = socket.addr[1]
       socket.close
 
       expect { Sghtmltopdf.render(html, server_url: "http://127.0.0.1:#{port}") }
-        .to raise_error(Sghtmltopdf::ServerError, /接続に失敗しました/)
+        .to raise_error(Sghtmltopdf::ServerError, /the connection to .* failed/)
     end
 
-    it "応答が遅ければread_timeoutで打ち切る" do
+    it "gives up through read_timeout when the response is slow" do
       FakeServer.run(->(_req) { sleep 5 }) do |server|
         expect { Sghtmltopdf.render(html, server_url: server.url, server_read_timeout: 0.2) }
-          .to raise_error(Sghtmltopdf::ServerError, /タイムアウト/)
+          .to raise_error(Sghtmltopdf::ServerError, /timed out/)
       end
     end
 
-    it "http(s)以外のURLはArgumentErrorにする" do
+    it "makes a non-http(s) URL an ArgumentError" do
       expect { Sghtmltopdf.render(html, server_url: "pdf.internal:8080") }
         .to raise_error(ArgumentError, /http\(s\)/)
     end
   end
 
-  describe "チャンクごとの受け取り" do
-    it "ブロックを渡すと?stream=1を付けて逐次受け取る" do
+  describe "receiving chunk by chunk" do
+    it "adds ?stream=1 and receives incrementally when given a block" do
       FakeServer.run(->(_req) { [200, ["%PDF-1.7\n", "page1\n", "%%EOF"]] }) do |server|
         chunks = []
         result = Sghtmltopdf.render(html, server_url: server.url) { |bytes| chunks << bytes }
@@ -152,7 +152,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "ブロックが無ければstream=1は付けない" do
+    it "does not add stream=1 with no block" do
       FakeServer.run do |server|
         Sghtmltopdf.render(html, server_url: server.url)
 
@@ -160,7 +160,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "ローカル変換でも同じ形で受け取れる(詳細はchunk_spec.rb)" do
+    it "can be received the same way from a local conversion too (see chunk_spec.rb)" do
       chunks = []
       result = Sghtmltopdf.render(html) { |bytes| chunks << bytes }
 
@@ -172,7 +172,7 @@ RSpec.describe "server_url" do
   describe "render_to_file" do
     around { |example| Dir.mktmpdir("sghtmltopdf-server") { |dir| @dir = dir and example.run } }
 
-    it "サーバの応答をファイルへ書き出す" do
+    it "writes the server's response to a file" do
       FakeServer.run do |server|
         path = File.join(@dir, "out.pdf")
         expect(Sghtmltopdf.render_to_file(html, path, server_url: server.url)).to be_nil
@@ -180,8 +180,8 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "失敗したら壊れたPDFを残さない" do
-      FakeServer.run(->(_req) { [500, "レンダリングに失敗しました"] }) do |server|
+    it "leaves no broken PDF on failure" do
+      FakeServer.run(->(_req) { [500, "the rendering failed"] }) do |server|
         path = File.join(@dir, "out.pdf")
         expect { Sghtmltopdf.render_to_file(html, path, server_url: server.url) }
           .to raise_error(Sghtmltopdf::RenderError)
@@ -190,7 +190,7 @@ RSpec.describe "server_url" do
       end
     end
 
-    it "書けない場所ならInputErrorにする" do
+    it "raises InputError for a location it cannot write to" do
       FakeServer.run do |server|
         expect { Sghtmltopdf.render_to_file(html, File.join(@dir, "no", "dir", "out.pdf"), server_url: server.url) }
           .to raise_error(Sghtmltopdf::InputError)
@@ -199,16 +199,16 @@ RSpec.describe "server_url" do
   end
 end
 
-# 実際の`sghtmltopdf server`と繋いで、ローカル変換と同じPDFになることを確かめる。
-RSpec.describe "実サーバとの結合" do
+# Connect to a real `sghtmltopdf server` and confirm it gives the same PDF as a local conversion.
+RSpec.describe "integration with a real server" do
   CLI_BINARY = File.expand_path("../../../target/release/sghtmltopdf", __dir__)
 
   before(:all) do
-    skip "CLIバイナリが無い(cargo build --release で作れる)" unless File.executable?(CLI_BINARY)
+    skip "no CLI binary (build it with cargo build --release)" unless File.executable?(CLI_BINARY)
 
     require "open3"
     @stdin, @stdout, @wait = Open3.popen2(CLI_BINARY, "server", "--listen", "127.0.0.1:0")
-    # 起動時に`listening on 127.0.0.1:<port>`を出す。
+    # It prints `listening on 127.0.0.1:<port>` on startup.
     line = @stdout.gets
     @server_url = "http://#{line[/listening on (\S+)/, 1]}"
   end
@@ -225,31 +225,31 @@ RSpec.describe "実サーバとの結合" do
 
   let(:html) { "<html><head><title>t</title></head><body><h1>見出し</h1><p>本文です。</p></body></html>" }
 
-  it "ローカル変換と同じPDFになる" do
+  it "gives the same PDF as a local conversion" do
     remote = Sghtmltopdf.render(html, server_url: @server_url, page_size: "A4", margin_top: "20mm")
     local = Sghtmltopdf.render(html, page_size: "A4", margin_top: "20mm")
 
     expect(normalize(remote)).to eq(normalize(local))
   end
 
-  it "ストリーミング受信でも同じPDFになる" do
+  it "gives the same PDF when received as a stream too" do
     chunks = []
     Sghtmltopdf.render(html, server_url: @server_url) { |bytes| chunks << bytes }
 
     expect(normalize(chunks.join)).to eq(normalize(Sghtmltopdf.render(html)))
   end
 
-  it "未知のオプションはUsageErrorになる(サーバの400)" do
+  it "makes an unknown option a UsageError (the server's 400)" do
     expect { Sghtmltopdf.render(html, server_url: @server_url, no_such_option: "x") }
       .to raise_error(Sghtmltopdf::UsageError, /no-such-option/)
   end
 
-  it "サーバ起動時にしか指定できないオプションは理由付きのUsageErrorになる" do
+  it "makes an option that can only be set at server startup a UsageError with a reason" do
     expect { Sghtmltopdf.render(html, server_url: @server_url, base_url: "/tmp") }
-      .to raise_error(Sghtmltopdf::UsageError, /リクエストからは指定できません/)
+      .to raise_error(Sghtmltopdf::UsageError, /cannot be set per request/)
   end
 
-  it "healthzを叩いていないのに404にならない(パスは/pdf固定)" do
+  it "does not 404 without hitting healthz (the path is always /pdf)" do
     expect(Sghtmltopdf.render(html, server_url: @server_url)).to start_with("%PDF-")
   end
 end

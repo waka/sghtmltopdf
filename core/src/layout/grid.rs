@@ -1,9 +1,9 @@
-//! CSS Grid(`display: grid`)を、既存box treeのサブツリーとしてtaffyへブリッジする。
+//! Bridging CSS Grid (`display: grid`) to taffy, as a subtree of the existing box tree.
 //!
-//! taffyへの橋渡し(採寸コールバック・座標変換の2パス方式)はFlexboxと完全に
-//! 共通で、[`super::flex::layout_taffy_subtree`]に集約してある。この
-//! モジュールが持つのは「CSSのgrid固有プロパティをtaffyの`Style`へ写す」
-//! 部分と、「レイアウト結果を行帯(ページ分割の単位)へ分類する」部分。
+//! The bridge to taffy (the measure callback and the two-pass coordinate conversion) is
+//! shared entirely with Flexbox and lives in [`super::flex::layout_taffy_subtree`]. What
+//! this module holds is the part that maps CSS's grid-specific properties onto taffy's
+//! `Style`, and the part that groups the layout result into row bands (the unit of pagination).
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -21,26 +21,26 @@ use super::block::{LaidOutBox, PosCtx};
 use super::box_tree::GridBox;
 use super::flex::{layout_taffy_subtree, TaffyMode};
 
-/// レイアウト済みのグリッド。ページ分割の単位である「行帯」の列を持つ。
+/// A laid-out grid. It holds the list of row bands, which are the unit of pagination.
 #[derive(Debug, Clone)]
 pub struct LaidOutGrid {
     pub rows: Vec<LaidOutGridRow>,
 }
 
-/// グリッド1行分の帯。`top`/`bottom`は絶対y座標(他のレイアウト結果と
-/// 同じ座標空間。`shift_box_y`が他の座標と一緒に平行移動する)。
+/// One row's band. `top`/`bottom` are absolute y coordinates (the same coordinate space as
+/// the other layout results, so `shift_box_y` translates them along with everything else).
 #[derive(Debug, Clone)]
 pub struct LaidOutGridRow {
     pub items: Vec<LaidOutBox>,
     pub top: f32,
     pub bottom: f32,
-    /// この行帯の下端をまたぐアイテムがあるか。`true`ならここでページを
-    /// 分割できない(テーブルの`rowspan`と同じ扱い)。
+    /// Whether any item spans the bottom of this band. When `true` the page cannot break
+    /// here (handled like a table's `rowspan`).
     pub spans_bottom: bool,
 }
 
-/// グリッドコンテナのcontent box内でアイテムをレイアウトする。
-/// 返り値はレイアウト済みのグリッドと、コンテナのcontent-boxの高さ。
+/// Lay the items out inside the grid container's content box.
+/// Returns the laid-out grid and the height of the container's content box.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn layout_grid(
     grid: &GridBox,
@@ -68,21 +68,21 @@ pub(super) fn layout_grid(
     (LaidOutGrid { rows }, result.container_height)
 }
 
-/// レイアウト済みアイテムを行帯へ分類する。
+/// Group the laid-out items into row bands.
 ///
-/// taffyの`DetailedGridInfo::items`はグリッドの配置アルゴリズム内部の順序で
-/// 並んでおり、リーフの順序と対応する保証が無い。そのため行トラックの
-/// 使用サイズから求めた帯の範囲と、各アイテムの実際のy座標を突き合わせて
-/// 幾何的に判定する(アイテムの上端が入る帯に属させ、下端が帯を越えていれば
-/// `spans_bottom`を立てる)。
+/// taffy's `DetailedGridInfo::items` is ordered by the internals of the grid placement
+/// algorithm, with no guarantee that it corresponds to the order of the leaves. So we decide
+/// geometrically instead, matching each item's actual y coordinate against the band extents
+/// derived from the row tracks' used sizes (an item belongs to the band its top falls in,
+/// and `spans_bottom` is set if its bottom crosses the band).
 fn group_into_rows(
     items: Vec<LaidOutBox>,
     row_tracks: Option<&super::flex::GridRowTracks>,
     content_y: f32,
 ) -> Vec<LaidOutGridRow> {
     let Some(tracks) = row_tracks.filter(|tracks| !tracks.sizes.is_empty()) else {
-        // 行トラック情報が取れない場合は全体を1つの帯として扱う
-        // (=分割しない。従来のflexコンテナと同じ挙動)。
+        // With no row track information, treat the whole thing as one band
+        // (that is, do not split; the same behaviour as a flex container).
         let (top, bottom) = items_vertical_extent(&items, content_y);
         return vec![LaidOutGridRow {
             items,
@@ -92,11 +92,11 @@ fn group_into_rows(
         }];
     };
 
-    // 行帯の範囲。taffyのトラック配列は
-    // [ガター, トラック, ガター, ..., ガター]の並びなので、i番目のトラックの
-    // 開始位置は「先頭からi+1個のガター + i個のトラック」の合計になる。
+    // The band extents. taffy's track array is laid out as
+    // [gutter, track, gutter, ..., gutter], so track i starts at the sum of the first i+1
+    // gutters plus i tracks.
     let mut bands: Vec<(f32, f32)> = Vec::with_capacity(tracks.sizes.len());
-    // content boxの上端(絶対座標)を起点にする。
+    // Start from the top of the content box (in absolute coordinates).
     let mut offset = content_y;
     for (i, size) in tracks.sizes.iter().enumerate() {
         offset += tracks.gutters.get(i).copied().unwrap_or(0.0);
@@ -121,27 +121,27 @@ fn group_into_rows(
             - item.layout.margin.top;
         let margin_box_bottom = margin_box_top + item.layout.margin_box_height();
 
-        // 上端が属する帯(見つからなければ最後の帯)。
+        // The band the top falls in (the last band if none is found).
         let index = bands
             .iter()
             .position(|(top, bottom)| margin_box_top < *bottom || margin_box_top <= *top)
             .unwrap_or(bands.len() - 1);
-        // 下端が自分の帯を越えていれば、その帯の境界では分割できない。
+        // If the bottom crosses out of its own band, no break is possible at that band's boundary.
         if margin_box_bottom > bands[index].1 + BAND_EPSILON {
             rows[index].spans_bottom = true;
         }
         rows[index].items.push(item);
     }
 
-    // アイテムが1つも無い帯(空行)も高さを持つので残す。
+    // Bands with no items at all (empty rows) still have a height, so they are kept.
     rows
 }
 
-/// 帯の境界判定に使う許容誤差(px)。taffyが返す座標は浮動小数のため、
-/// ちょうど境界に接するアイテムを「またいでいる」と誤判定しないようにする。
+/// The tolerance (px) used when deciding band boundaries. taffy returns floating-point
+/// coordinates, so this keeps an item exactly touching a boundary from counting as crossing it.
 const BAND_EPSILON: f32 = 0.01;
 
-/// 行トラック情報が無い場合のフォールバック: アイテム全体の上端/下端(絶対座標)。
+/// The fallback when there is no row track information: the top and bottom of all the items (in absolute coordinates).
 fn items_vertical_extent(items: &[LaidOutBox], content_y: f32) -> (f32, f32) {
     let mut top = f32::MAX;
     let mut bottom = f32::MIN;
@@ -160,7 +160,7 @@ fn items_vertical_extent(items: &[LaidOutBox], content_y: f32) -> (f32, f32) {
     }
 }
 
-/// グリッドコンテナのtaffy `Style`。
+/// The taffy `Style` for a grid container.
 pub(super) fn container_taffy_style(style: &ComputedStyle, content_width: f32) -> tf::Style {
     tf::Style {
         display: tf::Display::Grid,
@@ -174,7 +174,7 @@ pub(super) fn container_taffy_style(style: &ComputedStyle, content_width: f32) -
         grid_template_row_names: map_line_names(&style.grid_template_rows),
         justify_content: super::flex::map_justify_content(style.justify_content),
         align_content: Some(super::flex::map_align_content(style.align_content)),
-        // Gridでは`justify-items`/`align-items`の両方が意味を持つ。
+        // In Grid both `justify-items` and `align-items` mean something.
         justify_items: Some(map_align_items(style.justify_items)),
         align_items: Some(super::flex::map_align_items(style.align_items)),
         gap: tf::Size {
@@ -198,7 +198,7 @@ pub(super) fn container_taffy_style(style: &ComputedStyle, content_width: f32) -
     }
 }
 
-/// グリッドアイテムのtaffy `Style`。
+/// The taffy `Style` for a grid item.
 pub(super) fn item_taffy_style(style: &ComputedStyle) -> tf::Style {
     let mut base = super::flex::item_taffy_style(style);
     base.grid_row = tf::Line {
@@ -237,7 +237,7 @@ fn map_track_list(list: &TrackList) -> Vec<tf::GridTemplateComponent<String>> {
         .collect()
 }
 
-/// `[name]`で書かれたライン名。taffyは「トラック境界ごとに1リスト」の形で持つ。
+/// The line names written as `[name]`. taffy holds them as one list per track boundary.
 fn map_line_names(list: &TrackList) -> Vec<Vec<String>> {
     list.line_names.clone()
 }
@@ -263,15 +263,15 @@ fn map_track_size(size: TrackSize) -> tf::TrackSizingFunction {
                 LengthPercentage::Percentage(v) => {
                     tf::MaxTrackSizingFunction::fit_content_percent(v)
                 }
-                // calcのトラックサイズはパーサが拒否するのでここへは来ない。
+                // A calc track size is rejected by the parser, so it never reaches here.
                 LengthPercentage::Calc { px, .. } => tf::MaxTrackSizingFunction::fit_content_px(px),
             },
         },
     }
 }
 
-/// `<track-breadth>`をtaffyの最小トラックサイズへ。`fr`は最小側では
-/// `auto`扱い(CSS仕様: `1fr`は`minmax(auto, 1fr)`と等価)。
+/// Map a `<track-breadth>` to taffy's minimum track size. On the minimum side `fr` counts
+/// as `auto` (per the CSS spec, `1fr` is equivalent to `minmax(auto, 1fr)`).
 fn map_min_breadth(breadth: TrackBreadth) -> tf::MinTrackSizingFunction {
     match breadth {
         TrackBreadth::Length(px) => tf::MinTrackSizingFunction::length(px),
@@ -325,8 +325,8 @@ fn map_grid_line(line: &GridLine) -> tf::GridPlacement<String> {
     }
 }
 
-/// `justify-items`はGridのインライン軸方向のアイテム配置。値の集合は
-/// `align-items`と共有する。
+/// `justify-items` is item placement along Grid's inline axis. Its value set is shared with
+/// `align-items`.
 fn map_align_items(items: AlignItems) -> tf::AlignItems {
     super::flex::map_align_items(items)
 }

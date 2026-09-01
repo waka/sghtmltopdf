@@ -3,24 +3,24 @@
 require "uri"
 
 module Sghtmltopdf
-  # オプションハッシュを変換する。
+  # Converts an options hash into:
   #
-  # * ネイティブ拡張へ渡すCLIの引数列(argv) … [.to_argv]
-  # * HTTPサーバモードへ渡すクエリ文字列   … [.to_query]
+  # * the CLI argument list (argv) passed to the native extension ... [.to_argv]
+  # * the query string passed to HTTP server mode                 ... [.to_query]
   module Options
-    # 入力は常に標準入力を表す`-`を置く(実際のバイト列はFFIで直接渡すため
-    # 読まれない)。出力先はRust側のSinkが決めるので、ここもダミーの`-`。
-    # `-`入力のときCLIは`--output`を必須にするため、省略はできない。
+    # The input is always `-`, meaning standard input (the real bytes are passed directly over
+    # FFI and never read). The destination is decided by the Rust-side Sink, so that is a
+    # dummy `-` too. With a `-` input the CLI requires `--output`, so it cannot be omitted.
     ARGV_PREFIX = ["sghtmltopdf", "-", "--output", "-"].freeze
 
-    # Ruby側だけで解釈するキー。変換オプションではないので、argvにも
-    # クエリにも出さない。
+    # The keys interpreted on the Ruby side alone. They are not conversion options, so they
+    # appear in neither the argv nor the query.
     TRANSPORT_KEYS = %i[server_url server_open_timeout server_read_timeout chunk_size].freeze
 
     module_function
 
-    # @param options [Hash] Rubyのオプションハッシュ
-    # @return [Array<String>] clapへ渡す引数列
+    # @param options [Hash] the Ruby options hash
+    # @return [Array<String>] the argument list passed to clap
     def to_argv(options)
       argv = ARGV_PREFIX.dup
       each_pair(options) do |name, value|
@@ -30,18 +30,18 @@ module Sghtmltopdf
       argv
     end
 
-    # @param options [Hash] Rubyのオプションハッシュ
-    # @return [String] `POST /pdf`のクエリ文字列(先頭に`?`は付けない)
+    # @param options [Hash] the Ruby options hash
+    # @return [String] the query string for `POST /pdf` (with no leading `?`)
     def to_query(options)
       parts = []
       each_pair(options) do |name, value|
-        # 値なしのフラグはキーだけを置く(サーバは値なし＝真として扱う)。
+        # A valueless flag becomes just the key (the server treats no value as true).
         parts << (value.nil? ? escape(name) : "#{escape(name)}=#{escape(value)}")
       end
       parts.join("&")
     end
 
-    # 1つのキーと値をargvの断片へ変換する。
+    # Convert one key and value into an argv fragment.
     #
     #   page_size: "A4"     → ["--page-size", "A4"]
     #   grayscale: true     → ["--grayscale"]
@@ -51,8 +51,8 @@ module Sghtmltopdf
       pairs_for(key, value).flat_map { |name, arg| arg.nil? ? ["--#{name}"] : ["--#{name}", arg] }
     end
 
-    # 1つのキーと値を「フラグ名と値」のペアの列にする。値が`nil`のペアは
-    # 値を取らないフラグ(`--toc`など)。
+    # Turn one key and value into a list of "flag name and value" pairs. A pair whose value is
+    # `nil` is a flag taking no value (`--toc` and the like).
     def pairs_for(key, value)
       name = flag_name(key)
       return font_pairs(value) if name == "font"
@@ -60,26 +60,25 @@ module Sghtmltopdf
       case value
       when nil, false then []
       when true then [[name, nil]]
-      # 配列は同じオプションの繰り返し。要素ごとに同じ規則を適用する。
+      # An array means the same option repeated. The same rule applies to each element.
       when Array then value.flat_map { |element| pairs_for(key, element) }
       when Hash
-        # wicked_pdfの`margin: {top: 10}`のような入れ子は受けない。対応する
-        # CLIフラグが無く、機械的に平坦化すると綴り違いのキーまで黙って
-        # 通ってしまう。移行時は移行ガイドの対応表を見て書き換えてもらう。
-        # なお単位を省いた数値の解釈はwicked_pdfと同じくmm(`cli/units.rs`)。
+        # Nesting such as wicked_pdf's `margin: {top: 10}` is not accepted. There is no
+        # corresponding CLI flag, and flattening it mechanically would let even misspelled
+        # keys through silently. When migrating, use the correspondence table in the
+        # migration guide to rewrite them. A unitless number is read as mm, as in wicked_pdf (`cli/units.rs`).
         example = value.keys.first
         raise ArgumentError,
-          "#{key}にHashは渡せません(pathとindexを取るのは:fontだけです)。" \
-          "入れ子のオプションは平坦なキーで指定してください" \
-          "#{": 例 #{key}_#{example}: \"…\"" if example}"
+          "a Hash cannot be passed for #{key} (only :font takes a path and an index). " \
+          "Give nested options as flat keys" \
+          "#{": for example #{key}_#{example}: \"...\"" if example}"
       else [[name, value.to_s]]
       end
     end
 
-    # `--font`と`--font-index`は出現順で対応付けられる(CLIは
-    # `ArgMatches#indices_of`で「`--font-index`より手前にある最後の`--font`」
-    # へ結び付ける)。そのため、フェイス番号は
-    # 必ず対応する`--font`の直後へ置く。
+    # `--font` and `--font-index` are paired by their order of appearance (the CLI ties each
+    # `--font-index` to "the last `--font` before it" via `ArgMatches#indices_of`).
+    # So a face index always goes immediately after its own `--font`.
     #
     #   font: "a.ttf"                        → ["--font", "a.ttf"]
     #   font: {path: "a.ttc", index: 1}      → ["--font", "a.ttc", "--font-index", "1"]
@@ -95,7 +94,7 @@ module Sghtmltopdf
       when Array then value.flat_map { |element| font_pairs(element) }
       when Hash
         path = value[:path] || value["path"]
-        raise ArgumentError, "fontのHashにはpathが必要です: #{value.inspect}" if path.nil?
+        raise ArgumentError, "a font Hash needs a path: #{value.inspect}" if path.nil?
 
         index = value[:index] || value["index"]
         pairs = [["font", path.to_s]]
@@ -105,12 +104,12 @@ module Sghtmltopdf
       end
     end
 
-    # `:page_size` → `page-size`。
+    # `:page_size` becomes `page-size`.
     def flag_name(key)
       key.to_s.tr("_", "-")
     end
 
-    # 変換オプションだけを、渡された順にペアとして列挙する。
+    # Enumerate only the conversion options, as pairs, in the order they were given.
     def each_pair(options, &block)
       options.each do |key, value|
         next if TRANSPORT_KEYS.include?(key.to_sym)

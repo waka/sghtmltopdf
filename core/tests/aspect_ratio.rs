@@ -1,7 +1,7 @@
-//! `aspect-ratio`のE2Eテスト。
+//! E2E tests for `aspect-ratio`.
 //!
-//! `min_max_size.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイル
-//! カスケード→レイアウト→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `min_max_size.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -16,7 +16,7 @@ use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_style
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
-/// 32x24(4:3)のJPEG。内在アスペクト比の検証に使う。
+/// A 32x24 (4:3) JPEG. Used to check the intrinsic aspect ratio.
 const JPEG_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/tests/fixtures/images/spike_gradient.jpg"
@@ -74,7 +74,7 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     }
 }
 
-/// 画像の解決まで行うレイアウト(`<img>`を含むHTML用)。
+/// Layout that also resolves images (for HTML containing an `<img>`).
 fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
@@ -101,7 +101,7 @@ fn content_box(dom: &Dom, laid: &LaidOutBox, tag: &str, index: usize) -> Rect {
         .content
 }
 
-// ===== 非置換要素 =====
+// ===== Non-replaced elements =====
 
 #[test]
 fn height_is_derived_from_width_and_the_ratio() {
@@ -150,7 +150,7 @@ fn an_explicit_height_wins_over_the_ratio() {
 
 #[test]
 fn max_height_clamps_the_derived_height() {
-    // 「比から導出 → クランプ」の順(比を保つための再計算はしない)。
+    // The order is "derive from the ratio, then clamp" (no recomputation to preserve the ratio).
     let (dom, laid) = layout(
         "<div>x</div>",
         "body { margin: 0; } div { width: 300px; aspect-ratio: 1 / 1; max-height: 50px; }",
@@ -162,8 +162,8 @@ fn max_height_clamps_the_derived_height() {
 
 #[test]
 fn a_block_level_auto_width_stays_stretched() {
-    // CSS仕様どおり、通常フローのブロックの`width: auto`はstretchが優先され、
-    // 比から幅を導かない。
+    // As the CSS spec requires, `width: auto` on a normal-flow block prefers stretch and does
+    // not derive the width from the ratio.
     let containing_width = PageSettings::default().content_width();
     let (dom, laid) = layout(
         "<div>x</div>",
@@ -176,7 +176,7 @@ fn a_block_level_auto_width_stays_stretched() {
 
 #[test]
 fn the_ratio_applies_to_the_border_box_under_border_box_sizing() {
-    // border-box 200x100(比2:1) → content高さは 100 - padding/border。
+    // A border box of 200x100 (a 2:1 ratio) gives a content height of 100 minus padding/border.
     let (dom, laid) = layout(
         "<div>x</div>",
         "body { margin: 0; } div { box-sizing: border-box; width: 200px; \
@@ -187,7 +187,7 @@ fn the_ratio_applies_to_the_border_box_under_border_box_sizing() {
     assert_eq!(content.height, 80.0);
 }
 
-// ===== shrink-to-fit文脈(高さ → 幅の導出) =====
+// ===== A shrink-to-fit context (deriving the width from the height) =====
 
 #[test]
 fn a_float_derives_its_width_from_the_height_and_ratio() {
@@ -234,11 +234,11 @@ fn an_absolutely_positioned_box_derives_its_width_from_the_height_and_ratio() {
     assert_eq!(found.layout.content.width, 160.0);
 }
 
-// ===== `<img>`(置換要素) =====
+// ===== `<img>` (a replaced element) =====
 
 #[test]
 fn an_image_with_only_a_css_width_keeps_its_intrinsic_ratio() {
-    // fixtureは32x24(4:3)。従来はこのケースで比を保たず高さが0になっていた。
+    // The fixture is 32x24 (4:3). This case used to lose the ratio and give a height of 0.
     let html_src = format!(r#"<img src="{}">"#, jpeg_data_uri());
     let (dom, laid) = layout(&html_src, "body { margin: 0; } img { width: 160px; }");
     let content = content_box(&dom, &laid, "img", 0);
@@ -286,7 +286,7 @@ fn an_explicit_ratio_overrides_the_intrinsic_ratio_of_an_image() {
 
 #[test]
 fn the_auto_keyword_makes_an_image_prefer_its_intrinsic_ratio() {
-    // `aspect-ratio: auto 1/1`は「内在比があればそちらを優先」。
+    // `aspect-ratio: auto 1/1` means "prefer the intrinsic ratio if there is one".
     let html_src = format!(r#"<img src="{}">"#, jpeg_data_uri());
     let (dom, laid) = layout(
         &html_src,

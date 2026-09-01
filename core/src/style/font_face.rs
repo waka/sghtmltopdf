@@ -1,7 +1,7 @@
-//! `@font-face`ルールのパース。
+//! Parsing of `@font-face` rules.
 //!
-//! `font-family`/`src`は必須ディスクリプタとして扱い、どちらか一方でも
-//! 欠けていればルール全体を無効として捨てる(CSSの仕様通り)。
+//! `font-family` and `src` are treated as required descriptors: if either is missing, the
+//! whole rule is discarded as invalid (as the CSS spec requires).
 
 use cssparser::{
     match_ignore_ascii_case, AtRuleParser, CowRcStr, DeclarationParser, ParseError, Parser,
@@ -14,28 +14,28 @@ use super::values::{FontStyle, FontWeight};
 #[derive(Debug, Clone, PartialEq)]
 pub struct FontFaceRule {
     pub family: String,
-    /// `src`に列挙された`url(...)`/`local(...)`を、記述順のまま保持する
-    /// (実際の解決・優先順位判断は呼び出し側の責務)。
+    /// The `url(...)`/`local(...)` entries listed in `src`, kept in written order
+    /// (actually resolving them and deciding priority is the caller's job).
     pub src: Vec<FontFaceSource>,
     pub weight: FontWeight,
     pub style: FontStyle,
-    /// `unicode-range`。空`Vec`は「未指定」を意味し、全域(U+0-10FFFF)を
-    /// 暗黙にカバーするものとして扱う(呼び出し側の責務)。
+    /// `unicode-range`. An empty `Vec` means "unspecified" and is treated as implicitly
+    /// covering the whole range (U+0-10FFFF), which is the caller's job.
     pub unicode_range: Vec<UnicodeRange>,
 }
 
-/// `src`ディスクリプタの1エントリ。
+/// One entry of the `src` descriptor.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FontFaceSource {
-    /// `url(...)`。相対パスの解決は呼び出し側の責務(HTMLファイルの
-    /// ディレクトリ基準)。
+    /// `url(...)`. Resolving a relative path is the caller's job (relative to the HTML
+    /// file's directory).
     Url(String),
-    /// `local(...)`。システムフォントのフルネームまたはPostScript名。
+    /// `local(...)`. A system font's full name or PostScript name.
     Local(String),
 }
 
-/// `@font-face { ... }`の宣言ブロックをパースし、`font-family`/`src`が
-/// どちらも得られた場合のみ[`FontFaceRule`]を返す。
+/// Parse the declaration block of `@font-face { ... }` and return a [`FontFaceRule`] only
+/// if both `font-family` and `src` were obtained.
 pub(super) fn parse_font_face_block<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<FontFaceRule, ParseError<'i, ()>> {
@@ -124,9 +124,9 @@ impl<'i> RuleBodyItemParser<'i, FontFaceDescriptor, ()> for FontFaceDeclarationP
     }
 }
 
-/// `src`ディスクリプタ: `url(...)`/`local(...)`のカンマ区切りリスト。各エントリの
-/// 後ろに続く`format(...)`/`tech(...)`ヒントは中身を検証せず読み飛ばす(対応
-/// フォーマットかどうかの判定はロード時の実際のパース結果に委ねるため)。
+/// The `src` descriptor: a comma-separated list of `url(...)`/`local(...)`. Any
+/// `format(...)`/`tech(...)` hint following an entry is skipped without validating its
+/// contents (whether a format is supported is left to what actually parses at load time).
 fn parse_font_face_src<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<FontFaceSource>, ParseError<'i, ()>> {
@@ -161,13 +161,12 @@ fn parse_font_face_src<'i>(
     Ok(sources)
 }
 
-/// `unicode-range`ディスクリプタ: `<urange>`のカンマ区切りリスト
-/// (`unicode-range: U+0-24F, U+1E00-1EFF;`)。`<urange>`自体の構文
-/// (単一コードポイント/範囲/ワイルドカード)の妥当性検証は
-/// `cssparser::UnicodeRange::parse`に委ねる(独自の型・
-/// 手書きパーサは持たない)。1つでも不正なレンジがあれば
-/// `parse_comma_separated`がクロージャの`Err`でリスト全体の
-/// パースを打ち切るため、記述子全体が無効になる。
+/// The `unicode-range` descriptor: a comma-separated list of `<urange>`
+/// (`unicode-range: U+0-24F, U+1E00-1EFF;`). Validating the syntax of `<urange>` itself
+/// (a single code point, a range, or a wildcard) is left to
+/// `cssparser::UnicodeRange::parse` (we keep no type or hand-written parser of our own).
+/// If even one range is invalid, `parse_comma_separated` aborts parsing the whole list on
+/// the closure's `Err`, so the entire descriptor becomes invalid.
 fn parse_unicode_range<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<Vec<UnicodeRange>, ParseError<'i, ()>> {
@@ -253,8 +252,8 @@ mod tests {
 
     #[test]
     fn a_single_invalid_range_invalidates_the_whole_list() {
-        // 1つ目は妥当だが2つ目が不正なので、リスト全体が無効になる
-        // (`parse_comma_separated`がクロージャの`Err`で全体を打ち切るため)。
+        // The first is valid but the second is not, so the whole list is invalid
+        // (`parse_comma_separated` aborts on the closure's `Err`).
         assert!(parse_ranges("U+0-7F, not-a-range").is_err());
     }
 

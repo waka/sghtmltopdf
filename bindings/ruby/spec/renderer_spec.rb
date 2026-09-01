@@ -1,29 +1,29 @@
 # frozen_string_literal: true
 
-# Renderer単体のテスト。Railsを読み込まずに振り分けだけを確かめる。
+# Unit tests for Renderer alone. They check only the sorting, without loading Rails.
 RSpec.describe Sghtmltopdf::Renderer do
   def renderer(name = "invoice", **options)
     described_class.new(name, options)
   end
 
-  describe "オプションの振り分け" do
+  describe "sorting the options" do
     subject(:pdf) { renderer(template: "invoices/show", layout: "pdf", page_size: "A4", margin_top: "20mm") }
 
-    it "Railsのキーはビュー描画へ渡す" do
+    it "passes the Rails keys to view rendering" do
       expect(pdf.render_options).to eq(template: "invoices/show", layout: "pdf")
     end
 
-    it "残りはすべて変換オプションにする" do
+    it "makes everything else a conversion option" do
       expect(pdf.convert_options).to eq(page_size: "A4", margin_top: "20mm")
     end
 
-    it "レスポンス用のキーは変換オプションに混ぜない" do
+    it "keeps the response keys out of the conversion options" do
       pdf = renderer(disposition: "attachment", filename: "x.pdf", status: 201, show_as_html: false)
       expect(pdf.convert_options).to be_empty
       expect(pdf.render_options).to be_empty
     end
 
-    it "文字列のキーも受ける" do
+    it "accepts string keys too" do
       pdf = described_class.new("invoice", {"template" => "a/b", "page_size" => "A4"})
       expect(pdf.render_options).to eq(template: "a/b")
       expect(pdf.convert_options).to eq(page_size: "A4")
@@ -31,50 +31,50 @@ RSpec.describe Sghtmltopdf::Renderer do
   end
 
   describe "#filename" do
-    it "pdf:の値に拡張子を足す" do
+    it "adds the extension to the value of pdf:" do
       expect(renderer("invoice").filename).to eq("invoice.pdf")
     end
 
-    it "拡張子は二重に付けない" do
+    it "does not double up the extension" do
       expect(renderer("invoice.pdf").filename).to eq("invoice.pdf")
       expect(renderer("invoice.PDF").filename).to eq("invoice.PDF")
     end
 
-    it "filename:があればそちらが勝つ" do
+    it "lets filename: win when present" do
       expect(renderer("invoice", filename: "請求書").filename).to eq("請求書.pdf")
     end
 
-    it "pdf:が空ならdefault_nameを使う" do
+    it "uses default_name when pdf: is empty" do
       expect(described_class.new(nil, {}, default_name: "show").filename).to eq("show.pdf")
       expect(described_class.new("", {}, default_name: "show").filename).to eq("show.pdf")
     end
 
-    it "default_nameも無ければdocumentにする" do
+    it "falls back to document with no default_name either" do
       expect(described_class.new(nil, {}).filename).to eq("document.pdf")
     end
   end
 
   describe "#disposition" do
-    it "既定はinline" do
+    it "defaults to inline" do
       expect(renderer.disposition).to eq("inline")
     end
 
-    it "指定があればそれを使う" do
+    it "uses what was given" do
       expect(renderer(disposition: :attachment).disposition).to eq("attachment")
     end
   end
 
   describe "#send_data_options" do
-    it "PDFのContent-Typeとファイル名を返す" do
+    it "returns the PDF Content-Type and the file name" do
       expect(renderer.send_data_options)
         .to eq(type: "application/pdf", disposition: "inline", filename: "invoice.pdf")
     end
 
-    it "status:はそのまま渡す" do
+    it "passes status: through" do
       expect(renderer(status: 201).send_data_options[:status]).to eq(201)
     end
 
-    it "show_as_htmlならHTMLとして返す(ファイル名は付けない)" do
+    it "returns HTML with show_as_html (and no file name)" do
       expect(renderer(show_as_html: true).send_data_options)
         .to eq(type: "text/html", disposition: "inline")
     end
@@ -83,17 +83,17 @@ RSpec.describe Sghtmltopdf::Renderer do
   describe "#body_for" do
     let(:html) { "<h1>Invoice</h1>" }
 
-    it "既定ではPDFへ変換する" do
+    it "converts to PDF by default" do
       expect(renderer.body_for(html)).to start_with("%PDF-")
     end
 
-    it "変換オプションが効く" do
+    it "honours the conversion options" do
       a4 = normalize(renderer(page_size: "A4").body_for(html))
       a5 = normalize(renderer(page_size: "A5").body_for(html))
       expect(a4).not_to eq(a5)
     end
 
-    it "show_as_htmlならHTMLをそのまま返す" do
+    it "returns the HTML unchanged with show_as_html" do
       expect(renderer(show_as_html: true).body_for(html)).to eq(html)
     end
   end

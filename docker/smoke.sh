@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# 公式Dockerイメージのスモークテスト。CIとローカルの両方から使う。
+# Smoke test for the official Docker image. Used from CI and locally.
 #
 #   docker/smoke.sh ghcr.io/waka/sghtmltopdf:latest
-#   PLATFORM=linux/arm64 docker/smoke.sh sghtmltopdf:arm64   # QEMUで動かす場合
+#   PLATFORM=linux/arm64 docker/smoke.sh sghtmltopdf:arm64   # to run under QEMU
 #
-# 見ているのは3つ:
-#   1. 実行ファイルがそのアーキで動くこと(--version)
-#   2. CLIとして日本語のPDFが出せること(同梱フォントが効いていること。
-#      豆腐の警告が出たらフォントを見つけられていない)
-#   3. 引数なしでサーバとして起動し、コンテナの外から /healthz と /pdf に
-#      届くこと(`--listen 0.0.0.0`がCMDで効いていること)
+# Three things are checked:
+#   1. The binary runs on that architecture (--version).
+#   2. The CLI can produce a Japanese PDF (i.e. the bundled fonts work;
+#      a tofu warning means the fonts were not found).
+#   3. With no arguments it starts as a server, and /healthz and /pdf are
+#      reachable from outside the container (`--listen 0.0.0.0` from CMD is in effect).
 set -euo pipefail
 
 image="${1:?usage: docker/smoke.sh <image> }"
@@ -39,32 +39,32 @@ HTML
 echo "== 1. --version"
 docker run --rm "${platform_args[@]}" "$image" --version
 
-echo "== 2. CLIとして変換する"
-# 出力ファイルをホスト側の所有者で書けるよう --user を渡す(Dockerfile参照)。
+echo "== 2. converting with the CLI"
+# Pass --user so the output file is written with the host user as owner (see Dockerfile).
 docker run --rm "${platform_args[@]}" --user "$(id -u):$(id -g)" \
     -v "$workdir:/work" -w /work "$image" smoke.html -o out.pdf 2> "$workdir/stderr.txt" || {
     cat "$workdir/stderr.txt" >&2
-    echo "::error::CLIでの変換に失敗しました" >&2
+    echo "::error::the CLI conversion failed" >&2
     exit 1
 }
 cat "$workdir/stderr.txt"
-if grep -q "豆腐" "$workdir/stderr.txt"; then
-    echo "::error::同梱フォントで描画できない文字があります(フォントが見つかっていない可能性)" >&2
+if grep -q "tofu" "$workdir/stderr.txt"; then
+    echo "::error::the bundled fonts cannot draw some characters (the fonts may not have been found)" >&2
     exit 1
 fi
 head -c 5 "$workdir/out.pdf" | grep -q "%PDF" || {
-    echo "::error::出力がPDFではありません" >&2
+    echo "::error::the output is not a PDF" >&2
     exit 1
 }
 size=$(wc -c < "$workdir/out.pdf")
-# 日本語のグリフが埋め込まれていれば数KB以上になる(空PDFとの区別)。
+# With Japanese glyphs embedded the file is several KB or more (this tells it apart from an empty PDF).
 if [ "$size" -lt 5000 ]; then
-    echo "::error::PDFが小さすぎます(${size}バイト)。フォントが埋め込まれていない可能性" >&2
+    echo "::error::the PDF is too small (${size} bytes). The fonts may not have been embedded" >&2
     exit 1
 fi
-echo "   -> ${size}バイトのPDFができました"
+echo "   -> produced a ${size}-byte PDF"
 
-echo "== 3. サーバとして起動する"
+echo "== 3. starting it as a server"
 docker run -d --name "$container" "${platform_args[@]}" \
     -p 127.0.0.1:18080:8080 "$image" >/dev/null
 for _ in $(seq 1 60); do
@@ -75,7 +75,7 @@ for _ in $(seq 1 60); do
 done
 curl -fsS http://127.0.0.1:18080/healthz || {
     docker logs "$container" >&2
-    echo "::error::/healthz に届きません" >&2
+    echo "::error::/healthz is unreachable" >&2
     exit 1
 }
 echo
@@ -86,13 +86,13 @@ status=$(curl -sS -o "$workdir/server.pdf" -w '%{http_code}' \
     --data-binary "@$workdir/smoke.html" http://127.0.0.1:18080/pdf)
 if [ "$status" != "200" ]; then
     docker logs "$container" >&2
-    echo "::error::/pdf が $status を返しました" >&2
+    echo "::error::/pdf returned $status" >&2
     exit 1
 fi
 head -c 5 "$workdir/server.pdf" | grep -q "%PDF" || {
-    echo "::error::サーバの出力がPDFではありません" >&2
+    echo "::error::the server's output is not a PDF" >&2
     exit 1
 }
-echo "   -> サーバからも $(wc -c < "$workdir/server.pdf")バイトのPDFが返りました"
+echo "   -> the server also returned a $(wc -c < "$workdir/server.pdf")-byte PDF"
 
-echo "== スモークテスト成功: $image"
+echo "== smoke test passed: $image"

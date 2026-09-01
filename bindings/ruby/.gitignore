@@ -1,4 +1,4 @@
-# gemはGemfile.lockをコミットしない(利用側の依存解決を縛らないため)
+# The gem does not commit Gemfile.lock, so it never constrains dependency resolution for consumers
 /Gemfile.lock
 /target
 /tmp

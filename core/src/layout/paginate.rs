@@ -1,34 +1,34 @@
-//! レイアウト済みのボックス木を、ページ残り高さに基づいて分割する。
+//! Splitting the laid-out box tree according to the height left on the page.
 //!
-//! `break-before`/`break-after`/`break-inside`/`orphans`/`widows`を尊重しつつ、
-//! ボックスがページに収まらない場合は以下の優先順で分割を試みる:
-//! 1. `break-inside: avoid`かつ丸ごと1ページに収まる大きさなら、分割せず
-//!    次ページの先頭へまるごと送る
-//! 2. ブロックコンテナなら、その子ボックス単位で置き直す(各子の
-//!    `break-before`/`break-after: always`もこの単位で強制改ページとして働く)
-//! 3. 複数行のインラインコンテンツなら、行(line box)単位で分割する
-//!    (`orphans`/`widows`を満たすよう、[`compute_orphans_widows_breaks`]が
-//!    事前に分割点を調整する)
-//! 4. それでも分割できない最小単位(空の要素・1行のみの内容)は次ページの
-//!    先頭にまるごと送る(1ページに収まらないほど巨大な場合はそのままはみ出す)
+//! It honours `break-before`/`break-after`/`break-inside`/`orphans`/`widows`, and where a
+//! box does not fit on the page it tries to split it in this order of preference:
+//! 1. If `break-inside: avoid` and it is small enough to fit a whole page, move it whole to
+//!    the top of the next page rather than splitting it
+//! 2. If it is a block container, re-place it child box by child box (each child's
+//!    `break-before`/`break-after: always` acts as a forced break at this granularity)
+//! 3. If it is multi-line inline content, split it line box by line box
+//!    ([`compute_orphans_widows_breaks`] adjusts the break points in advance so
+//!    `orphans`/`widows` are satisfied)
+//! 4. Anything still indivisible (an empty element, single-line content) is moved whole to
+//!    the top of the next page (something too large for one page simply overflows)
 //!
-//! 子孫の`break-before`/`break-after: always`は、祖先の部分木がページ残り高さに
-//! 収まる場合でも見逃してはならない(強制改ページはオーバーフローとは独立した
-//! 明示的な指定のため)。[`subtree_requires_child_walk`]が、部分木内にこうした
-//! 強制改ページが存在するかを事前に判定し、存在すれば「丸ごと1個のリーフとして
-//! 配置する」高速経路を使わずに子要素単位の配置へフォールバックする。
+//! A descendant's `break-before`/`break-after: always` must not be missed even when the
+//! ancestor's subtree fits in the height left on the page (a forced break is an explicit
+//! setting, independent of overflow). [`subtree_requires_child_walk`] decides in advance
+//! whether such a forced break exists inside the subtree, and if it does, falls back to
+//! per-child placement rather than the fast path of "place it as a single leaf".
 //!
-//! コンテナ自身がページをまたいで分割される場合でも、そのコンテナの背景・枠線は
-//! 実際に子が配置された各ページごとに再現する(簡易的なボックスフラグメンテーション、
-//! [`place_split`]参照)。「すでに決まった分割位置で、コンテナの装飾をどう
-//! 引き継ぐか」は以下の簡易規則に従う:
-//! - 上マージン/枠線/パディングは最初のフラグメントのみに適用する
-//! - 下マージン/枠線/パディングは最後のフラグメントのみに適用する
-//! - 左右の枠線/パディングは全フラグメントに適用する
-//! - 背景色は各フラグメントの実際の内容範囲に対してそれぞれ塗る
+//! Even where a container is itself split across pages, its background and borders are
+//! reproduced on each page its children actually landed on (a simple box fragmentation; see
+//! [`place_split`]). "Given break points already decided, how the container's decoration
+//! carries over" follows these simple rules:
+//! - The top margin, border and padding apply to the first fragment only
+//! - The bottom margin, border and padding apply to the last fragment only
+//! - The left and right borders and padding apply to every fragment
+//! - The background colour is painted over each fragment's real content extent
 //!
-//! ページをまたがず1ページに収まり、かつ強制改ページも内包しない部分木は、
-//! 元の構造を保ったまま配置される。
+//! A subtree that fits on one page without crossing a boundary, and contains no forced
+//! break, is placed with its original structure intact.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -57,35 +57,35 @@ pub struct Page {
     pub boxes: Vec<LaidOutBox>,
 }
 
-/// ページ分割中の「未flushページバッファ + flush可否判定」を管理する状態。
+/// The state managing "the unflushed page buffer plus the decision of what may be flushed" during pagination.
 ///
-/// [`place_split`]によるコンテナの装飾フラグメント(背景・枠線)挿入は、
-/// そのコンテナの子要素すべてを配置し終えてから、既に`push`済みの
-/// (一見「確定した」ように見える)ページへ遡って行われる(モジュールdoc
-/// 参照)。そのため「新しいページが始まったら直前のページは確定」という
-/// 単純な判定はできない。文書ルート自身もこの`place_split`を通るため、
-/// 何も対策しなければ「文書全体の処理が終わるまでどのページも確定しない」
-/// (=実質一括処理と同じ)になってしまう。
+/// The decoration fragments (background and borders) that [`place_split`] inserts for a
+/// container are written after every one of its children has been placed, reaching back into
+/// pages that were already `push`ed and look settled (see the module docs). So the simple
+/// rule "once a new page starts, the previous one is settled" does not hold. The document
+/// root itself also goes through `place_split`, so with no countermeasure "no page is
+/// settled until the whole document is processed" (which is effectively batch processing
+/// again).
 ///
-/// かわりに、現在処理中の(=呼び出しスタック上にある)`place_split`が
-/// それぞれ「最初に触れた絶対ページインデックス」を`active_min_page`に
-/// スタックとして積み、その最小値より前のページのみ安全にflushする
-/// ([`Self::try_flush`])。あるページより後に開始したどのコンテナも、
-/// そのページへ遡って書き込むことはない(`place_split`は自分がまたいだ
-/// 範囲より前のページを触らない)ため、この判定で安全性が保証される。
-/// [`PaginationState`]の永続部分。`on_flush`コールバック(ライフタイム付き)
-/// を持たないため、[`StreamingPaginator`]のフィールドとして、複数の
-/// `push_item`呼び出しをまたいで保持できる。
+/// Instead, every `place_split` currently in progress (that is, on the call stack) pushes
+/// "the first absolute page index it touched" onto the `active_min_page` stack, and only
+/// pages before that minimum are safely flushed ([`Self::try_flush`]). No container started
+/// after a given page ever writes back to it (`place_split` never touches a page before the
+/// range it spanned), which is what makes this rule safe.
+///
+/// The persistent part of [`PaginationState`]. Holding no `on_flush` callback (with its
+/// lifetime), it can be a field of [`StreamingPaginator`] and survive across several
+/// `push_item` calls.
 #[derive(Default)]
 struct PaginationBuffer {
-    /// まだflushしていない(=これ以上書き込まれないことがまだ保証できない)
-    /// ページのバッファ。`buffer[0]`の絶対インデックスは`flushed`。
+    /// The buffer of pages not yet flushed (that is, pages we cannot yet guarantee will not
+    /// be written to again). The absolute index of `buffer[0]` is `flushed`.
     buffer: Vec<Page>,
-    /// これまでにflush済みのページ数(=次にflushすべきページの絶対
-    /// インデックス)。
+    /// How many pages have been flushed so far (that is, the absolute index of the next page
+    /// to flush).
     flushed: usize,
-    /// 現在アクティブな`place_split`呼び出しが最初に触れた絶対ページ
-    /// インデックスのスタック(`enter_split`/`exit_split`でpush/pop)。
+    /// The stack of first-touched absolute page indices for the `place_split` calls currently
+    /// active (pushed and popped by `enter_split`/`exit_split`).
     active_min_page: Vec<usize>,
 }
 
@@ -99,23 +99,22 @@ impl PaginationBuffer {
     }
 }
 
-/// [`PaginationBuffer`](永続部分)と、呼び出しごとに差し替え可能な
-/// `on_flush`コールバックをまとめた、`place_box`等が実際に操作する対象。
+/// [`PaginationBuffer`] (the persistent part) plus a per-call replaceable `on_flush`
+/// callback: what `place_box` and friends actually operate on.
 ///
-/// [`place_split`]によるコンテナの装飾フラグメント(背景・枠線)挿入は、
-/// そのコンテナの子要素すべてを配置し終えてから、既に`push`済みの
-/// (一見「確定した」ように見える)ページへ遡って行われる(モジュールdoc
-/// 参照)。そのため「新しいページが始まったら直前のページは確定」という
-/// 単純な判定はできない。文書ルート自身もこの`place_split`を通るため、
-/// 何も対策しなければ「文書全体の処理が終わるまでどのページも確定しない」
-/// (=実質一括処理と同じ)になってしまう。
+/// The decoration fragments (background and borders) that [`place_split`] inserts for a
+/// container are written after every one of its children has been placed, reaching back into
+/// pages that were already `push`ed and look settled (see the module docs). So the simple
+/// rule "once a new page starts, the previous one is settled" does not hold. The document
+/// root itself also goes through `place_split`, so with no countermeasure "no page is
+/// settled until the whole document is processed" (which is effectively batch processing
+/// again).
 ///
-/// かわりに、現在処理中の(=呼び出しスタック上にある)`place_split`が
-/// それぞれ「最初に触れた絶対ページインデックス」を`active_min_page`に
-/// スタックとして積み、その最小値より前のページのみ安全にflushする
-/// ([`Self::try_flush`])。あるページより後に開始したどのコンテナも、
-/// そのページへ遡って書き込むことはない(`place_split`は自分がまたいだ
-/// 範囲より前のページを触らない)ため、この判定で安全性が保証される。
+/// Instead, every `place_split` currently in progress (that is, on the call stack) pushes
+/// "the first absolute page index it touched" onto the `active_min_page` stack, and only
+/// pages before that minimum are safely flushed ([`Self::try_flush`]). No container started
+/// after a given page ever writes back to it (`place_split` never touches a page before the
+/// range it spanned), which is what makes this rule safe.
 struct PaginationState<'a> {
     inner: &'a mut PaginationBuffer,
     on_flush: &'a mut dyn FnMut(Page),
@@ -126,13 +125,13 @@ impl<'a> PaginationState<'a> {
         Self { inner, on_flush }
     }
 
-    /// 絶対インデックス(文書全体を通じた0-originの通し番号)での現在の
-    /// ページ数。
+    /// The current page count, in absolute indices (0-based and running through the whole
+    /// document).
     fn len(&self) -> usize {
         self.inner.flushed + self.inner.buffer.len()
     }
 
-    /// 現在アクティブな最後(最新)のページの絶対インデックス。
+    /// The absolute index of the last (most recent) active page.
     fn current_index(&self) -> usize {
         self.len() - 1
     }
@@ -141,19 +140,19 @@ impl<'a> PaginationState<'a> {
         self.inner
             .buffer
             .last_mut()
-            .expect("バッファは常に1ページ以上を保持する")
+            .expect("the buffer always holds at least one page")
     }
 
     fn last(&self) -> &Page {
         self.inner
             .buffer
             .last()
-            .expect("バッファは常に1ページ以上を保持する")
+            .expect("the buffer always holds at least one page")
     }
 
-    /// 絶対インデックス`absolute`のページへの参照。まだflushされていない
-    /// (=バッファ内にある)ことは呼び出し側が保証する
-    /// (`active_min_page`で守られている範囲のみアクセスされる)。
+    /// A reference to the page at absolute index `absolute`. The caller guarantees it has
+    /// not been flushed yet (that is, it is still in the buffer)
+    /// (only the range protected by `active_min_page` is ever accessed).
     fn get(&self, absolute: usize) -> &Page {
         &self.inner.buffer[absolute - self.inner.flushed]
     }
@@ -162,28 +161,28 @@ impl<'a> PaginationState<'a> {
         &mut self.inner.buffer[absolute - self.inner.flushed]
     }
 
-    /// 新しいページを開始する。
+    /// Start a new page.
     fn push_new_page(&mut self) {
         self.inner.buffer.push(Page::default());
     }
 
-    /// [`place_split`]に入る際、現在のページを「このコンテナが最初に
-    /// 触れたページ」として記録する。
+    /// On entering [`place_split`], record the current page as "the first page this container
+    /// touched".
     fn enter_split(&mut self) {
         let idx = self.current_index();
         self.inner.active_min_page.push(idx);
     }
 
-    /// [`place_split`]を抜ける際に対応する記録を取り除き、flush可能な
-    /// ページがあれば`on_flush`へ渡す。
+    /// On leaving [`place_split`], remove the corresponding record and pass any flushable
+    /// pages to `on_flush`.
     fn exit_split(&mut self) {
         self.inner.active_min_page.pop();
         self.try_flush();
     }
 
-    /// アクティブな`place_split`が1つもなければ最新ページ以外を、
-    /// あれば「現在アクティブな全コンテナが最初に触れたページ」の最小値
-    /// より前のページを、古い順に`on_flush`へ渡す。
+    /// With no active `place_split`, pass every page but the most recent to `on_flush`,
+    /// oldest first; with one, pass every page before the minimum of "the first page each
+    /// currently active container touched".
     fn try_flush(&mut self) {
         let safe_until = self
             .inner
@@ -200,20 +199,20 @@ impl<'a> PaginationState<'a> {
     }
 }
 
-/// `root`(通常は[`super::layout_document`]の返り値)を、高さ`page_content_height`の
-/// ページに分割する(一括版)。内部的には[`paginate_streaming`]にすべての
-/// ページを`Vec`へ積ませるだけの薄いラッパー。
+/// Split `root` (normally the return value of [`super::layout_document`]) into pages of
+/// height `page_content_height` (the batch version). Internally a thin wrapper that has
+/// [`paginate_streaming`] pile every page into a `Vec`.
 pub fn paginate(root: &mut LaidOutBox, page_content_height: f32) -> Vec<Page> {
     let mut result = Vec::new();
     paginate_streaming(root, page_content_height, &mut |page| result.push(page));
     result
 }
 
-/// [`paginate`]のストリーミング版。ページが確定するたびに`on_page`を呼ぶ。
+/// The streaming version of [`paginate`]. `on_page` is called as each page is settled.
 ///
-/// 「確定」の判定は[`PaginationState`]のドキュメント参照。呼び出し元が
-/// `on_page`の中でそのページに対応するDOMサブツリーを
-/// [`crate::html::Dom::release_subtree`]で解放する、という使い方を想定する。
+/// See the documentation of [`PaginationState`] for what "settled" means. The intended use
+/// is for the caller to free the DOM subtree corresponding to that page inside `on_page`,
+/// via [`crate::html::Dom::release_subtree`].
 pub fn paginate_streaming(
     root: &mut LaidOutBox,
     page_content_height: f32,
@@ -228,28 +227,26 @@ pub fn paginate_streaming(
     }
 }
 
-/// 複数の`LaidOutBox`(通常は文書のトップレベルブロック要素ごと)を順に
-/// [`Self::push_item`]で追加していき、[`Self::finish`]で残りのページを
-/// すべてflushする、ストリーミング版のページ分割器。
+/// A streaming paginator: several `LaidOutBox`es (normally one per top-level block element
+/// of the document) are added in turn with [`Self::push_item`], and [`Self::finish`] flushes
+/// the remaining pages.
 ///
-/// [`paginate_streaming`]は「1つの完成した`LaidOutBox`ツリー全体」を一度に
-/// 処理する前提だが、`StreamingPaginator`は複数回の呼び出しにまたがって、
-/// 上から下へ流れる通常のページ分割(`cursor`・[`PaginationBuffer`]の
-/// flush判定を含む)を継続できる。真のストリーミング入力で、`<body>`直下のトップレベル要素が確定するたびに、その要素
-/// だけを`layout::layout_document_from`でレイアウトして`push_item`する、
-/// という使い方を想定する。
+/// [`paginate_streaming`] assumes "one complete `LaidOutBox` tree" processed at once, while
+/// `StreamingPaginator` can continue ordinary top-to-bottom pagination (`cursor` and the
+/// [`PaginationBuffer`] flush decision included) across several calls. The intended use, with
+/// genuinely streaming input, is to lay out each top-level element directly under `<body>`
+/// on its own with `layout::layout_document_from` as it becomes final, and `push_item` it.
 ///
-/// `on_page`コールバックをフィールドとして保持せず、`push_item`/`finish`が
-/// 確定したページを`Vec<Page>`として返す設計にしている(コールバックの
-/// ライフタイムを構造体に持たせると、`Engine`のように複数回の呼び出しを
-/// またいでこの構造体自体を保持したいユースケースで、自己参照的な借用の
-/// 問題が生じるため)。
+/// The `on_page` callback is not held as a field: `push_item`/`finish` return the settled
+/// pages as a `Vec<Page>` instead (giving the struct the callback's lifetime would cause
+/// self-referential borrowing problems for a use case such as `Engine`, which wants to hold
+/// the struct itself across several calls).
 pub struct StreamingPaginator {
     buffer: PaginationBuffer,
     cursor: f32,
     page_height: f32,
-    /// 直前に追加したアイテムが`break-after: always`を持っていたか。
-    /// 次のアイテムを追加するときに改ページとして消費する。
+    /// Whether the item added just before had `break-after: always`.
+    /// It is consumed as a page break when the next item is added.
     pending_break_after: bool,
 }
 
@@ -263,26 +260,26 @@ impl StreamingPaginator {
         }
     }
 
-    /// 1つのアイテムを追加する。この呼び出しで確定したページを返す。
+    /// Add one item. Returns the pages this call settled.
     ///
-    /// アイテム自身の`break-before`/`break-after`はここで扱う。`place_box`が
-    /// 見るのは子リストの中の強制改ページだけで、アイテム同士(=`<body>`直下の
-    /// 兄弟)の関係は分割器の側にしか無いため。一括版で
-    /// [`place_split`]が兄弟に対して行う判定と揃えている。
+    /// The item's own `break-before`/`break-after` are handled here: `place_box` only looks
+    /// at forced breaks within a child list, and the relationship between items (that is,
+    /// siblings directly under `<body>`) exists only on the paginator's side. It matches the
+    /// decision [`place_split`] makes for siblings in the batch version.
     pub fn push_item(&mut self, item: &mut LaidOutBox) -> Vec<Page> {
         let break_before =
             self.pending_break_after || item.fragmentation.break_before == BreakBetween::Always;
-        // `break-after`は直後の兄弟の前で改ページするという意味なので、
-        // ここでは記録だけして次の`push_item`で消費する。最後のアイテムの
-        // `break-after`は`finish`が無視するため、末尾に空ページはできない。
+        // `break-after` means "break the page before the next sibling", so it is only recorded
+        // here and consumed by the next `push_item`. The last item's `break-after` is ignored
+        // by `finish`, so no empty page is left at the end.
         self.pending_break_after = item.fragmentation.break_after == BreakBetween::Always;
 
         let mut flushed = Vec::new();
         {
             let mut on_flush = |page: Page| flushed.push(page);
             let mut state = PaginationState::new(&mut self.buffer, &mut on_flush);
-            // 現在のページに何も置かれていなければ、改ページしても空ページが
-            // 増えるだけなので何もしない(先頭要素の`break-before`など)。
+            // With nothing placed on the current page, breaking would only add an empty page,
+            // so nothing is done (a `break-before` on the first element, say).
             if break_before && current_page_has_content(&state) {
                 new_page(&mut state, &mut self.cursor);
             }
@@ -291,17 +288,17 @@ impl StreamingPaginator {
         flushed
     }
 
-    /// これ以上アイテムが無いことを伝え、残っている全ページを返す。
+    /// Signal that there are no more items and return every remaining page.
     pub fn finish(self) -> Vec<Page> {
         debug_assert!(
             self.buffer.active_min_page.is_empty(),
-            "finishはすべてのplace_split呼び出しを抜けた後に呼ばれるはず"
+            "finish should be called after leaving every place_split call"
         );
         self.buffer.buffer
     }
 }
 
-/// DOM+計算スタイルから、ボックスツリー構築・レイアウト・ページ分割までを一括で行う。
+/// Do everything from box tree construction through layout to pagination in one go, from the DOM plus the computed styles.
 pub fn paginate_document(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -315,8 +312,8 @@ pub fn paginate_document(
         fonts,
         (settings.content_width(), settings.content_height()),
     );
-    // box treeはレイアウトが終われば用済み。ページ分割中はレイアウト結果と
-    // ページの両方を抱えるので、ここで手放しておかないとピークが跳ね上がる。
+    // The box tree is finished with once layout is done. Pagination holds both the layout
+    // result and the pages, so letting go of it here keeps the peak from spiking.
     drop(tree);
     let mut laid_out = laid_out;
     let mut pages = paginate(&mut laid_out, settings.content_height());
@@ -324,25 +321,25 @@ pub fn paginate_document(
     pages
 }
 
-/// 絶対配置ボックス([`PositionedBox`])を、属するページへオーバーレイとして
-/// 追加する。`page.boxes`の末尾に足すので、通常フローの上(最前面)に描かれる。
+/// Add the absolutely positioned boxes ([`PositionedBox`]) to the pages they belong to as an
+/// overlay. They are appended to `page.boxes`, so they are drawn above (in front of) the normal flow.
 pub(crate) fn apply_positioned_overlays(pages: &mut [Page], positioned: &[PositionedBox]) {
     for pb in positioned {
         match pb.kind {
-            // `fixed`は全ページのコンテンツ領域に、レイアウト座標そのまま。
+            // `fixed` goes in the content area of every page, at its layout coordinates.
             PositionedKind::Fixed => {
                 for page in pages.iter_mut() {
                     page.boxes.push(pb.laid.clone());
                 }
             }
-            // positioned祖先が無い`absolute`は最初のページに。
+            // An `absolute` with no positioned ancestor goes on the first page.
             PositionedKind::AbsoluteInitial => {
                 if let Some(first) = pages.first_mut() {
                     first.boxes.push(pb.laid.clone());
                 }
             }
-            // positioned祖先がある`absolute`は、祖先が現れたページに、祖先の
-            // padding boxのページ内位置とレイアウト時位置の差分だけずらして置く。
+            // An `absolute` with a positioned ancestor goes on the page where the ancestor
+            // appeared, offset by the difference between the ancestor's padding box position on the page and at layout time.
             PositionedKind::AbsoluteAncestor {
                 node,
                 padding_box_origin,
@@ -350,7 +347,7 @@ pub(crate) fn apply_positioned_overlays(pages: &mut [Page], positioned: &[Positi
                 if let Some((idx, (px, py))) = find_ancestor_padding_box_origin(pages, node) {
                     let dx = px - padding_box_origin.0;
                     let dy = py - padding_box_origin.1;
-                    // `shift_box_y`のdeltaは「引く量」なので、下げるには`-dy`。
+                    // `shift_box_y`'s delta is an amount to subtract, so moving down means `-dy`.
                     let shifted = shift_box_x(&shift_box_y(&pb.laid, -dy), dx);
                     pages[idx].boxes.push(shifted);
                 }
@@ -359,7 +356,7 @@ pub(crate) fn apply_positioned_overlays(pages: &mut [Page], positioned: &[Positi
     }
 }
 
-/// `node`が最初に現れるページと、そのpadding box左上のページ内座標を探す。
+/// Find the page where `node` first appears, and the within-page coordinates of the top left of its padding box.
 fn find_ancestor_padding_box_origin(pages: &[Page], node: NodeId) -> Option<(usize, (f32, f32))> {
     for (i, page) in pages.iter().enumerate() {
         for b in &page.boxes {
@@ -406,9 +403,9 @@ fn find_node_padding_origin(b: &LaidOutBox, node: NodeId) -> Option<(f32, f32)> 
     }
 }
 
-/// `Mode::Batch`用: 全ページを確定させてから絶対配置をオーバーレイして返す。
-/// `fixed`の全ページ複製・`absolute`の祖先ページ解決は全ページが
-/// 揃ってからでないとできないため、ストリーミング解放は行わない
+/// For `Mode::Batch`: settle every page, then overlay the absolute positioning and return.
+/// Duplicating `fixed` onto every page and resolving an `absolute`'s ancestor page both
+/// require every page to be present, so no streaming release is performed
 pub fn paginate_document_with_absolutes(
     dom: &mut Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -430,15 +427,15 @@ pub fn paginate_document_with_absolutes(
     pages
 }
 
-/// [`paginate_document`]のストリーミング版。ページが確定するたびに、
-/// そのページに完全に収まった(これ以上分割されない)DOMサブツリーを
-/// [`Dom::release_subtree`]で解放してから`on_page`を呼ぶ。
+/// The streaming version of [`paginate_document`]. As each page is settled, the DOM subtrees
+/// that fitted entirely on it (and will not be split further) are freed with
+/// [`Dom::release_subtree`] before `on_page` is called.
 ///
-/// 現状のパイプライン(`compute_styles`→`build_box_tree`→`layout_document`は
-/// いずれもDOM全体を一括で読む)では、この時点でスタイル計算・レイアウトは
-/// 両方とも完了済みで、以後どのページの処理も`dom`を読み返すことはない。
-/// そのため「兄弟・子孫セレクタの参照範囲を跨がない」制約は、ここでは常に
-/// 満たされている(まだパースされていない後続要素が存在しないため)。
+/// In the current pipeline (`compute_styles`, `build_box_tree` and `layout_document` all
+/// read the whole DOM at once), style computation and layout are both already complete at
+/// this point, and no page's processing reads `dom` again after this.
+/// The "never cross the range a sibling or descendant selector can see" constraint is
+/// therefore always satisfied here (no later, unparsed elements exist).
 #[allow(clippy::too_many_arguments)]
 pub fn paginate_document_streaming(
     dom: &mut Dom,
@@ -457,23 +454,22 @@ pub fn paginate_document_streaming(
     });
 }
 
-/// `page`に含まれるボックスのうち、これ以上分割されない
-/// (`FragmentPosition::Whole`または`Last`)ものに対応するDOMサブツリーを
-/// [`Dom::release_subtree`]で解放する。
+/// Free the DOM subtrees corresponding to the boxes in `page` that will not be split further
+/// (`FragmentPosition::Whole` or `Last`), via
+/// [`Dom::release_subtree`].
 fn release_completed_subtrees(dom: &mut Dom, page: &Page) {
     for root in collect_completed_subtree_roots(page) {
         dom.release_subtree(root);
     }
 }
 
-/// `page`に含まれるボックスのうち、これ以上分割されない
-/// (`FragmentPosition::Whole`または`Last`)ものに対応するDOMサブツリーの
-/// ルートノードを集める。
+/// Collect the root nodes of the DOM subtrees corresponding to the boxes in `page` that will
+/// not be split further (`FragmentPosition::Whole` or `Last`).
 ///
-/// [`release_completed_subtrees`](DOM解放)だけでなく、`Engine`が
-/// `ComputedStyle`のマップから不要になったエントリを取り除く際にも同じ
-/// 「もうこれ以上のページで参照されないノード」の判定が必要なため、
-/// `page`を辿るロジック自体を独立させている。
+/// The same "nodes no later page will reference" decision is needed not only by
+/// [`release_completed_subtrees`] (freeing the DOM) but also when `Engine` removes entries
+/// it no longer needs from the `ComputedStyle` map, so the logic for walking `page` is
+/// factored out on its own.
 pub(crate) fn collect_completed_subtree_roots(page: &Page) -> Vec<NodeId> {
     let mut roots = Vec::new();
     for b in &page.boxes {
@@ -488,25 +484,24 @@ fn collect_completed_subtree_roots_in_box(b: &LaidOutBox, roots: &mut Vec<NodeId
             b.layout.fragment,
             FragmentPosition::Whole | FragmentPosition::Last
         ) {
-            // このノード以下は呼び出し元が再帰的に辿るため、子への再帰は不要。
+            // The caller walks everything under this node recursively, so no recursion into the children is needed.
             roots.push(node);
             return;
         }
     }
-    // まだ完了していない(装飾フラグメントが`First`/`Middle`の)コンテナは
-    // それ自体を完了扱いにできないが、実際に子要素が配置されたボックス
-    // (`place_split`が生成する装飾フラグメントとは別に、そのページへ
-    // 直接配置された子要素)は独立して完了している可能性があるため再帰する。
+    // A container that is not yet complete (whose decoration fragment is `First`/`Middle`)
+    // cannot itself count as complete, but boxes where children were really placed (children
+    // placed directly on that page, as distinct from the decoration fragments `place_split`
+    // generates) may be complete independently, so we recurse.
     match &b.content {
         LaidOutContent::Blocks(children) => {
             for child in children {
                 collect_completed_subtree_roots_in_box(child, roots);
             }
         }
-        // flexコンテナはページ分割に対してアトミック(`display: table`と同じ
-        // 扱い)。グリッドは行単位で分割するが、断片ごとの完了判定は
-        // `place_grid`が`FragmentPosition`で表現するため、
-        // ここではテーブルと同じく再帰しない。
+        // A flex container is atomic with respect to pagination (handled like
+        // `display: table`). A grid splits per row, but per-fragment completeness is expressed
+        // by `place_grid` through `FragmentPosition`, so as with a table we do not recurse here.
         LaidOutContent::Inline(_)
         | LaidOutContent::Table(_)
         | LaidOutContent::Flex(_)
@@ -532,13 +527,13 @@ fn place_box(
         return;
     }
 
-    // `break-inside: avoid`: 丸ごと(空の)1ページに収まる大きさで、かつ内部に
-    // 強制改ページを内包しない場合は、分割せず次ページの先頭へまるごと送る。
-    // 1ページに収まらないほど巨大な場合はこの限りではなく、best-effortで
-    // 通常通り分割する(無限ループ・出力不能を避けるための例外)。
-    // 現在のページに実際の内容が何もなければ(祖先のマージン分だけ`cursor`が
-    // 進んでいるだけの場合を含む)、移動しても無意味なのでそのまま現在の
-    // ページに置く。
+    // `break-inside: avoid`: if it is small enough to fit a whole (empty) page and contains no
+    // forced break, move it whole to the top of the next page rather than splitting it.
+    // Something too large for one page is exempt and is split as usual on a best-effort
+    // basis (an exception to avoid an infinite loop or an impossible output).
+    // If the current page has no real content on it (including the case where only an
+    // ancestor's margin has advanced `cursor`), moving it is pointless, so it is placed on
+    // the current page.
     if break_inside_avoid
         && current_page_has_content(state)
         && height <= page_height
@@ -549,7 +544,7 @@ fn place_box(
         return;
     }
 
-    // 子を`&mut`で配る間、コンテナ自身のスカラ情報は別に控えておく。
+    // While the children are handed out by `&mut`, the container's own scalar information is kept aside.
     let mut container = SplitContainer::take_from(b);
     match &mut b.content {
         LaidOutContent::Blocks(children) if !children.is_empty() => {
@@ -573,23 +568,23 @@ fn place_box(
             );
             return;
         }
-        // テーブルは行単位で分割する。これが無いと、
-        // ページに収まらない行が描画されずに失われる。
+        // A table splits per row. Without this, a row that does not fit the page is lost
+        // undrawn.
         LaidOutContent::Table(table) if !table.rows.is_empty() => {
             place_table(&container, table, page_height, state, cursor);
             return;
         }
-        // グリッドは行帯単位で分割する。
+        // A grid splits per row band.
         LaidOutContent::Grid(grid) if grid.rows.len() > 1 => {
             place_grid(&container, grid, page_height, state, cursor);
             return;
         }
         LaidOutContent::Inline(lines) if lines.len() > 1 => {
-            // `orphans`/`widows`を満たすため、行ごとの強制改ページ位置を
-            // 事前に(オーバーフローによる自然な分割をシミュレートしながら)
-            // 計算しておく。`place_split`が加える上マージン/枠線/パディング分
-            // (`container_top_extra`)を、シミュレーションの初期カーソルにも
-            // 反映しておかないと、実際の配置と分割点がずれてしまう。
+            // To satisfy `orphans`/`widows`, compute the forced break positions per line in
+            // advance (simulating the natural splitting caused by overflow). Unless the top
+            // margin, border and padding `place_split` adds (`container_top_extra`) are
+            // reflected in the simulation's initial cursor too, the break points diverge from
+            // the real placement.
             let initial_cursor = *cursor + container.top_extra();
             let forced_breaks =
                 compute_orphans_widows_breaks(lines, orphans, widows, page_height, initial_cursor);
@@ -599,10 +594,10 @@ fn place_box(
                 page_height,
                 state,
                 cursor,
-                // 行(line box)は`break-after`を持たない(次に置く場所は常に
-                // 直後の行であり、コンテナを跨ぐ兄弟関係が無いため)。
+                // A line box has no `break-after` (the next place is always the line
+                // immediately after, and there is no cross-container sibling relationship).
                 move |i, _line| (forced_breaks[i], false),
-                // 行にfloatの概念は無い。
+                // A line has no concept of a float.
                 |_line: &LineBox| false,
                 |_line: &LineBox| 0.0,
                 |line, ph, ps, c| {
@@ -614,29 +609,29 @@ fn place_box(
         _ => {}
     }
 
-    // 分割経路に入らなかったので、奪ったマーカーを戻してから最小単位として置く。
+    // We did not take a splitting path, so the marker taken away is given back and it is placed as an indivisible unit.
     b.marker = container.marker.take();
-    // これ以上分割できない最小単位。ページに余白を使ってしまっていれば
-    // 次ページの先頭へ送る(まっさらなページの先頭ならそのまま置く)。
+    // An indivisible unit. If any of the page has been used, move it to the top of the next
+    // page (on a blank page it is placed where it is).
     if *cursor > 0.0 {
         new_page(state, cursor);
     }
     place_leaf(b, state, cursor);
 }
 
-/// `b`のmargin boxの上端の絶対Y座標(`content.y`からmargin/border/padding分を
-/// 引いたもの)。`place_leaf`/`extent_of`/`place_split`のfloat分岐が共通して使う。
+/// The absolute Y of the top of `b`'s margin box (its `content.y` minus the margin, border
+/// and padding). Shared by `place_leaf`/`extent_of` and `place_split`'s float branch.
 fn margin_box_top(b: &LaidOutBox) -> f32 {
     b.layout.content.y - b.layout.padding.top - b.layout.border.top - b.layout.margin.top
 }
 
-/// `b`の部分木内(ブロックの子孫のみ、インライン行・テーブル内部は対象外)に、
-/// `break-before`/`break-after: always`を持つボックスが存在するかどうか。
+/// Whether any box inside `b`'s subtree (block descendants only; inline lines and table
+/// internals are excluded) has `break-before`/`break-after: always`.
 ///
-/// これが`true`の場合、`b`自身がページ残り高さに収まっていても「丸ごと1個の
-/// リーフとして配置する」高速経路は使えない(強制改ページの位置を見逃して
-/// しまうため)。テーブルの内部行・インライン行はここでの分割対象外
-/// なので、`Blocks`のみ再帰する。
+/// When this is `true`, the fast path of "place it as a single leaf" cannot be used even
+/// where `b` itself fits the height left on the page (it would miss the forced break's
+/// position). A table's internal rows and inline lines are not split here, so only `Blocks`
+/// is recursed into.
 fn subtree_requires_child_walk(b: &LaidOutBox) -> bool {
     match &b.content {
         LaidOutContent::Blocks(children) => children.iter().any(|child| {
@@ -644,8 +639,8 @@ fn subtree_requires_child_walk(b: &LaidOutBox) -> bool {
                 || child.fragmentation.break_after == BreakBetween::Always
                 || subtree_requires_child_walk(child)
         }),
-        // flexコンテナはアトミック。グリッドの行分割は`place_grid`が
-        // 担うため、ここでは再帰しない。
+        // A flex container is atomic. Splitting a grid by row is `place_grid`'s job, so we do
+        // not recurse here.
         LaidOutContent::Inline(_)
         | LaidOutContent::Table(_)
         | LaidOutContent::Flex(_)
@@ -654,32 +649,31 @@ fn subtree_requires_child_walk(b: &LaidOutBox) -> bool {
     }
 }
 
-/// 複数行のインラインコンテンツを行単位で分割する際、`orphans`/`widows`を
-/// 満たすよう、各行の直前に強制改ページを挿入すべきかを事前に計算する。
-/// 戻り値`v`は`v[i] == true`なら「`lines[i]`の直前で改ページする」を意味する
-/// (`place_split`の`break_hints`にそのまま渡す)。
+/// When splitting multi-line inline content line by line, compute in advance whether a
+/// forced break should be inserted before each line so that `orphans`/`widows` are
+/// satisfied. In the return value `v`, `v[i] == true` means "break the page before
+/// `lines[i]`" (passed straight to `place_split`'s `break_hints`).
 ///
-/// オーバーフローによる自然な分割点(`place_line`が実際に行う判定と同じ、
-/// `cursor > 0.0 && cursor + line.height > page_height`)を`lines`全体について
-/// シミュレートしながら、各分割点で`orphans`(このページに残る行数)/`widows`
-/// (次ページへ送られる行数)が足りているかを確認する:
-/// - 両方満たされていれば、その自然な分割点をそのまま採用する(追加の
-///   マーカーは不要。`place_line`自身が同じ判定で改ページするため)
-/// - `orphans`が足りない場合、物理的にこのページへ収まる行を増やすことは
-///   できないため、このページに置く予定だった行をまるごと次ページへ送る
-///   (このページの先頭で強制改ページ)
-/// - `orphans`は足りるが`widows`が足りない場合、分割点を
-///   `lines.len() - widows`まで繰り上げる(まだ置いていない行を次ページへ
-///   回すことで`widows`を確保する)
-/// - 上記の繰り上げ後もなお`orphans`を満たせない場合は、`orphans`不足時と
-///   同様にまるごと次ページへ送る
-/// - 一度まるごと送った直後の分割点で再び条件を満たせない場合(1行だけで
-///   ページの大半を占めるほど巨大な行が続く等)は、無限ループを避けるため
-///   best-effortで自然な分割点を受け入れる(`orphans`/`widows`を諦める)
+/// It simulates the natural break points caused by overflow across all of `lines` (the same
+/// decision `place_line` really makes: `cursor > 0.0 && cursor + line.height > page_height`)
+/// and checks at each of them whether `orphans` (the lines left on this page) and `widows`
+/// (the lines moved to the next) are sufficient:
+/// - If both are satisfied, that natural break point is taken as-is (no extra marker is
+///   needed, `place_line` itself breaking on the same decision)
+/// - If `orphans` falls short, no more lines can physically be fitted onto this page, so all
+///   the lines that were to go on it are moved to the next page (a forced break at the top
+///   of this page)
+/// - If `orphans` is sufficient but `widows` is not, the break point is brought forward to
+///   `lines.len() - widows` (securing `widows` by sending lines not yet placed to the next page)
 ///
-/// 行数が`orphans + widows`に満たないほど短い段落は、どの分割点を選んでも
-/// 両方は満たせないため、結果的に段落全体が(現在のページに実内容があれば)
-/// 次ページへまるごと送られる。
+/// - If `orphans` still cannot be satisfied after bringing it forward, everything is moved
+///   to the next page as in the `orphans`-shortfall case
+/// - If the conditions cannot be met again at the break point immediately after such a whole
+///   move (a run of lines so tall that one alone takes most of a page, say), the natural
+///   break point is accepted on a best-effort basis to avoid an infinite loop (giving up on `orphans`/`widows`)
+///
+/// A paragraph too short to have `orphans + widows` lines cannot satisfy both at any break
+/// point, so it ends up moved whole to the next page (if the current page has real content).
 fn compute_orphans_widows_breaks(
     lines: &[LineBox],
     orphans: usize,
@@ -708,14 +702,14 @@ fn compute_orphans_widows_breaks(
         let widows_ok = remaining >= widows;
 
         if orphans_ok && widows_ok {
-            // 自然な分割点をそのまま採用する(マーカーは不要)。
+            // Take the natural break point as-is (no marker needed).
             page_start = i;
             cursor = 0.0;
             continue;
         }
 
         if force_break_before[page_start] {
-            // 無限ループを避けるため、これ以上はbest-effortで自然な分割点を受け入れる。
+            // To avoid an infinite loop, natural break points are accepted best-effort from here on.
             page_start = i;
             cursor = 0.0;
             continue;
@@ -728,9 +722,9 @@ fn compute_orphans_widows_breaks(
             continue;
         }
 
-        // orphans_ok == true, widows_ok == false: 分割点を繰り上げてwidowsを
-        // 確保できないか試す。繰り上げ後もorphansを満たせないなら、
-        // orphans不足時と同様にまるごと次ページへ送る。
+        // orphans_ok == true, widows_ok == false: try bringing the break point forward to
+        // secure widows. If orphans still cannot be satisfied afterwards, move everything to
+        // the next page as in the orphans-shortfall case.
         let candidate = n.saturating_sub(widows);
         if candidate >= page_start + orphans && candidate < i {
             force_break_before[candidate] = true;
@@ -747,38 +741,38 @@ fn compute_orphans_widows_breaks(
     force_break_before
 }
 
-/// `b`が1ページに収まらない(または内部に強制改ページを内包する)ため、子要素
-/// (`items`、`place_one`で1つずつ配置)単位で分割配置する。分割後、`b`自身の
-/// 背景・枠線を各ページの実際の内容範囲に対して再現する装飾フラグメントを
-/// 追加で挿入する。
+/// `b` does not fit on one page (or contains a forced break), so it is split and placed per
+/// child (`items`, placed one at a time by `place_one`). After splitting, decoration
+/// fragments are inserted to reproduce `b`'s own background and borders over each page's real
+/// content extent.
 ///
-/// `items`は`LaidOutBox`(ブロック子要素)または[`LineBox`](インライン行)のどちらか。
-/// `break_hints`は各要素(とそのインデックス)について`(直前に強制改ページが
-/// 必要か, 直後に強制改ページが必要か)`を返すコールバック(行には
-/// `break-before`/`break-after`の概念がないため、呼び出し元は`orphans`/`widows`
-/// から事前計算した配列をインデックスで引くコールバックを渡す)。
+/// `items` is either `LaidOutBox` (block children) or [`LineBox`] (inline lines).
+/// `break_hints` is a callback returning, for each element (and its index),
+/// `(is a forced break needed before it, is one needed after it)` (lines have no concept of
+/// `break-before`/`break-after`, so the caller passes a callback indexing into an array
+/// precomputed from `orphans`/`widows`).
 ///
-/// `is_float`/`item_margin_box_top`は、`items`のうちフロー外の要素(`float`)を
-/// 判定するためのコールバック(`LineBox`側は常に`false`/`0.0`のダミー実装を
-/// 渡す。行にfloatの概念は無い)。float項目は共有`cursor`を変更せず、
-/// `shift_reference`(絶対Y→ページ内相対Yの変換係数)でシードした一時
-/// カーソルを使って`place_one`へ再帰させる
-/// (`place_leaf`/`place_line`/`new_page`はこの分岐のために一切変更しない)。
+/// `is_float`/`item_margin_box_top` are callbacks for identifying out-of-flow elements
+/// (`float`) among `items` (the `LineBox` side passes dummy implementations always returning
+/// `false`/`0.0`; a line has no concept of a float). A float item does not change the shared
+/// `cursor`; instead `place_one` is recursed into with a temporary cursor seeded from
+/// `shift_reference` (the absolute-Y to within-page-Y conversion offset)
+/// (`place_leaf`/`place_line`/`new_page` are left completely unchanged for this branch).
 #[allow(clippy::too_many_arguments)]
-/// 分割中のコンテナから、装飾フラグメントの生成に要る情報だけを取り出したもの。
+/// Just the information needed to generate the decoration fragments, extracted from the container being split.
 ///
-/// 子(`items`)を`&mut`で配りながら、同じボックスの他のフィールドも読みたい
-/// ため、借用が競合しないようスカラだけ先に複製しておく。
+/// Because the children (`items`) are handed out by `&mut` while other fields of the same
+/// box are still being read, the scalars are copied out first so the borrows do not conflict.
 struct SplitContainer {
     node: Option<NodeId>,
     layout: Layout,
     has_visible_decoration: bool,
-    /// マーカーは先頭フラグメントへ移す。`place_split`が取り出して使う。
+    /// The marker moves to the first fragment. `place_split` takes it and uses it.
     marker: Option<Box<LineBox>>,
 }
 
 impl SplitContainer {
-    /// `b`からスカラ情報を取り出す(マーカーは所有権ごと奪う)。
+    /// Extract the scalar information from `b` (taking ownership of the marker).
     fn take_from(b: &mut LaidOutBox) -> Self {
         Self {
             node: b.node,
@@ -788,7 +782,7 @@ impl SplitContainer {
         }
     }
 
-    /// コンテナ自身の上マージン/枠線/パディングの合計。
+    /// The sum of the container's own top margin, border and padding.
     fn top_extra(&self) -> f32 {
         self.layout.margin.top + self.layout.border.top + self.layout.padding.top
     }
@@ -811,31 +805,31 @@ fn place_split<T>(
         + container.layout.border.bottom
         + container.layout.margin.bottom;
 
-    // 最初のフラグメントの前に、コンテナ自身の上マージン/枠線/パディング分の
-    // スペースを確保する(この余白がページの残りを超える極端なケースの調整は
-    // 行わない
+    // Before the first fragment, reserve space for the container's own top margin, border and
+    // padding (no adjustment is made for the extreme case where this exceeds what is left of
+    // the page)
     *cursor += top_extra;
 
-    // 絶対Y座標(`b.layout.content.y`)→ページ内相対Y座標(`*cursor`)への
-    // 変換係数。コンテナの最初の子(通常フロー)の絶対Y位置は、コンテナ自身の
-    // content領域の絶対Y位置(`b.layout.content.y`)に一致するため、これを
-    // 初期値として使える。非float項目を配置するたびに更新する(改ページで
-    // `*cursor`がリセットされても追従できるようにするため)。
+    // The offset converting an absolute Y (`b.layout.content.y`) to a within-page Y
+    // (`*cursor`). The absolute Y of the container's first child (in normal flow) coincides
+    // with the absolute Y of the container's own content area (`b.layout.content.y`), so that
+    // is the initial value. It is updated whenever a non-float item is placed (so it keeps up
+    // when a page break resets `*cursor`).
     let mut shift_reference = container.layout.content.y - *cursor;
 
-    // `b`が実際に背景色・枠線を描画しないなら、そもそも装飾フラグメントを
-    // 生成する必要がない。この場合`segments`の追跡自体が不要で、
-    // `PaginationState`にページを保持させる理由もなくなる
-    // (`enter_split`/`exit_split`を呼ばない)。装飾を持たないコンテナ
-    // (`<html>`/`<body>`や大半のラッパー`<div>`)がこの高速経路を通ることで、
-    // ストリーミング時のflush頻度が大きく改善される。
+    // If `b` really draws no background colour or borders, there is no need to generate a
+    // decoration fragment at all. In that case tracking `segments` is unnecessary too, and
+    // there is no longer a reason to make `PaginationState` hold onto pages
+    // (`enter_split`/`exit_split` are not called). Containers with no decoration
+    // (`<html>`/`<body>` and most wrapper `<div>`s) taking this fast path greatly improves
+    // the flush frequency while streaming.
     let needs_decoration = container.has_visible_decoration;
-    // outsideのマーカー(`list-style-position: outside`)は先頭フラグメントに
-    // 載せて描画するため、装飾が無くてもフラグメント生成は必要になる。これを
-    // 省くと、ページをまたいで分割された`li`のマーカーが落ちてしまう。
+    // An outside marker (`list-style-position: outside`) is drawn on the first fragment, so
+    // fragment generation is still needed even with no decoration. Skipping it would lose the
+    // marker of an `li` split across pages.
     let needs_fragments = needs_decoration || container.marker.is_some();
     if needs_fragments {
-        // このコンテナが最初に触れる絶対ページインデックスを記録する
+        // Record the first absolute page index this container touches
         state.enter_split();
     }
 
@@ -854,9 +848,9 @@ fn place_split<T>(
         Vec::new()
     };
 
-    // 強制改ページ(`break-before`/`break-after: always`)発生時、新しいページを
-    // 開始し対応するセグメントを追加する共通処理。オーバーフローによる自然な
-    // ページ送りとの二重計上を避けるため、`current_page`もその場で更新する。
+    // The shared handling for a forced break (`break-before`/`break-after: always`): start a
+    // new page and add the corresponding segment. `current_page` is updated on the spot too,
+    // to avoid double-counting against a natural page advance from overflow.
     let force_new_page = |state: &mut PaginationState<'_>,
                           cursor: &mut f32,
                           current_page: &mut usize,
@@ -874,19 +868,19 @@ fn place_split<T>(
     let item_count = items.len();
     for (i, item) in items.iter_mut().enumerate() {
         let (breaks_before, breaks_after) = break_hints(i, item);
-        // 現在のページに実際の内容が何もなければ(祖先のマージン分だけ`cursor`が
-        // 進んでいるだけの場合を含む)、改ページしても無意味な空ページを
-        // 作るだけなので何もしない。
+        // If the current page has no real content on it (including the case where only an
+        // ancestor's margin has advanced `cursor`), breaking would only create a pointless
+        // empty page, so nothing is done.
         if breaks_before && current_page_has_content(state) {
             force_new_page(state, cursor, &mut current_page, &mut segments);
         }
 
         if is_float(item) {
-            // floatはフローに参加しないため共有`cursor`を変更しない。
-            // `shift_reference`でシードした一時カーソルを使うことで、
-            // `place_one`(=`place_box`)内部の
-            // `shift = margin_box_top -*cursor`計算が周囲の通常フローと同じ
-            // 平行移動になり、正しいページ内相対位置に配置される。
+            // A float does not take part in the flow and so does not change the shared
+            // `cursor`. Using a temporary cursor seeded from `shift_reference` makes the
+            // `shift = margin_box_top - *cursor` computation inside `place_one`
+            // (that is, `place_box`) the same translation as the surrounding normal flow, so
+            // it lands at the correct within-page position.
             let mut local_cursor = item_margin_box_top(item) - shift_reference;
             place_one(item, page_height, state, &mut local_cursor);
         } else {
@@ -896,8 +890,8 @@ fn place_split<T>(
 
             let now_page = state.current_index();
             if now_page != current_page {
-                // 新しいページへ進んだ。今回作られたページは、この`b`の内容以外が
-                // 割り込む余地がないため、先頭(index 0)から始まる。
+                // We advanced to a new page. Nothing but `b`'s content can intervene on a page
+                // created here, so it starts from the top (index 0).
                 if needs_fragments {
                     for p in (current_page + 1)..=now_page {
                         segments.push(Segment {
@@ -910,22 +904,22 @@ fn place_split<T>(
             }
         }
 
-        // 次に置く要素がある場合のみ改ページする(末尾の要素の後ろに
-        // 空ページを作らないため)。
+        // Only break the page when there is a following element to place (so no empty page
+        // is created after the last one).
         if breaks_after && i + 1 < item_count {
             force_new_page(state, cursor, &mut current_page, &mut segments);
         }
     }
 
-    // 呼び出し元(兄弟要素)のため、下マージン/枠線/パディング分もカーソルへ加算する。
+    // For the caller's sake (the next sibling), add the bottom margin, border and padding to the cursor too.
     *cursor += bottom_extra;
 
     if !needs_fragments {
         return;
     }
 
-    // 実際に内容が置かれたセグメントだけを残す(例: 最初の子がページ先頭で
-    // 改ページを起こし、直前のページには何も置かれなかった場合など)。
+    // Keep only the segments where content was really placed (for instance where the first
+    // child caused a break at the top of a page and nothing landed on the page before it).
     let valid: Vec<&Segment> = segments
         .iter()
         .filter(|s| state.get(s.page_index).boxes.len() > s.start_index)
@@ -937,8 +931,8 @@ fn place_split<T>(
         .filter_map(|(i, seg)| {
             let is_first = i == 0;
             let is_last = i == valid.len() - 1;
-            // 装飾を持たないコンテナはマーカーを載せる先頭フラグメントだけが
-            // 必要で、後続フラグメントは何も描画しない空の箱にしかならない。
+            // A container with no decoration needs only the first fragment, to carry the
+            // marker; later fragments would be empty boxes drawing nothing.
             if !needs_decoration && !is_first {
                 return None;
             }
@@ -946,11 +940,11 @@ fn place_split<T>(
             let (top, bottom) =
                 extent_of(&state.get(seg.page_index).boxes[seg.start_index..end_index]);
             let layout = fragment_layout(&container.layout, top, bottom, is_first, is_last);
-            // マーカーは`b`の先頭フラグメントにのみ残す(このボックスが
-            // 複数ページにまたがって分割される場合、後続フラグメントで
-            // 重複して描画されるのを避ける)。マーカーの座標はレイアウト時の
-            // 絶対座標のままなので、フラグメントのページ内相対座標へ移す
-            // (コンテナのcontent上端からの相対位置を保つ)。
+            // The marker is kept only on `b`'s first fragment (to avoid drawing it again on
+            // later fragments when this box is split across pages). The marker's coordinates
+            // are still the absolute ones from layout, so they are moved to the fragment's
+            // within-page coordinates (preserving its position relative to the top of the
+            // container's content).
             let marker = if is_first {
                 container.marker.take().map(|mut marker| {
                     marker.rect.y -= container.layout.content.y - layout.content.y;
@@ -962,16 +956,16 @@ fn place_split<T>(
             let decoration = LaidOutBox {
                 node: container.node,
                 layout,
-                // 装飾専用フラグメントはこれ以上分割対象にならないため、
-                // fragmentationヒントは意味を持たない(初期値のまま)。
+                // A decoration-only fragment is never split further, so the fragmentation
+                // hints mean nothing (they keep their initial values).
                 fragmentation: FragmentationHints::default(),
-                // このボックス自体は`Blocks(Vec::new())`で子を持たず、再度
-                // `place_split`に渡されることもない。マーカーのためだけに
-                // 作られたフラグメントは背景・枠線を描画しない。
+                // This box itself is `Blocks(Vec::new())` with no children and is never passed
+                // to `place_split` again. A fragment created solely for the marker draws no
+                // background or borders.
                 has_visible_decoration: needs_decoration,
-                // 装飾フラグメント自体はfloatではない(`b`自身がfloatでも、この
-                // 断片は通常フローの一部として`place_split`の残りのループに
-                // 混在するため`false`にしておく必要がある)。
+                // A decoration fragment is not itself a float (even where `b` is one, this
+                // fragment is mixed into the rest of `place_split`'s loop as part of the
+                // normal flow, so it has to be `false`).
                 is_float: false,
                 content: LaidOutContent::Blocks(Vec::new()),
                 marker,
@@ -987,13 +981,13 @@ fn place_split<T>(
             .insert(insert_index, decoration);
     }
 
-    // このコンテナの装飾フラグメント挿入がすべて終わったので、記録を外す。
-    // これでflush可能なページが増えていれば、ここで`on_flush`へ渡される。
+    // Every decoration fragment for this container has been inserted, so the record is removed.
+    // If that made more pages flushable, they are passed to `on_flush` here.
     state.exit_split();
 }
 
-/// `boxes`に実際に配置された子孫の、ページ内相対座標での垂直方向の union extent
-/// (マージンボックスの上端の最小値・下端の最大値)を求める。
+/// Find the vertical union extent, in within-page coordinates, of the descendants really
+/// placed in `boxes` (the smallest top and largest bottom of their margin boxes).
 fn extent_of(boxes: &[LaidOutBox]) -> (f32, f32) {
     let mut top = f32::INFINITY;
     let mut bottom = f32::NEG_INFINITY;
@@ -1006,15 +1000,15 @@ fn extent_of(boxes: &[LaidOutBox]) -> (f32, f32) {
     (top, bottom)
 }
 
-/// コンテナ`original`のうち、1フラグメント分の装飾(背景・枠線)を描画するための
-/// [`Layout`]を組み立てる。`content_y`/`content_bottom`はそのフラグメントの
-/// コンテンツ領域の範囲(`is_first`なら上端はすでに`content_y`で確定済み、
-/// `is_last`なら下端はまだ`padding-bottom`/`border-bottom`を含んでいない)。
+/// Assemble the [`Layout`] for drawing one fragment's worth of decoration (background and
+/// borders) for the container `original`. `content_y`/`content_bottom` are that fragment's
+/// content area extent (with `is_first`, the top is already settled at `content_y`; with
+/// `is_last`, the bottom does not yet include `padding-bottom`/`border-bottom`).
 ///
-/// `fragment`(→[`FragmentPosition`])には、`is_first`/`is_last`から求めた
-/// 断片の位置を記録する。`border-radius`は計算スタイル側の値をそのまま使うため
-/// (`Layout`は太さしか持たない)、レンダラ側([`crate::pdf::document`])が
-/// この情報を見て「継続中の断片では角を丸めない」よう判断する。
+/// `fragment` (into [`FragmentPosition`]) records the fragment's position, derived from
+/// `is_first`/`is_last`. `border-radius` is taken straight from the computed style
+/// (`Layout` holds only thicknesses), so the renderer ([`crate::pdf::document`]) uses this
+/// information to decide "do not round the corners on a continuing fragment".
 fn fragment_layout(
     original: &Layout,
     content_y: f32,
@@ -1069,10 +1063,10 @@ fn place_line(line: &LineBox, page_height: f32, state: &mut PaginationState<'_>,
     let shift = line.rect.y - *cursor;
     let mut translated = line.clone();
     translated.rect.y -= shift;
-    // 行内の`display: inline-block`ボックスも行と一緒に動かす(行のrectだけを
-    // 動かすと箱が元の位置に取り残される)。`shift_box_y`の`delta`は引く量
-    // (`rect.y -= delta`)なので、行の`rect.y -= shift`と同じ移動量は
-    // `shift`をそのまま渡せばよい。
+    // The `display: inline-block` boxes in a line move with the line (moving only the line's
+    // rect would strand the boxes at their original positions). `shift_box_y`'s `delta` is an
+    // amount to subtract (`rect.y -= delta`), so the same movement as the line's
+    // `rect.y -= shift` is achieved by passing `shift` through unchanged.
     for atomic in translated.atomics.iter_mut() {
         atomic.content = shift_box_y(&atomic.content, shift);
     }
@@ -1083,31 +1077,31 @@ fn place_line(line: &LineBox, page_height: f32, state: &mut PaginationState<'_>,
             content: translated.rect,
             ..Layout::default()
         },
-        // 1行だけの合成ラッパーボックスなので、fragmentationヒントは持たない
-        // (orphans/widowsの判断は呼び出し元(`place_split`)が行数単位で行う)。
+        // A synthesised wrapper box holding a single line, so it carries no fragmentation
+        // hints (orphans/widows are decided per line by the caller, `place_split`).
         fragmentation: FragmentationHints::default(),
         has_visible_decoration: false,
-        // 行(line box)にfloatの概念はない。
+        // A line box has no concept of a float.
         is_float: false,
         content: LaidOutContent::Inline(vec![translated]),
-        // 1行だけの合成ラッパー自体はlist-itemではないため常に`None`
-        // (元のコンテナの`marker`は上の装飾フラグメント側で引き継ぐ)。
+        // A single-line synthesised wrapper is never a list-item itself, so this is always
+        // `None` (the original container's `marker` is carried by the decoration fragment above).
         marker: None,
     };
     *cursor += line.rect.height;
     state.last_mut().boxes.push(fragment);
 }
 
-/// テーブルを行単位でページへ分割して配置する。
+/// Split a table across pages row by row.
 ///
-/// 同じページに載る連続した行を1つの断片(`LaidOutContent::Table`を持つ
-/// `LaidOutBox`)にまとめる。断片はテーブル自身のノードとジオメトリを引き
-/// 継ぎ、`content.y`/`content.height`と`FragmentPosition`だけを差し替える。
-/// グリッドコンテナを行帯単位でページへ配置する。`place_table`と同じ「断片を
-/// 組み立てて確定する」構造で、単位が行帯になる。
+/// Consecutive rows landing on the same page are gathered into one fragment (a `LaidOutBox`
+/// holding `LaidOutContent::Table`). A fragment inherits the table's own node and geometry,
+/// replacing only `content.y`/`content.height` and `FragmentPosition`.
+/// Place a grid container across pages by row band. The same "assemble a fragment and settle
+/// it" structure as `place_table`, with the row band as the unit.
 ///
-/// 行帯の下端をまたぐアイテム(複数行にまたがるグリッドアイテム)がある境界では
-/// 分割しない(テーブルの`rowspan`と同じ扱い)。
+/// No split happens at a boundary where an item spans the bottom of the band (a grid item
+/// spanning several rows), the same as a table's `rowspan`.
 fn place_grid(
     container: &SplitContainer,
     grid: &LaidOutGrid,
@@ -1125,8 +1119,8 @@ fn place_grid(
     let mut fragment_top = 0.0f32;
     let mut is_first_fragment = true;
 
-    // 最初の断片の前に、コンテナ自身の上マージン/枠線/パディング分を確保する
-    // (`place_split`/`place_table`と同じ扱い)。
+    // Before the first fragment, reserve the container's own top margin, border and padding
+    // (handled the same way as in `place_split`/`place_table`).
     *cursor += top_extra;
 
     for (index, row) in grid.rows.iter().enumerate() {
@@ -1135,7 +1129,7 @@ fn place_grid(
             shift = row.top - *cursor;
         }
 
-        // 直前の行帯からまたいでいるアイテムがあると、その境界では切れない。
+        // With an item carried over from the previous band, no cut is possible at that boundary.
         let can_break_before = index > 0 && !grid.rows[index - 1].spans_bottom;
         let row_bottom_on_page = row.bottom - shift;
         if row_bottom_on_page > page_height && !pending.is_empty() && can_break_before {
@@ -1170,7 +1164,7 @@ fn place_grid(
     *cursor += bottom_extra;
 }
 
-/// 行帯とその中のアイテムをまとめてY方向へ平行移動する。
+/// Translate a row band and the items within it vertically together.
 fn shift_grid_row_y(row: &LaidOutGridRow, delta: f32) -> LaidOutGridRow {
     LaidOutGridRow {
         items: row
@@ -1184,7 +1178,7 @@ fn shift_grid_row_y(row: &LaidOutGridRow, delta: f32) -> LaidOutGridRow {
     }
 }
 
-/// [`place_grid`]が組み立てた行帯群を1つの断片としてページへ積む。
+/// Push the row bands `place_grid` assembled onto the page as one fragment.
 fn flush_grid_fragment(
     container: &SplitContainer,
     rows: &mut Vec<LaidOutGridRow>,
@@ -1242,16 +1236,16 @@ fn place_table(
         + container.layout.border.bottom
         + container.layout.margin.bottom;
 
-    // 断片に積む行と、その断片の絶対座標→ページ内座標への平行移動量。
+    // The rows to push into the fragment, and the translation from absolute to within-page coordinates.
     let mut pending: Vec<LaidOutTableRow> = Vec::new();
     let mut shift = 0.0f32;
     let mut fragment_top = 0.0f32;
     let mut is_first_fragment = true;
 
-    // 2ページ目以降の先頭に複製する`<thead>`の行。見出しだけでページが埋まる
-    // (=1行も進まない)場合は繰り返さない。
-    // 見出し行は2ページ目以降に複製して置くので、ここだけは複製を持つ
-    // (行数はたかが知れている)。本文の行は複製せずそのまま移す。
+    // The `<thead>` rows to repeat at the top of the second page onwards. They are not
+    // repeated when the headings alone fill the page (that is, when not a single row advances).
+    // A heading row is copied and placed on the second page onwards, so this is the one place
+    // that holds a copy (there are few of them). Body rows are moved rather than copied.
     let head_rows: Vec<LaidOutTableRow> = table
         .rows
         .iter()
@@ -1269,22 +1263,22 @@ fn place_table(
         head_bottom - head_top
     };
     let repeat_head = !head_rows.is_empty() && head_height < page_height;
-    // `caption-side: top`のcaptionは最初の断片に付ける。
+    // A `caption-side: top` caption goes on the first fragment.
     let caption_is_top = table.caption_side == CaptionSide::Top;
     let mut pending_caption = table.caption.as_deref().filter(|_| caption_is_top).cloned();
 
-    // 最初の断片の前に、コンテナ自身の上マージン/枠線/パディング分を確保する
-    // (`place_split`と同じ扱い)。
+    // Before the first fragment, reserve the container's own top margin, border and padding
+    // (handled the same way as in `place_split`).
     *cursor += top_extra;
 
-    // captionの高さも最初の断片に含める。
+    // The caption's height counts towards the first fragment too.
     let caption_height = pending_caption
         .as_ref()
         .map(|c| c.layout.margin_box_height())
         .unwrap_or(0.0);
 
     let start_new_fragment = |cursor: &f32, first_row_top: f32, extra_above: f32| {
-        // 断片の上端(ページ内座標)と、そこへ動かすための平行移動量。
+        // The top of the fragment (in within-page coordinates), and the translation to get it there.
         let top = *cursor;
         (top, first_row_top - extra_above - *cursor)
     };
@@ -1300,10 +1294,10 @@ fn place_table(
             shift = s;
         }
 
-        // この行を今のページに置くと溢れるなら、ここまでの断片を確定して改ページ。
-        // 判定は「この断片に既に1行以上ある」こと(`current_page_has_content`では
-        // ない): テーブルがページ先頭の唯一の内容でも行単位で分割する必要があり、
-        // かつ空の断片を作らないことで必ず前進する。
+        // If this row would overflow the current page, settle the fragment so far and break.
+        // The check is "this fragment already has at least one row" (not
+        // `current_page_has_content`): a table has to split per row even when it is the only
+        // content at the top of a page, and never creating an empty fragment guarantees progress.
         let row_bottom_on_page = row_bottom - shift;
         if row_bottom_on_page > page_height && !pending.is_empty() {
             flush_table_fragment(
@@ -1319,8 +1313,8 @@ fn place_table(
             is_first_fragment = false;
             new_page(state, cursor);
             fragment_top = *cursor;
-            // 新しいページの先頭に見出し行を複製する(最初のページには元の
-            // 行がそのまま置かれるので複製は2ページ目以降だけ)。
+            // Copy the heading rows to the top of the new page (the original rows are placed
+            // on the first page as-is, so copies only appear from the second page on).
             if repeat_head {
                 let head_shift = head_top - *cursor;
                 for head_row in &head_rows {
@@ -1336,7 +1330,7 @@ fn place_table(
         *cursor = row_bottom - shift;
     }
 
-    // `caption-side: bottom`のcaptionは最後の断片に付ける。
+    // A `caption-side: bottom` caption goes on the last fragment.
     if !caption_is_top {
         if let Some(caption) = table.caption.as_deref() {
             let translated = shift_box_y(caption, shift);
@@ -1358,7 +1352,7 @@ fn place_table(
     *cursor += bottom_extra;
 }
 
-/// [`place_table`]が組み立てた行群を1つの断片としてページへ積む。
+/// Push the rows `place_table` assembled onto the page as one fragment.
 #[allow(clippy::too_many_arguments)]
 fn flush_table_fragment(
     container: &SplitContainer,
@@ -1408,7 +1402,7 @@ fn flush_table_fragment(
     state.last_mut().boxes.push(fragment);
 }
 
-/// テーブル行のマージンボックス上端(セルの中で最も上のもの)の絶対Y座標。
+/// The absolute Y of the top of a table row's margin box (the topmost among its cells).
 fn table_row_top(row: &LaidOutTableRow) -> f32 {
     row.cells
         .iter()
@@ -1416,7 +1410,7 @@ fn table_row_top(row: &LaidOutTableRow) -> f32 {
         .fold(f32::MAX, f32::min)
 }
 
-/// テーブル行のマージンボックス下端(セルの中で最も下のもの)の絶対Y座標。
+/// The absolute Y of the bottom of a table row's margin box (the lowest among its cells).
 fn table_row_bottom(row: &LaidOutTableRow) -> f32 {
     row.cells
         .iter()
@@ -1424,14 +1418,14 @@ fn table_row_bottom(row: &LaidOutTableRow) -> f32 {
         .fold(f32::MIN, f32::max)
 }
 
-/// 行(のセル全部)をその場で縦に平行移動する。
+/// Translate a row (all of its cells) vertically in place.
 fn shift_table_row_y_in_place(row: &mut LaidOutTableRow, shift: f32) {
     for cell in &mut row.cells {
         shift_box_y_in_place(cell, shift);
     }
 }
 
-/// 行(のセル全部)を縦に平行移動する。`shift`は`shift_box_y`と同じ「引く量」。
+/// Translate a row (all of its cells) vertically. `shift` is an amount to subtract, as in `shift_box_y`.
 fn shift_table_row_y(row: &LaidOutTableRow, shift: f32) -> LaidOutTableRow {
     LaidOutTableRow {
         node: row.node,
@@ -1440,12 +1434,12 @@ fn shift_table_row_y(row: &LaidOutTableRow, shift: f32) -> LaidOutTableRow {
     }
 }
 
-/// これ以上分割しないボックスを、そのままページへ移す。
+/// Move a box that will not be split further onto the page as-is.
 ///
-/// 中身(`content`/`marker`)は所有権ごと奪う。ここで複製すると、レイアウト
-/// 結果とページ群が同時に存在することになり、大きな文書でピークメモリが
-/// 倍増するため。奪ったあとの`b`は空の`Blocks`になり、呼び出し側は
-/// 二度と中身を読まない(いずれの経路も直後にreturnする)。
+/// The contents (`content`/`marker`) are taken by ownership. Cloning here would mean the
+/// layout result and the pages existing at once, doubling the peak memory on a large
+/// document. After the take, `b` becomes an empty `Blocks` and the caller never reads its
+/// contents again (every path returns immediately afterwards).
 fn place_leaf(b: &mut LaidOutBox, state: &mut PaginationState<'_>, cursor: &mut f32) {
     let shift = margin_box_top(b) - *cursor;
     let height = b.layout.margin_box_height();
@@ -1467,20 +1461,19 @@ fn place_leaf(b: &mut LaidOutBox, state: &mut PaginationState<'_>, cursor: &mut 
 
 fn new_page(state: &mut PaginationState<'_>, cursor: &mut f32) {
     state.push_new_page();
-    // 装飾を持たないコンテナ(`enter_split`/`exit_split`を呼ばない)しか
-    // 呼び出しスタックに無い場合、`exit_split`経由のflushが一度も発生しない
-    // ため、新しいページが始まるたびにもここでflush判定を行う。これにより
-    // 「装飾のない構造ではページが確定するそばから即座にflushされる」
-    // 最も細かい粒度のストリーミングになる。
+    // When the call stack holds only containers with no decoration (which never call
+    // `enter_split`/`exit_split`), no flush ever happens via `exit_split`, so the flush check
+    // also runs here whenever a new page starts. That gives the finest streaming granularity:
+    // in a structure with no decoration, a page is flushed the moment it is settled.
+
     state.try_flush();
     *cursor = 0.0;
 }
 
-/// 現在のページに実際に配置されたボックスが1つでもあるか。`cursor`は祖先の
-/// マージン/枠線/パディング分だけ既に進んでいることがあるため(まだ何も
-/// 描画されていなくても`cursor > 0.0`になり得る)、「強制改ページが本当に
-/// 意味のある移動か(=現在のページを空のまま捨てずに済むか)」の判定には
-/// `cursor`ではなくこちらを使う。
+/// Whether even one box has actually been placed on the current page. `cursor` may already
+/// have advanced by an ancestor's margin, border or padding (so `cursor > 0.0` is possible
+/// with nothing drawn yet), so this, rather than `cursor`, is what decides "is a forced break
+/// really a meaningful move (that is, does it avoid discarding the current page while empty)".
 fn current_page_has_content(state: &PaginationState<'_>) -> bool {
     !state.last().boxes.is_empty()
 }
@@ -1525,8 +1518,8 @@ mod tests {
         false
     }
 
-    /// ページ内のボックスがページ高さの範囲内(多少の誤差を許容)に収まっているか
-    /// を再帰的に確認する。
+    /// Recursively check that the boxes on a page stay within the page height (allowing a
+    /// small tolerance).
     fn assert_within_page(b: &LaidOutBox, page_height: f32) {
         let top = margin_box_top(b);
         assert!(top >= -0.01, "box top {top} should not be negative");
@@ -1566,13 +1559,13 @@ mod tests {
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
         assert_eq!(pages.len(), 1);
 
-        // 分割が発生しないため、無名ルート(node: None)ごと元の構造が保たれているはず。
+        // No split occurs, so the original structure including the anonymous root (node: None) should be intact.
         let mut htmls = Vec::new();
         find_all(&dom, dom.document(), "html", &mut htmls);
         assert_eq!(pages[0].boxes.len(), 1);
         assert_eq!(pages[0].boxes[0].node, None);
         assert!(box_contains_node(&pages[0].boxes[0], htmls[0]));
-        // 分割されていないボックスは`Whole`(border-radiusを全角に適用してよい)。
+        // An unsplit box is `Whole` (border-radius may apply to every corner).
         assert_eq!(pages[0].boxes[0].layout.fragment, FragmentPosition::Whole);
     }
 
@@ -1640,7 +1633,7 @@ mod tests {
         assert!(
             pages.len() > 1,
             "a float containing 20 items of 100px should overflow a single page \
-             (floatのページ跨ぎを許容する)"
+             (a float is allowed to cross a page boundary)"
         );
 
         let mut ps = Vec::new();
@@ -1702,11 +1695,11 @@ mod tests {
             .find_map(|b| find_box(b, divs[2]))
             .expect("float box not found on the page");
 
-        // block.rs側でfloatは、直前の兄弟`a`(height:50px)が通常フローで
-        // 進めた`cursor_y`=50の地点(=`a`の直後)に配置される(floatはDOM順で
-        // 見つかった時点のcursor_yを起点にするため)。改ページが発生していない
-        // ため、この絶対Y座標がそのままページ内相対Y座標になるはず
-        // (shift_referenceが正しく機能していれば、floatの位置がずれない)。
+        // On the block.rs side a float is placed at the `cursor_y`=50 the previous sibling `a`
+        // (height:50px) advanced the normal flow to (that is, right after `a`), a float starting
+        // from the cursor_y where it was found in DOM order. No page break has happened, so
+        // this absolute Y should carry over as the within-page Y
+        // (if shift_reference works, the float's position does not shift).
         assert_eq!(float_box.layout.content.y, 50.0);
     }
 
@@ -1747,8 +1740,8 @@ mod tests {
         );
     }
 
-    /// `page.boxes`の中から、`target`をnodeに持ち、かつ`LaidOutContent::Blocks(vec![])`
-    /// (=装飾専用フラグメント)であるものを探す。
+    /// Find, among `page.boxes`, one whose node is `target` and whose content is
+    /// `LaidOutContent::Blocks(vec![])` (that is, a decoration-only fragment).
     fn find_decoration_fragment(page: &Page, target: NodeId) -> Option<&LaidOutBox> {
         page.boxes.iter().find(|b| {
             b.node == Some(target)
@@ -1785,8 +1778,8 @@ mod tests {
         find_all(&dom, dom.document(), "div", &mut divs);
         let wrapper = divs[0];
 
-        // すべてのページに、wrapperの装飾フラグメントが存在するはず
-        // (背景・枠線がページをまたいでも失われないことの確認)。
+        // Every page should carry a decoration fragment for the wrapper
+        // (checking that the background and borders survive across pages).
         let decorations: Vec<&LaidOutBox> = pages
             .iter()
             .map(|page| {
@@ -1795,28 +1788,28 @@ mod tests {
             })
             .collect();
 
-        // 最初のフラグメントだけが上枠線・上パディングを持つ。
+        // Only the first fragment has the top border and padding.
         assert_eq!(decorations[0].layout.border.top, 2.0);
         assert_eq!(decorations[0].layout.padding.top, 5.0);
         assert_eq!(decorations[0].layout.fragment, FragmentPosition::First);
-        // 最後のフラグメントだけが下枠線・下パディングを持つ。
+        // Only the last fragment has the bottom border and padding.
         let last = decorations.last().unwrap();
         assert_eq!(last.layout.border.bottom, 2.0);
         assert_eq!(last.layout.padding.bottom, 5.0);
         assert_eq!(last.layout.fragment, FragmentPosition::Last);
-        // 中間のフラグメントは`Middle`(border-radiusの角丸抑制に使う)。
+        // A middle fragment is `Middle` (used to suppress border-radius rounding).
         for decoration in &decorations[1..decorations.len() - 1] {
             assert_eq!(decoration.layout.fragment, FragmentPosition::Middle);
         }
 
-        // 左右の枠線・パディングは全フラグメントに適用される。
+        // The left and right borders and padding apply to every fragment.
         for decoration in &decorations {
             assert_eq!(decoration.layout.border.left, 2.0);
             assert_eq!(decoration.layout.padding.left, 5.0);
             assert!(decoration.layout.content.height > 0.0);
         }
 
-        // 中間のフラグメント(最初でも最後でもないもの)は上下の枠線・パディングを持たない。
+        // A middle fragment (neither first nor last) has no top or bottom border or padding.
         for decoration in &decorations[1..decorations.len() - 1] {
             assert_eq!(decoration.layout.border.top, 0.0);
             assert_eq!(decoration.layout.border.bottom, 0.0);
@@ -1824,8 +1817,8 @@ mod tests {
             assert_eq!(decoration.layout.padding.bottom, 0.0);
         }
 
-        // 中身の<p>群は引き続きすべて見つかるはず(装飾フラグメント追加による
-        // 既存の子配置ロジックへの副作用がないことの回帰確認)。
+        // Every one of the <p>s inside should still be found (a regression check that adding
+        // decoration fragments has no side effect on the existing child placement logic).
         let mut ps = Vec::new();
         find_all(&dom, dom.document(), "p", &mut ps);
         for &p_id in &ps {
@@ -1838,7 +1831,7 @@ mod tests {
 
     #[test]
     fn split_container_without_visible_decoration_gets_no_decoration_fragment() {
-        // 背景色も枠線もないコンテナは、装飾フラグメント自体を生成しない
+        // A container with neither a background colour nor borders generates no decoration fragment at all
         let mut html_src = String::from("<div>");
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -1870,8 +1863,8 @@ mod tests {
         }
     }
 
-    /// `target`をnodeに持ち、実際に内容を伴う(装飾専用フラグメントではない)
-    /// ボックスがそのページにあるか。
+    /// Whether the page holds a box whose node is `target` and that carries real content
+    /// (rather than being a decoration-only fragment).
     fn page_contains_content(page: &Page, target: NodeId) -> bool {
         page.boxes.iter().any(|b| box_contains_node(b, target))
     }
@@ -1968,9 +1961,9 @@ mod tests {
 
     #[test]
     fn nested_break_before_is_honored_even_when_the_whole_subtree_fits_on_one_page() {
-        // wrapper divの中身は合計しても(既定のページ高さに比べれば)ごく小さく、
-        // 「丸ごと1個のリーフとして配置する」高速経路の対象になり得る。それでも
-        // 内部のbには`break-before: always`があるので見逃してはならない。
+        // The wrapper div's contents add up to very little (against the default page height)
+        // and could take the "place it as a single leaf" fast path. Even so, the b inside has
+        // `break-before: always` and it must not be missed.
         let dom = html::parse(br#"<div><p class="a">A</p><p class="b">B</p></div>"#);
         let ua = user_agent_stylesheet();
         let author = parse_stylesheet(
@@ -1993,8 +1986,8 @@ mod tests {
     #[test]
     fn break_inside_avoid_moves_the_whole_block_to_the_next_page_instead_of_splitting() {
         let settings = PageSettings::default();
-        // fillerでページ残り高さを、wrapperの合計高さ(400px)より小さく
-        // (しかしwrapper単体は空のページになら丸ごと収まるように)調整する。
+        // Use filler to make the height left on the page smaller than the wrapper's total
+        // height (400px), while the wrapper alone still fits a blank page whole.
         let filler_height = settings.content_height() - 200.0;
         let html_src = r#"<div class="filler"></div>
                <div class="wrapper">
@@ -2031,8 +2024,8 @@ mod tests {
 
     #[test]
     fn break_inside_avoid_still_splits_when_the_element_is_taller_than_a_full_page() {
-        // avoidは「できれば分割しない」という指定であり、1ページに収まらない
-        // ほど巨大な場合はbest-effortで通常通り分割せざるを得ない。
+        // avoid means "do not split if possible", so something too large for one page has to
+        // be split as usual on a best-effort basis.
         let settings = PageSettings::default();
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..30 {
@@ -2058,13 +2051,13 @@ mod tests {
         );
     }
 
-    /// `word_count`語からなる段落が、明示`width`(px)でどう行分割されるかを
-    /// 測定する(行数と、各行の高さが一様であること)。orphans/widowsの
-    /// テストは、この一様な行高さを基準に`filler`の高さを逆算してページ内の
-    /// 自然な分割点を狙い撃つ。実際のテスト本体でも対象の段落には同じ
-    /// `width: {width}px; margin: 0;`を指定するため、ここでの測定値が
-    /// そのまま使える(段落の`width`を明示指定するので、containing widthの
-    /// 値そのものは折り返しに影響しない)。
+    /// Measure how a paragraph of `word_count` words breaks into lines at an explicit `width`
+    /// (px): the line count, and that the line heights are uniform. The orphans/widows tests
+    /// work back from that uniform line height to the `filler` height, to aim at a specific
+    /// natural break point within the page. The tests themselves give the paragraph under test
+    /// the same `width: {width}px; margin: 0;`, so the value measured here carries over
+    /// (the paragraph's `width` being explicit, the containing width itself does not affect
+    /// the wrapping).
     fn measure_paragraph_lines(word_count: usize, width: f32) -> (usize, f32) {
         let words: Vec<String> = (0..word_count).map(|i| format!("word{i}")).collect();
         let html_src = format!(r#"<p class="target">{}</p>"#, words.join(" "));
@@ -2106,10 +2099,10 @@ mod tests {
         }
     }
 
-    /// ページ分割後の行フラグメント(`place_line`が作る無名ラッパー)は元の
-    /// 段落のNodeIdを持たないため、ページ上の行数はnodeで絞り込まず単純に
-    /// 合計する(このテストのDOMには対象の段落以外にインライン内容を持つ
-    /// 要素がないため、これで対象段落の行数と一致する)。
+    /// A line fragment after pagination (the anonymous wrapper `place_line` creates) does not
+    /// carry the original paragraph's NodeId, so the lines on a page are simply totalled
+    /// rather than filtered by node (the DOM in this test has no element with inline content
+    /// other than the paragraph under test, so the total matches its line count).
     fn count_inline_lines(b: &LaidOutBox) -> usize {
         match &b.content {
             LaidOutContent::Inline(lines) => lines.len(),
@@ -2135,8 +2128,8 @@ mod tests {
         let settings = PageSettings::default();
         let orphans = 3usize;
         let widows = 1usize;
-        // fillerでページ残り高さを、ちょうど1行分+半行分だけ残るよう調整する
-        // (=自然には1行しか収まらない。orphans=3を満たせないはず)。
+        // Use filler to leave exactly one line plus half a line of page height
+        // (so naturally only one line fits, which cannot satisfy orphans=3).
         let target_fit = 1usize;
         let desired_remaining = (target_fit as f32 + 0.5) * line_height;
         let filler_height = settings.content_height() - 8.0 - desired_remaining;
@@ -2180,8 +2173,8 @@ mod tests {
         let settings = PageSettings::default();
         let orphans = 1usize;
         let widows = 3usize;
-        // 自然な分割点では(n - 1)行がこのページに収まり、次ページには1行しか
-        // 残らない想定(widows=3を満たせないはず)。
+        // At the natural break point (n - 1) lines fit on this page and only one is left for
+        // the next (which cannot satisfy widows=3).
         let target_fit = n - 1;
         let desired_remaining = (target_fit as f32 + 0.5) * line_height;
         let filler_height = settings.content_height() - 8.0 - desired_remaining;
@@ -2214,13 +2207,13 @@ mod tests {
     #[test]
     fn paragraph_shorter_than_orphans_plus_widows_is_never_split() {
         let word_count = 3;
-        // 幅を極端に狭くして、単語ごとに1行になるようにする(3行になるはず)。
+        // Make the width extremely narrow so each word is its own line (giving three lines).
         let width = 10.0;
         let (n, line_height) = measure_paragraph_lines(word_count, width);
         assert_eq!(n, 3, "expected each word to wrap onto its own line");
 
         let settings = PageSettings::default();
-        // orphans+widows(4) > n(3)なので、どこで分割しても両方は満たせない。
+        // orphans+widows (4) > n (3), so no break point can satisfy both.
         let orphans = 2usize;
         let widows = 2usize;
         let target_fit = 2usize;
@@ -2252,8 +2245,8 @@ mod tests {
         assert_eq!(lines_on_page(&pages[1]), n);
     }
 
-    /// [`PaginationState`]と[`place_box`]を直接呼び出し、`finish()`を呼ぶ
-    /// 前の時点でバッファに何ページ残っているかを調べるテスト用ヘルパー。
+    /// A test helper that calls [`PaginationState`] and [`place_box`] directly and reports how
+    /// many pages are left in the buffer before `finish()` is called.
     fn unflushed_buffer_len_after_place_box(laid_out: &LaidOutBox, page_height: f32) -> usize {
         let mut buffer = PaginationBuffer::new();
         let mut on_page = |_page: Page| {};
@@ -2265,7 +2258,7 @@ mod tests {
 
     #[test]
     fn streaming_flushes_undecorated_content_incrementally_not_all_at_finish() {
-        // 装飾(背景色・枠線)を一切持たないコンテナだけの構造。
+        // A structure of nothing but containers with no decoration (background colour or borders).
         let mut html_src = String::from("<div>");
         for i in 0..60 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2289,14 +2282,14 @@ mod tests {
             "expected several pages, got {total_pages}"
         );
 
-        // 装飾を持たないコンテナは`place_split`のenter_split/exit_splitを
-        // 呼ばないため、`new_page`のたびに`PaginationState::try_flush`が
-        // その場で発火し、直前のページが即座にflushされる(モジュールdoc・
-        // `has_visible_decoration`参照)。そのため`place_box`のトップレベル
-        // 呼び出しが完了した時点(`finish()`をまだ呼んでいない)でも、
-        // バッファには「まだ書き込み中の最後の1ページ」しか残らないはず。
-        // すべてのページが最後にまとめてflushされる実装だと、ここで
-        // `total_pages`になってしまう。
+        // A container with no decoration never calls `place_split`'s enter_split/exit_split,
+        // so `PaginationState::try_flush` fires on the spot at every `new_page` and the
+        // previous page is flushed immediately (see the module docs and
+        // `has_visible_decoration`). So even once the top-level `place_box` call is complete
+        // (with `finish()` not yet called), the buffer should hold only "the last page, still
+        // being written". An implementation that flushed every page at the end would give
+        // `total_pages` here.
+
         assert_eq!(
             unflushed_buffer_len_after_place_box(&laid_out, page_height),
             1,
@@ -2306,12 +2299,12 @@ mod tests {
 
     #[test]
     fn streaming_still_flushes_down_to_one_page_when_a_decorated_wrapper_spans_many_pages() {
-        // 背景・枠線を持つwrapperがページをまたぐ場合でも、`place_box`の
-        // トップレベル呼び出しが完了すれば、そのwrapperの`place_split`は
-        // 必ず自分のexit_splitまで実行し終えているはず(`place_split`は
-        // 自身の処理を終えてから`exit_split`を呼んでreturnするため)。
-        // そのため装飾の有無にかかわらず、`place_box`完了時点で
-        // バッファに残るのは最後の1ページだけになるという不変条件は保たれる。
+        // Even where a wrapper with a background and borders crosses pages, once the top-level
+        // `place_box` call is complete that wrapper's `place_split` must have run through to
+        // its own exit_split (`place_split` finishes its work, then calls `exit_split` and
+        // returns). So decoration or not, the invariant holds that only the last page remains
+        // in the buffer once `place_box` is complete.
+
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2348,12 +2341,12 @@ mod tests {
 
     #[test]
     fn paginate_streaming_matches_the_batched_version_for_a_decorated_spanning_wrapper() {
-        // `PaginationState`のflush判定(モジュールdoc参照)が安全かどうかの
-        // 正確性検証: 装飾フラグメントの遡り挿入が絡む、最も際どいケース
+        // A correctness check on whether `PaginationState`'s flush decision (see the module
+        // docs) is safe: in the most delicate case involving decoration fragments being
         // (`split_container_gets_a_decoration_fragment_on_every_page_it_spans`
-        // と同じシナリオ)で、ストリーミング版と一括版が完全に同じ結果を
-        // 返すことを確認する。もしflushが早すぎれば、装飾フラグメントの
-        // 挿入先ページが既にflush済みでpanicするか、挿入自体が欠落する。
+        // written back), confirm that the streaming and batch versions return exactly the same
+        // result. Flushing too early would either panic (the page a decoration fragment goes
+        // on having already been flushed) or lose the insertion altogether.
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2411,9 +2404,9 @@ mod tests {
 
     #[test]
     fn paginate_document_streaming_releases_paragraphs_as_their_page_flushes() {
-        // 装飾のない20個の独立した<p>要素。各ページがflushされるたびに、
-        // そのページに配置された<p>要素(とテキスト子孫)が解放されている
-        // ことを確認する。
+        // Twenty independent <p> elements with no decoration. Check that each time a page is
+        // flushed, the <p> elements placed on it (and their text descendants) have been freed.
+
         let mut html_src = String::from("<div>");
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2444,8 +2437,8 @@ mod tests {
         );
         assert!(flushed_pages > 1, "expected multiple pages");
 
-        // 全ページ処理後、20個の<p>要素すべてが解放されているはず
-        // (装飾のないラッパーdivも、最後のページのflushで解放される)。
+        // After every page is processed, all twenty <p> elements should be freed
+        // (the undecorated wrapper div too, on the last page's flush).
         for &p in &ps {
             assert!(
                 dom.is_released(p),
@@ -2456,13 +2449,13 @@ mod tests {
 
     #[test]
     fn paginate_document_streaming_eventually_releases_a_spanning_wrapper() {
-        // 背景・枠線を持つwrapperが複数ページにまたがる場合でも、
-        // `paginate_document_streaming`(公開API)を通した全処理完了後には
-        // wrapper自身のノードも解放されているはず(装飾フラグメントが
-        // 最後のページで`Last`になった時点で解放される)。「最後のページ
-        // より前では解放されない」という中間状態の直接検証は、下の
+        // Even where a wrapper with a background and borders spans several pages, once
+        // everything has run through `paginate_document_streaming` (the public API) the
+        // wrapper's own node should be freed too (it is freed once its decoration fragment
+        // becomes `Last` on the final page). Directly checking the intermediate state, that
+        // "it is not freed before the last page", is done in the test
         // `wrapper_node_is_not_released_before_its_last_fragment_flushes`
-        // で行う。
+        // below.
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2507,8 +2500,8 @@ mod tests {
 
     #[test]
     fn wrapper_node_is_not_released_before_its_last_fragment_flushes() {
-        // 1ページ目がflushされた時点で、wrapperノードはまだ解放されて
-        // いないことを`on_page`のコールバック内から直接観測する。
+        // Observe directly from inside the `on_page` callback that the wrapper node is not yet
+        // freed at the point the first page is flushed.
         let mut html_src = String::from(r#"<div class="wrapper">"#);
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2555,10 +2548,10 @@ mod tests {
 
     #[test]
     fn paragraphs_on_a_later_page_are_not_released_before_their_own_page_flushes() {
-        // 早すぎる解放(まだ登場していないノードを誤って解放してしまう
-        // バグ)がないことを、各<p>が実際にどのページに配置されるかを
-        // 一括版で事前計算し、そのページより前の時点ではまだ解放されて
-        // いないことを`on_page`のたびに確認する。
+        // Check there is no premature freeing (a bug wrongly freeing a node that has not
+        // appeared yet) by precomputing with the batch version which page each <p> really
+        // lands on, and confirming at every `on_page` that it is not yet freed before that page.
+
         let mut html_src = String::from("<div>");
         for i in 0..20 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2611,16 +2604,16 @@ mod tests {
 
     #[test]
     fn streaming_paginator_multiple_push_item_calls_match_a_single_combined_tree() {
-        // 20個の<p>を「1つのツリーとして一括で処理する」場合と「1個ずつ
-        // push_itemする」場合とで、最終的なページ数・内容が一致することを
-        // 確認する(トップレベル要素単位のストリーミング入力で、
-        // この2つの経路が同じ結果になることの土台となる検証)。
+        // Check that "processing all twenty <p>s as one tree at once" and "push_item one at a
+        // time" end up with the same page count and contents (the groundwork for those two
+        // paths agreeing under top-level-element streaming input).
+
         let author = parse_stylesheet(".item { height: 100px; margin: 0; }");
         let ua = user_agent_stylesheet();
         let fonts = test_fonts();
         let settings = PageSettings::default();
 
-        // 一括版: 20個の<p>を1つのdivにまとめてレイアウトする。
+        // Batch version: lay all twenty <p>s out inside a single div.
         let mut combined_html = String::from("<div>");
         for i in 0..20 {
             combined_html.push_str(&format!(r#"<p class="item">item {i}</p>"#));
@@ -2638,12 +2631,12 @@ mod tests {
         let batched_pages = paginate(&mut combined_laid_out, settings.content_height());
         assert!(batched_pages.len() > 1, "expected multiple pages");
 
-        // push_item版: 同じ`combined_dom`/`combined_styles`から、<p>要素
-        // それぞれのLayoutBoxを`build_box_for_element`で個別に切り出し、
-        // 都度push_itemする。`html::parse`を20回呼ぶ形にすると、各回で
-        // 独立した<html>/<body>が補完され、UAスタイルシートの
-        // `body { margin: 8px; }`が20回分累積してしまい、push_itemロジック
-        // 自体の検証にならないため、同じDOMから要素単位で切り出す。
+        // push_item version: from the same `combined_dom`/`combined_styles`, cut out each <p>
+        // element's LayoutBox individually with `build_box_for_element` and push_item each in
+        // turn. Calling `html::parse` twenty times would supply an independent <html>/<body>
+        // each time, accumulating twenty lots of the UA stylesheet's `body { margin: 8px; }`
+        // and testing something other than the push_item logic, so the elements are cut from
+        // the same DOM.
         let mut ps = Vec::new();
         find_all(&combined_dom, combined_dom.document(), "p", &mut ps);
         assert_eq!(ps.len(), 20);
@@ -2677,11 +2670,11 @@ mod tests {
         }
     }
 
-    /// 同じ要素列を、一括版([`paginate`])と[`StreamingPaginator`]の
-    /// `push_item`版の両方でページ分割し、それぞれのページ数を返す。
+    /// Paginate the same element sequence both with the batch version ([`paginate`]) and with
+    /// [`StreamingPaginator`]'s `push_item`, and return each page count.
     ///
-    /// DOMを1つだけ作って両方で使い回すのは、要素ごとに`html::parse`すると
-    /// 補完される`<body>`のUAマージンが要素数ぶん累積してしまうため
+    /// Only one DOM is built and shared by both, because parsing each element with
+    /// `html::parse` would accumulate one supplied `<body>`'s UA margin per element
     fn page_counts_both_ways(author_css: &str, items_html: &str) -> (usize, usize) {
         let author = parse_stylesheet(author_css);
         let ua = user_agent_stylesheet();
@@ -2722,9 +2715,9 @@ mod tests {
 
     #[test]
     fn streaming_paginator_honors_break_after_between_items() {
-        // `place_box`が見るのは子リストの中の強制改ページだけなので、
-        // トップレベル要素同士(=`push_item`の呼び出し順)の`break-after`は
-        // 分割器の側で扱わなければ無視されてしまう。
+        // `place_box` only looks at forced breaks within a child list, so a `break-after`
+        // between top-level elements (that is, across `push_item` calls) would be ignored
+        // unless the paginator handled it.
         let (batched, streamed) = page_counts_both_ways(
             ".brk { height: 50px; margin: 0; break-after: always; }",
             r#"<p class="brk">A</p><p class="brk">B</p><p class="brk">C</p>"#,
@@ -2757,8 +2750,8 @@ mod tests {
 
     #[test]
     fn streaming_paginator_does_not_create_blank_pages_at_the_document_edges() {
-        // 先頭の`break-before`と末尾の`break-after`は、移動先に何も無いので
-        // 空ページを作ってはいけない(一括版と同じ扱い)。
+        // A leading `break-before` and a trailing `break-after` have nothing to move to, so
+        // no empty page should be created (the same handling as the batch version).
         let (batched, streamed) = page_counts_both_ways(
             ".first { height: 50px; margin: 0; break-before: always; } \
              .last { height: 50px; margin: 0; break-after: always; }",
@@ -2773,9 +2766,9 @@ mod tests {
         assert_eq!(streamed, batched);
     }
 
-    // ===== テーブルの行単位ページ分割 =====
+    // ===== Splitting a table across pages row by row =====
 
-    /// `html_src`をページ分割し、ページごとのテーブル行数を返す。
+    /// Paginate `html_src` and return the table row count per page.
     fn table_rows_per_page(html_src: &str) -> Vec<usize> {
         let dom = html::parse(html_src.as_bytes());
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
@@ -2874,7 +2867,7 @@ mod tests {
             for b in &page.boxes {
                 rows_of(b, &mut ys);
             }
-            // 各ページ内で行が上から順に並び、ページ高さに収まっている。
+            // Within each page the rows run top to bottom and stay within the page height.
             assert!(ys.windows(2).all(|w| w[1] > w[0]), "got {ys:?}");
             assert!(
                 ys.iter().all(|y| *y >= 0.0 && *y <= settings.size.height),
@@ -2930,7 +2923,7 @@ mod tests {
 
     #[test]
     fn a_header_taller_than_the_page_is_not_repeated() {
-        // 見出しだけでページが埋まると1行も進めなくなるため繰り返さない。
+        // With the headings alone filling the page not a single row could advance, so they are not repeated.
         let rows: String = (0..40).map(|i| format!("<tr><td>b{i}</td></tr>")).collect();
         let head: String = (0..80).map(|i| format!("<tr><td>h{i}</td></tr>")).collect();
         let html_src = format!("<table><thead>{head}</thead><tbody>{rows}</tbody></table>");

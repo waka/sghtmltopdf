@@ -1,17 +1,17 @@
-//! `color-mix()`の混色計算(CSS Color 5 §3、補間の規則はCSS Color 4 §12)。
+//! Colour mixing for `color-mix()` (CSS Color 5 section 3; the interpolation rules are CSS Color 4 section 12).
 //!
-//! 構文の読み取りは[`super::properties`]が行い、ここは「色空間・色相の回し方・
-//! 2色と重み」を受け取って混ぜるところだけを持つ。
+//! Reading the syntax is [`super::properties`]'s job; this module only takes the colour
+//! space, the hue direction, the two colours and their weights, and mixes them.
 //!
-//! 出力先がPDFのDeviceRGBなので、結果は常にsRGBへ戻して返す。
+//! The destination is PDF's DeviceRGB, so the result is always converted back to sRGB.
 
 use palette::{FromColor, Hsl, Hwb, Lab, LinSrgb, Oklab, Oklch, Srgb, Xyz};
 
-/// 補間に使う色空間。
+/// The colour space used for interpolation.
 ///
-/// `display-p3`/`a98-rgb`/`prophoto-rgb`/`rec2020`は非対応。sRGBより広い
-/// 色域を扱えないため、受け付けても結果はsRGBへ丸められるだけで、指定した
-/// 意味にならない。仕様どおり無効な`<color-space>`として扱い、宣言ごと落とす。
+/// `display-p3`/`a98-rgb`/`prophoto-rgb`/`rec2020` are not supported: we cannot handle a
+/// gamut wider than sRGB, so accepting them would only round the result back to sRGB and
+/// not mean what was written. As the spec says, they are treated as an invalid `<color-space>` and the declaration is dropped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Space {
     Srgb,
@@ -32,7 +32,7 @@ impl Space {
             "srgb-linear" => Self::SrgbLinear,
             "lab" => Self::Lab,
             "oklab" => Self::Oklab,
-            // CSSの`xyz`は`xyz-d65`の別名。
+            // CSS `xyz` is an alias for `xyz-d65`.
             "xyz" | "xyz-d65" => Self::Xyz,
             "hsl" => Self::Hsl,
             "hwb" => Self::Hwb,
@@ -42,18 +42,18 @@ impl Space {
         })
     }
 
-    /// 色相を持つ(極座標)色空間か。持つ場合は成分列の何番目が色相かを返す。
+    /// Whether this is a polar colour space with a hue. If so, return which component index is the hue.
     fn hue_index(self) -> Option<usize> {
         match self {
-            // paletteの`Hsl`/`Hwb`は色相が先頭。
+            // In palette's `Hsl`/`Hwb` the hue comes first.
             Self::Hsl | Self::Hwb => Some(0),
-            // `Lch`/`Oklch`は明度・彩度の後ろ。
+            // In `Lch`/`Oklch` it comes after lightness and chroma.
             Self::Lch | Self::Oklch => Some(2),
             _ => None,
         }
     }
 
-    /// sRGBから、この色空間の成分列(色相は度)へ。
+    /// From sRGB to this colour space's components (hue in degrees).
     fn components_of(self, c: Srgb) -> [f32; 3] {
         match self {
             Self::Srgb => [c.red, c.green, c.blue],
@@ -92,7 +92,7 @@ impl Space {
         }
     }
 
-    /// この色空間の成分列からsRGBへ。
+    /// From this colour space's components back to sRGB.
     fn to_srgb(self, v: [f32; 3]) -> Srgb {
         match self {
             Self::Srgb => Srgb::new(v[0], v[1], v[2]),
@@ -108,17 +108,17 @@ impl Space {
     }
 }
 
-/// 色相をどちら回りで補間するか(CSS Color 4 §12.4)。
+/// Which way round the hue is interpolated (CSS Color 4 section 12.4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(super) enum HueMethod {
-    /// 初期値。短い方の弧を通る。
+    /// The initial value. Takes the shorter arc.
     #[default]
     Shorter,
-    /// 長い方の弧を通る。
+    /// Takes the longer arc.
     Longer,
-    /// 色相が増える向きに回る。
+    /// Goes in the direction of increasing hue.
     Increasing,
-    /// 色相が減る向きに回る。
+    /// Goes in the direction of decreasing hue.
     Decreasing,
 }
 
@@ -133,8 +133,8 @@ impl HueMethod {
         })
     }
 
-    /// 補間前に色相の組を調整する。返り値をそのまま線形補間すると、
-    /// 指定した回り方になる。
+    /// Adjust the pair of hues before interpolating. Linearly interpolating what this
+    /// returns gives the requested direction.
     fn adjust(self, h1: f32, h2: f32) -> (f32, f32) {
         let (h1, h2) = (normalize_hue(h1), normalize_hue(h2));
         let diff = h2 - h1;
@@ -175,7 +175,7 @@ impl HueMethod {
     }
 }
 
-/// 度を`[0, 360)`へ収める。
+/// Bring degrees into `[0, 360)`.
 fn normalize_hue(h: f32) -> f32 {
     let h = h % 360.0;
     if h < 0.0 {
@@ -185,14 +185,14 @@ fn normalize_hue(h: f32) -> f32 {
     }
 }
 
-/// sRGBの0.0〜1.0で表した色とアルファ。
+/// A colour and alpha expressed as sRGB values from 0.0 to 1.0.
 pub(super) type UnitRgba = (f32, f32, f32, f32);
 
-/// `space`で2色を混ぜ、sRGBの0.0〜1.0で返す。`w1`+`w2`は1.0であること
-/// (重みの正規化は呼び出し側が済ませる)。
+/// Mix two colours in `space` and return sRGB values from 0.0 to 1.0. `w1` + `w2` must be
+/// 1.0 (the caller normalises the weights).
 ///
-/// アルファは事前乗算してから補間する(CSS Color 4 §12.3)。色相だけは
-/// 乗算の対象外。
+/// Alpha is premultiplied before interpolating (CSS Color 4 section 12.3). Only the hue is
+/// exempt from the multiplication.
 pub(super) fn mix(
     space: Space,
     hue: HueMethod,
@@ -224,7 +224,7 @@ pub(super) fn mix(
     for i in 0..3 {
         mixed[i] = v1[i] * w1 + v2[i] * w2;
         if Some(i) != hue_index && alpha != 0.0 {
-            // 事前乗算を戻す。
+            // Undo the premultiplication.
             mixed[i] /= alpha;
         }
     }
@@ -257,8 +257,8 @@ mod tests {
         );
     }
 
-    /// `hsl`は色相環を回るので、赤(0度)と青(240度)の中間は短い方の弧を通って
-    /// 300度(マゼンタ)になる。算術平均の120度(緑)にはならない。
+    /// `hsl` goes round the hue circle, so the midpoint of red (0 degrees) and blue (240)
+    /// takes the shorter arc to 300 (magenta), not the arithmetic mean of 120 (green).
     #[test]
     fn a_polar_space_takes_the_shorter_arc_by_default() {
         assert_eq!(
@@ -267,7 +267,7 @@ mod tests {
         );
     }
 
-    /// `longer hue`なら反対回りで、中間は120度(緑)になる。
+    /// With `longer hue` it goes the other way round and the midpoint is 120 (green).
     #[test]
     fn longer_hue_takes_the_other_arc() {
         assert_eq!(
@@ -278,20 +278,20 @@ mod tests {
 
     #[test]
     fn increasing_and_decreasing_hue_pick_a_direction() {
-        // 0度から240度へ増える向き = 120度(緑)。
+        // Increasing from 0 to 240 gives 120 (green).
         assert_eq!(
             mixed_rgb(Space::Hsl, HueMethod::Increasing, RED, BLUE),
             (0, 255, 0)
         );
-        // 減る向き = 300度(マゼンタ)。
+        // Decreasing gives 300 (magenta).
         assert_eq!(
             mixed_rgb(Space::Hsl, HueMethod::Decreasing, RED, BLUE),
             (255, 0, 255)
         );
     }
 
-    /// アルファが違う色を混ぜるときは事前乗算する。透明度の高い方の色味が
-    /// 薄く出るのが正しい(単純平均だと濃く出すぎる)。
+    /// Mixing colours with different alphas premultiplies. The more transparent colour
+    /// should show through faintly (a plain average would make it too strong).
     #[test]
     fn alpha_is_premultiplied_before_interpolating() {
         let half_red = (1.0, 0.0, 0.0, 0.5);
@@ -304,7 +304,7 @@ mod tests {
     fn lab_midpoint_of_white_and_black_is_perceptual_grey() {
         let white = (1.0, 1.0, 1.0, 1.0);
         let black = (0.0, 0.0, 0.0, 1.0);
-        // L=50の灰色。sRGBの算術平均(128)より暗い。
+        // Grey at L=50. Darker than the arithmetic mean in sRGB (128).
         assert_eq!(
             mixed_rgb(Space::Lab, HueMethod::Shorter, white, black),
             (119, 119, 119)

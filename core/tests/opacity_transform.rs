@@ -1,10 +1,9 @@
-//! `opacity`/`transform`のE2Eテスト。
+//! E2E tests for `opacity`/`transform`.
 //!
-//! `paged_media.rs`と同じ方針で`Engine` APIを直接使い、バッチ・
-//! ストリーミング両モードを検証する(`opacity`はPDFの透明グループ
-//! (Form XObject + `/Group /S /Transparency`)として実装しているため、
-//! 生成されたPDFバイト列に`/Subtype /Form`・`/Transparency`が実際に
-//! 現れることを確認する)。
+//! The same approach as `paged_media.rs`, using the `Engine` API directly and checking both
+//! batch and streaming modes (`opacity` is implemented as a PDF transparency group, a Form
+//! XObject with `/Group /S /Transparency`, so this confirms that `/Subtype /Form` and
+//! `/Transparency` really appear in the generated PDF bytes).
 
 use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
 use sghtmltopdf_core::sink::MemorySink;
@@ -25,9 +24,9 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// PDFのcontent streamはFlateDecodeで圧縮されているため、`cm`演算子のような
-/// コンテンツストリーム内オペレータを検索するには解凍が必要
-/// (`paged_media.rs`内の同名関数と同じロジック)。
+/// A PDF's content stream is FlateDecode compressed, so searching for an operator inside it
+/// such as `cm` requires inflating first
+/// (the same logic as the identically named function in `paged_media.rs`).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -103,9 +102,9 @@ fn transform_emits_a_cm_operator_but_a_plain_box_does_not() {
     );
     let with_transform_content = decompressed_stream_bytes(&with_transform);
     let plain_content = decompressed_stream_bytes(&plain);
-    // 各ページの先頭にはCSS px → ptの換算CTMが1つ積まれるため、`transform`を
-    // 使わないページでも`cm`は1つ出る。
-    // `transform`はその上にさらに`cm`を積む。
+    // Every page starts with one CTM converting CSS px to pt, so even a page not using
+    // `transform` emits one `cm`.
+    // `transform` stacks another `cm` on top of that.
     let plain_cm = count_occurrences(&plain_content, b" cm\n");
     assert_eq!(plain_cm, 1, "only the page scale CTM should be present");
     assert!(

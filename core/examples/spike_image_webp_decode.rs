@@ -1,20 +1,20 @@
-//! 追加スパイク: WebPを`image`crate(webp機能のみ有効化)でデコードし、
-//! PNGスパイク(`spike_image_png_decode.rs`)と同じRGB本体+SMask分離方式で
-//! PDFへ埋め込むPoC。
+//! An additional spike: a PoC decoding WebP with the `image` crate (with only the webp
+//! feature enabled) and embedding it in a PDF by the same RGB-plus-SMask split as the PNG
+//! spike (`spike_image_png_decode.rs`).
 //!
-//! なぜ`image`crateなのか: PNG/JPEGは専用クレート(`png`単体、JPEGはデコード
-//! 無しのDCTDecodeパススルー)で足りるが、WebPには相当する軽量単体クレートが
-//! 無い(`libwebp-sys`はCライブラリバインディングでPure Rustではない)。
-//! `image`crateはデフォルト機能だとAV1/TIFF/GIF等が芋づる式に付いてくるため
-//! 全体は不採用としたが、`default-features = false, features = ["webp"]`に
-//! 絞ると追加は`image`/`image-webp`/`quick-error`/`moxcms`/`pxfm`等
-//! 9crateのみで、AV1エンコーダ一式(`rav1e`等)は一切付いてこないことを
-//! 確認済み。既存の`png`crateとも依存が大きく
-//! 重複する(flate2系)ため実質的な純増は小さい
+//! Why the `image` crate: PNG and JPEG are covered by dedicated crates (`png` alone, and
+//! DCTDecode passthrough with no decoding for JPEG), but WebP has no comparably lightweight
+//! standalone crate (`libwebp-sys` is a C library binding, not pure Rust).
+//! With its default features the `image` crate drags in AV1, TIFF, GIF and more, so it was
+//! rejected as a whole; but narrowed to `default-features = false, features = ["webp"]` the
+//! additions are only nine crates (`image`, `image-webp`, `quick-error`, `moxcms`, `pxfm`
+//! and so on), with none of the AV1 encoder stack (`rav1e` and friends) - confirmed.
+//! Its dependencies also overlap heavily with the existing `png` crate (the flate2 family),
+//! so the real net addition is small
 //!
-//! 実行: `cargo run --example spike_image_webp_decode`
-//! (`tests/fixtures/images/spike_gradient_alpha.webp`を使用。右半分が半透明の
-//! ロスレスWebP)
+//! Run with: `cargo run --example spike_image_webp_decode`
+//! (it uses `tests/fixtures/images/spike_gradient_alpha.webp`, a lossless WebP whose right
+//! half is semi-transparent)
 
 use std::io::BufReader;
 
@@ -30,9 +30,9 @@ const WEBP_PATH: &str = concat!(
 
 fn main() {
     let file = BufReader::new(
-        std::fs::File::open(WEBP_PATH).expect("テスト用WebPフィクスチャの読み込みに失敗"),
+        std::fs::File::open(WEBP_PATH).expect("failed to read the WebP test fixture"),
     );
-    let decoder = WebPDecoder::new(file).expect("WebPヘッダの読み込みに失敗");
+    let decoder = WebPDecoder::new(file).expect("failed to read the WebP header");
 
     let (width, height) = decoder.dimensions();
     let color_type = decoder.color_type();
@@ -41,9 +41,9 @@ fn main() {
     let mut buf = vec![0u8; decoder.total_bytes() as usize];
     decoder
         .read_image(&mut buf)
-        .expect("フレームのデコードに失敗");
+        .expect("failed to decode the frame");
 
-    // PNGスパイクと同じく、色本体とアルファチャンネルを分離する。
+    // As in the PNG spike, the colour data and the alpha channel are split.
     let (rgb, alpha): (Vec<u8>, Option<Vec<u8>>) = match color_type {
         ColorType::Rgb8 => (buf, None),
         ColorType::Rgba8 => {
@@ -56,7 +56,7 @@ fn main() {
             }
             (rgb, Some(alpha))
         }
-        other => panic!("このスパイクでは未検証のcolor_type: {other:?}"),
+        other => panic!("a color_type this spike has not checked: {other:?}"),
     };
 
     let mut ids = 0..;

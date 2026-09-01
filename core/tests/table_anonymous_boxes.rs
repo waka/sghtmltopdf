@@ -1,7 +1,7 @@
-//! CSS2.1 17.2.1の無名テーブルボックス生成のE2Eテスト。
+//! E2E tests for the anonymous table box generation of CSS2.1 17.2.1.
 //!
-//! `table_rowspan.rs`と同じ方針: 実際のパイプラインを通して回帰を検知する。
-//! 構造の検証は`layout_document`(ページ分割前)の結果に対して行う。
+//! The same approach as `table_rowspan.rs`: catch regressions by going through the real
+//! pipeline. The structural checks run against the result of `layout_document` (before pagination).
 
 use std::collections::HashMap;
 
@@ -36,7 +36,7 @@ fn layout(html_src: &str) -> LaidOutBox {
     )
 }
 
-/// 描画される行(テキストを持つ行ボックス)を、テキストとその位置つきで集める。
+/// Collect the drawn rows (line boxes carrying text) along with their text and position.
 fn collect_text_lines(b: &LaidOutBox, out: &mut Vec<(String, f32, f32)>) {
     match &b.content {
         LaidOutContent::Inline(lines) => {
@@ -76,7 +76,7 @@ fn texts(html_src: &str) -> Vec<String> {
     lines.into_iter().map(|(text, _, _)| text).collect()
 }
 
-/// レイアウトからPDFまで通して、クラッシュせず1ページのPDFになることを確認する。
+/// Go from layout all the way to PDF and confirm it produces a one-page PDF without crashing.
 fn renders_to_a_valid_pdf(html_src: &str) {
     let dom = html::parse(html_src.as_bytes());
     let ua = user_agent_stylesheet();
@@ -96,7 +96,7 @@ const CELLS_WITHOUT_A_ROW: &str = r#"<div style="display: table">
 
 #[test]
 fn table_cells_without_a_row_get_an_anonymous_row() {
-    // CSS2.1 17.2.1 規則2.1。行の箱が無いと、セルごと出力から消えていた。
+    // CSS2.1 17.2.1 rule 2.1. Without a row box, the cells vanished from the output entirely.
     assert_eq!(texts(CELLS_WITHOUT_A_ROW), vec!["alpha", "beta"]);
 
     let laid = layout(CELLS_WITHOUT_A_ROW);
@@ -125,7 +125,7 @@ fn a_plain_block_inside_a_table_gets_an_anonymous_cell_and_row() {
 
 #[test]
 fn a_plain_block_inside_a_table_row_gets_an_anonymous_cell() {
-    // CSS2.1 17.2.1 規則2.2。
+    // CSS2.1 17.2.1 rule 2.2.
     let html_src = r#"<div style="display: table">
         <div style="display: table-row">
             <div style="display: table-cell">alpha</div>
@@ -138,8 +138,8 @@ fn a_plain_block_inside_a_table_row_gets_an_anonymous_cell() {
 
 #[test]
 fn consecutive_non_cell_children_share_one_anonymous_cell() {
-    // 連続する「セルでない子」は1つの無名セルにまとまる(規則2.2)ため、
-    // 縦に積まれる。セルが分かれていれば横に並ぶ。
+    // A consecutive run of "children that are not cells" gathers into one anonymous cell
+    // (rule 2.2), so they stack vertically. Separate cells would sit side by side.
     let html_src = r#"<div style="display: table">
         <div style="display: table-row">
             <div>alpha</div>
@@ -179,7 +179,7 @@ fn explicit_rows_and_real_table_elements_are_unchanged() {
 
 #[test]
 fn whitespace_and_column_elements_do_not_create_anonymous_boxes() {
-    // 行やセルの間の空白、`<colgroup>`/`<col>`は無名ボックスを作らない。
+    // Whitespace between rows and cells, and `<colgroup>`/`<col>`, create no anonymous box.
     let html_src = r#"<table>
         <colgroup><col style="width: 50px"><col></colgroup>
         <tr><td>alpha</td><td>beta</td></tr>

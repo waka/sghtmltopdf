@@ -1,28 +1,27 @@
 # frozen_string_literal: true
 
 module Sghtmltopdf
-  # Action View用のヘルパ。
+  # Helpers for Action View.
   #
-  # PDFのレンダリングはHTTPサーバを介さないため、`/assets/…`のようなURLは
-  # ローカルファイルとして解決される(`--base-url`の既定は
-  # `Rails.root/public`。[Railtie.default_options])。precompile済みの
-  # 本番環境ではこれで素の`stylesheet_link_tag`もそのまま動くが、開発環境の
-  # ようにアセットがまだ`public/`へ書き出されていない場合は解決できない。
+  # PDF rendering does not go through an HTTP server, so a URL such as `/assets/...` resolves
+  # as a local file (`--base-url` defaults to `Rails.root/public`; see
+  # [Railtie.default_options]). In production, with the assets precompiled, a plain
+  # `stylesheet_link_tag` works as-is; but where the assets have not yet been written to
+  # `public/`, as in development, it cannot resolve.
   #
-  # そこで、
+  # So we provide helpers that inline the CSS into a `<style>`, as in
   #
   #   <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
   #
-  # のようにCSSの中身を`<style>`へ展開するヘルパを用意する(wicked_pdfの
-  # `wicked_pdf_stylesheet_link_tag`に相当)。
+  # (the equivalent of wicked_pdf's `wicked_pdf_stylesheet_link_tag`).
   module ViewHelpers
-    # アセットのローカルファイルパスを返す。見つからなければ`nil`。
+    # Return the asset's local file path, or `nil` if it is not found.
     #
-    # 1. `public/`配下(precompile済み。本番環境)
-    # 2. アセットパイプラインのロードパス(開発環境。Propshaft/Sprockets)
+    # It looks in this order:
+    # 1. under `public/` (precompiled; production)
     #
-    # の順に探す。パイプラインの参照はどちらのgemにも依存しないよう
-    # `respond_to?`で分岐している(best effort)。
+    # 2. the asset pipeline's load paths (development; Propshaft or Sprockets)
+    # The pipeline is consulted through `respond_to?` so neither gem becomes a dependency (best effort).
     def sghtmltopdf_asset_path(source)
       path = source.to_s
       return path if path.start_with?("/") && File.file?(path)
@@ -30,8 +29,8 @@ module Sghtmltopdf
       from_public_dir(path) || from_asset_pipeline(path)
     end
 
-    # CSSの中身を`<style>`へ展開する。複数指定でき、見つからないものは
-    # 黙って飛ばす(PDF生成そのものは止めない)。
+    # Inline the CSS into a `<style>`. Several may be given, and any not found are skipped
+    # silently (PDF generation itself is never stopped).
     def sghtmltopdf_stylesheet_link_tag(*sources)
       css = sources.flatten.filter_map do |source|
         path = sghtmltopdf_asset_path(with_extension(source, ".css"))
@@ -42,15 +41,15 @@ module Sghtmltopdf
       content_tag(:style, css.join("\n").html_safe, type: "text/css")
     end
 
-    # `image_tag`のsrcをローカルファイルパスへ差し替える。
+    # Replace `image_tag`'s src with a local file path.
     def sghtmltopdf_image_tag(source, options = {})
       image_tag(sghtmltopdf_asset_path(source) || source, options)
     end
 
     private
 
-    # `asset_path`が返すURL(asset_hostが付くこともある)からパス部分だけを
-    # 取り出し、`public/`配下の実ファイルへ対応付ける。
+    # Take just the path part of the URL `asset_path` returns (which can carry an asset_host)
+    # and map it to the real file under `public/`.
     def from_public_dir(source)
       url = respond_to?(:asset_path) ? asset_path(source) : source
       relative = url.to_s.sub(%r{\Ahttps?://[^/]+}, "").split(/[?#]/).first.to_s

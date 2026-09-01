@@ -1,11 +1,11 @@
-//! 論理プロパティ(`margin-inline`/`padding-block`/`inset-inline-start`等)の
-//! E2Eテスト。
+//! E2E tests for the logical properties (`margin-inline`, `padding-block`,
+//! `inset-inline-start` and so on).
 //!
-//! 対応する書字方向が`horizontal-tb`+LTRのみなので、論理プロパティは物理
-//! プロパティへの固定の写像として扱う(`inline-start`=左、`inline-end`=右、
-//! `block-start`=上、`block-end`=下)。Tailwind v4は`px-*`/`py-*`/`mx-auto`/
-//! `space-y-*`等をこの形で出力するため、無視されると横パディングと中央寄せが
-//! 丸ごと消える(#21)。
+//! The only writing mode supported is `horizontal-tb` plus LTR, so the logical properties
+//! are treated as a fixed mapping to the physical ones (`inline-start` = left,
+//! `inline-end` = right, `block-start` = top, `block-end` = bottom). Tailwind v4 emits
+//! `px-*`, `py-*`, `mx-auto`, `space-y-*` and the like in this form, so ignoring them loses
+//! the horizontal padding and the centring entirely (#21).
 
 use sghtmltopdf_core::fonts::{Font, FontCollection};
 use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
@@ -47,8 +47,7 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     None
 }
 
-/// `body { margin: 0 }`の下で`<div class="c">x</div>`をレイアウトし、
-/// そのdivの`Layout`を返す。
+/// Lay out `<div class="c">x</div>` under `body { margin: 0 }` and return that div's `Layout`.
 fn layout_div(css: &str) -> Layout {
     let dom = html::parse(br#"<div class="c">x</div>"#);
     let ua = user_agent_stylesheet();
@@ -67,8 +66,8 @@ fn layout_div(css: &str) -> Layout {
     find_laid_out(&laid, divs[0]).unwrap().layout
 }
 
-/// `body { margin: 0 }`の下で`<div class="c">x</div>`の計算済みスタイルから
-/// 4隅の角丸半径(水平方向)を左上/右上/左下/右下の順で返す。
+/// From the computed style of `<div class="c">x</div>` under `body { margin: 0 }`, return the
+/// horizontal corner radii in the order top-left, top-right, bottom-left, bottom-right.
 fn corner_radii(css: &str) -> [f32; 4] {
     let dom = html::parse(br#"<div class="c">x</div>"#);
     let ua = user_agent_stylesheet();
@@ -175,7 +174,7 @@ fn border_inline_width_shorthand_takes_two_values() {
 
 #[test]
 fn logical_corner_radii_map_to_the_physical_corners() {
-    // 1つ目がblock方向、2つ目がinline方向。
+    // The first is the block direction and the second the inline direction.
     assert_eq!(
         corner_radii(".c { border-start-start-radius: 1px }"),
         [1.0, 0.0, 0.0, 0.0]

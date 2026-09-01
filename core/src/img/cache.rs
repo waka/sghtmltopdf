@@ -1,4 +1,4 @@
-//! 文書内での画像取得結果のメモ化。
+//! Memoisation of image fetch results within a document.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -6,10 +6,10 @@ use std::rc::Rc;
 
 use super::ImageFetcher;
 
-/// キャッシュ1件分の結果(成功時のバイト列、または失敗理由)。
+/// One cached result: the bytes on success, or the reason for failure.
 type CachedFetch = Result<Rc<[u8]>, Rc<str>>;
 
-/// 文書1つ分の画像取得結果キャッシュ。
+/// Cache of image fetch results for a single document.
 #[derive(Default)]
 pub struct DocumentImageCache {
     entries: RefCell<HashMap<String, CachedFetch>>,
@@ -20,7 +20,7 @@ impl DocumentImageCache {
         Self::default()
     }
 
-    /// 取得に失敗した参照が1つでもあるか。
+    /// Whether at least one reference failed to fetch.
     pub fn had_errors(&self) -> Option<String> {
         self.entries
             .borrow()
@@ -28,21 +28,21 @@ impl DocumentImageCache {
             .find_map(|(src, result)| result.as_ref().err().map(|e| format!("{src}: {e}")))
     }
 
-    /// `raw_src`(`<img src>`属性の生の値)に対応するバイト列を返す。
+    /// Return the bytes for `raw_src` (the raw value of the `<img src>` attribute).
     ///
-    /// 初回はURL/パス分類→`fetcher`による取得までを行い、結果(成功・
-    /// 失敗いずれも)をキャッシュする。2回目以降はキャッシュを`Rc`で
-    /// 共有するだけで、再分類・再フェッチは行わない。
+    /// The first call classifies the URL/path and fetches it via `fetcher`, caching the
+    /// result either way. Later calls just share the cached value through an `Rc`,
+    /// with no re-classification and no re-fetch.
     pub fn get_or_fetch(&self, fetcher: &ImageFetcher, raw_src: &str) -> CachedFetch {
         if let Some(cached) = self.entries.borrow().get(raw_src) {
             return cached.clone();
         }
 
-        // 分類の前に`<base href>`に対する解決を挟むため、`classify_img_src`は
-        // 直接呼ばず`ImageFetcher::resolve`を経由する。
+        // `classify_img_src` is not called directly: going through `ImageFetcher::resolve`
+        // resolves against `<base href>` before classifying.
         let result: Result<Vec<u8>, String> = fetcher
             .resolve(raw_src)
-            .ok_or_else(|| format!("サポートされていないsrcです: {raw_src}"))
+            .ok_or_else(|| format!("unsupported src: {raw_src}"))
             .and_then(|src| fetcher.fetch(&src).map_err(|e| e.to_string()));
         let result: Result<Rc<[u8]>, Rc<str>> =
             result.map(Rc::from).map_err(|e| Rc::from(e.as_str()));
@@ -53,7 +53,7 @@ impl DocumentImageCache {
         result
     }
 
-    /// 現在キャッシュされている異なる`src`の件数(テスト用)。
+    /// Number of distinct `src` values currently cached (for tests).
     pub fn len(&self) -> usize {
         self.entries.borrow().len()
     }

@@ -3,10 +3,10 @@
 require "rails_helper"
 require "tmpdir"
 
-# ダミーのRailsアプリ(spec/dummy)のコントローラからPDFが返ること。
-RSpec.describe "Railsのコントローラ", type: :rails do
+# Confirm a PDF comes back from a controller of the dummy Rails app (spec/dummy).
+RSpec.describe "a Rails controller", type: :rails do
   describe "render pdf:" do
-    it "PDFを返す" do
+    it "returns a PDF" do
       get "/invoices/show"
 
       expect(last_response.status).to eq(200)
@@ -15,14 +15,14 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       expect(last_response.body).to end_with("%%EOF")
     end
 
-    it "既定のContent-Dispositionはinlineで、pdf:の値がファイル名になる" do
+    it "defaults Content-Disposition to inline, with the value of pdf: as the file name" do
       get "/invoices/show"
 
       expect(last_response.headers["content-disposition"])
         .to start_with('inline; filename="invoice.pdf"')
     end
 
-    it "ビューの描画結果がそのまま変換される" do
+    it "converts the view's rendering result unchanged" do
       get "/invoices/show"
       html = InvoicesController.render(template: "invoices/show", layout: false)
 
@@ -30,30 +30,30 @@ RSpec.describe "Railsのコントローラ", type: :rails do
     end
   end
 
-  # `examples/`のサンプル(外部CSSを`<link>`で読む、実務に近い帳票)を
-  # dummyアプリのビューとpublic/へ複製し、Rails経由でも同じPDFになることを見る。
+  # Copy the `examples/` sample (a realistic business document reading external CSS through a
+  # `<link>`) into the dummy app's views and public/, and see that Rails gives the same PDF.
   #
-  # チェックインしたPDFとのバイト比較はしない。`examples/main.css`の
-  # `font-family`はシステムフォントを名前で引くため、出力バイトがホストに
-  # 入っているフォントで変わってしまう。代わりに同一プロセス内の
-  # `Sghtmltopdf.render`と突き合わせる。どちらも同じフォント解決を通るので
-  # 環境に依存せず、それでいて「Rails統合層がHTMLかオプションを取りこぼす」
-  # 退行はきちんと捕まえられる。
+  # There is no byte comparison against a checked-in PDF: the `font-family` in
+  # `examples/main.css` looks system fonts up by name, so the output bytes change with the
+  # fonts installed on the host. Instead it is matched against `Sghtmltopdf.render` in the
+  # same process. Both go through the same font resolution, so it is environment-independent
+  # while still catching a regression where "the Rails integration layer drops some HTML or
+  # an option".
   #
-  # symlinkではなく複製にしているのは、`--allow`がsymlinkを辿った先の実体
-  # パスで判定するため。`Rails.root`の外を指すsymlinkはCSSごと弾かれる。
-  describe "examples/receipt.htmlの再現" do
+  # They are copies rather than symlinks because `--allow` decides on the real path a symlink
+  # leads to. A symlink pointing outside `Rails.root` would be rejected along with the CSS.
+  describe "reproducing examples/receipt.html" do
     def example(name)
       File.binread(File.expand_path("../../../examples/#{name}", __dir__))
     end
 
-    it "ビューとpublic/main.cssがexamples/と同じ内容である" do
+    it "has the view and public/main.css identical to examples/" do
       expect(File.binread(Rails.root.join("app/views/invoices/receipt.html.erb")))
         .to eq(example("receipt.html"))
       expect(File.binread(Rails.root.join("public/main.css"))).to eq(example("main.css"))
     end
 
-    it "直接変換した場合と同じPDFになる" do
+    it "gives the same PDF as converting directly" do
       get "/invoices/receipt"
       html = InvoicesController.render(template: "invoices/receipt", layout: false)
 
@@ -61,12 +61,12 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       expect(normalize(last_response.body)).to eq(normalize(Sghtmltopdf.render(html)))
     end
 
-    it "public/main.cssが実際に当たっている" do
+    it "really applies public/main.css" do
       get "/invoices/receipt"
       styled = last_response.body
-      # base_urlを空のディレクトリにするとmain.cssを解決できない(取得失敗は
-      # 既定で無視される)。同じHTMLでも結果が変わることで、上のspecが
-      # 「CSSが両方とも当たっていない」状態で通っていないことを担保する。
+      # With base_url pointing at an empty directory, main.css cannot be resolved (a failed
+      # fetch is ignored by default). The same HTML giving a different result guarantees the
+      # spec above is not passing with neither CSS applied.
       html = InvoicesController.render(template: "invoices/receipt", layout: false)
       unstyled = Dir.mktmpdir { |dir| Sghtmltopdf.render(html, base_url: dir) }
 
@@ -74,27 +74,27 @@ RSpec.describe "Railsのコントローラ", type: :rails do
     end
   end
 
-  describe "オプションの受け渡し" do
-    it "filename/dispositionがレスポンスに出る" do
+  describe "passing the options through" do
+    it "puts filename/disposition in the response" do
       get "/invoices/download"
 
       disposition = last_response.headers["content-disposition"]
       expect(disposition).to start_with("attachment;")
-      # 日本語のファイル名はRFC 5987のfilename*としても出る。
+      # A Japanese file name also appears as RFC 5987's filename*.
       expect(disposition).to include("filename*=UTF-8''")
     end
 
-    it "変換オプションはPDFへ渡る" do
+    it "passes the conversion options to the PDF" do
       get "/invoices/download"
       a5 = last_response.body
       get "/invoices/show"
       a4 = last_response.body
 
-      # download側は page_size: "A5"。用紙サイズが違えば中身も違う。
+      # The download side uses page_size: "A5". A different paper size gives different content.
       expect(normalize(a5)).not_to eq(normalize(a4))
     end
 
-    it "layout:が効く" do
+    it "honours layout:" do
       get "/invoices/with_layout"
       with_layout = last_response.body
       get "/invoices/show"
@@ -103,42 +103,42 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       expect(normalize(with_layout)).not_to eq(normalize(without_layout))
     end
 
-    it "show_as_htmlならHTMLを返す" do
+    it "returns HTML with show_as_html" do
       get "/invoices/as_html"
 
       expect(last_response.headers["content-type"]).to start_with("text/html")
       expect(last_response.body).to include("<h1>Invoice #1234</h1>")
     end
 
-    it "未知のオプションはSghtmltopdf::UsageErrorになる" do
+    it "makes an unknown option a Sghtmltopdf::UsageError" do
       expect { get "/invoices/bad_option" }
         .to raise_error(Sghtmltopdf::UsageError, /--no-such-option/)
     end
   end
 
-  describe "Rails向けの既定オプション" do
-    it "Railtieがbase_urlとallowを入れる" do
+  describe "the Rails-oriented default options" do
+    it "has the Railtie inject base_url and allow" do
       expect(CONFIG_AFTER_BOOT[:base_url]).to eq(Rails.root.join("public").to_s)
       expect(CONFIG_AFTER_BOOT[:allow]).to eq([Rails.root.to_s])
     end
 
-    it "config/initializersなど後からの設定で上書きできる" do
+    it "lets a later setting such as config/initializers override them" do
       Sghtmltopdf.configure { |c| c.base_url = "/somewhere/else" }
 
       expect(Sghtmltopdf.config[:base_url]).to eq("/somewhere/else")
     end
 
-    it "base_urlの既定でpublic/のCSSが解決される" do
+    it "resolves the CSS in public/ through the base_url default" do
       html = '<link rel="stylesheet" href="/invoice.css"><h1>Invoice</h1>'
-      # 既定(Rails.root/public)ならinvoice.cssが読める。空のディレクトリを
-      # base_urlにすると読めない(取得失敗は既定で無視される)。
+      # With the default (Rails.root/public), invoice.css is readable. With an empty
+      # directory as base_url it is not (a failed fetch is ignored by default).
       resolved = Sghtmltopdf.render(html)
       missing = Dir.mktmpdir { |dir| Sghtmltopdf.render(html, base_url: dir) }
 
       expect(normalize(resolved)).not_to eq(normalize(missing))
     end
 
-    it "allowの既定ではRails.rootの外のファイルを読まない" do
+    it "does not read a file outside Rails.root under the allow default" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "outside.css"), "h1 { font-size: 48px }")
         html = '<link rel="stylesheet" href="outside.css"><h1>Invoice</h1>'
@@ -151,13 +151,12 @@ RSpec.describe "Railsのコントローラ", type: :rails do
     end
   end
 
-  # ブロック付きrenderをActionController::Liveと組み合わせて、
-  # 確定したページから順にRackのレスポンスへ流せること。
+  # Combine a block-taking render with ActionController::Live and stream to the Rack response
+  # page by page as they settle.
   #
-  # Rack::Testの`last_response.body`は使えない。`MockResponse`は
-  # ストリーミングのボディを読み切らずに最初のチャンクで止まるため、
-  # Rackのボディを自分で`each`する。
-  describe "Rackへのストリーミング" do
+  # Rack::Test's `last_response.body` cannot be used: `MockResponse` stops at the first chunk
+  # rather than reading a streaming body to the end, so the Rack body is `each`ed by hand.
+  describe "streaming to Rack" do
     def stream_response(path)
       status, headers, body = app.call(Rack::MockRequest.env_for(path))
       chunks = []
@@ -166,18 +165,18 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       [status, headers, chunks]
     end
 
-    it "response.streamへチャンクごとに書き出される" do
+    it "writes to response.stream chunk by chunk" do
       status, headers, chunks = stream_response("/streams/show")
 
       expect(status).to eq(200)
       expect(headers["content-type"]).to start_with("application/pdf")
-      # 一括で1回書き出しているのではないこと。
+      # It is not one single write.
       expect(chunks.size).to be > 1
       expect(chunks.first).to start_with("%PDF-")
       expect(chunks.last).to end_with("%%EOF")
     end
 
-    it "一括変換と同じPDFになる" do
+    it "gives the same PDF as a one-shot conversion" do
       _status, _headers, chunks = stream_response("/streams/show")
       html = StreamsController.render(template: "invoices/long", layout: false)
 
@@ -185,34 +184,34 @@ RSpec.describe "Railsのコントローラ", type: :rails do
     end
   end
 
-  describe "サーバモードへの委譲" do
-    it "コントローラからでもサーバへ委譲でき、Railsの既定値は送らない" do
+  describe "delegating to server mode" do
+    it "can delegate to a server from a controller too, without sending the Rails defaults" do
       FakeServer.run do |server|
         Sghtmltopdf.configure { |c| c.server_url = server.url }
         get "/invoices/show"
 
         expect(last_response.status).to eq(200)
         expect(last_response.body).to start_with("%PDF-")
-        # Railtieが入れる`base_url`/`allow`はサーバでは指定できないキーなので、
-        # 送ってしまうと400になる。
+        # The `base_url`/`allow` the Railtie injects are keys the server cannot be given, so
+        # sending them would give a 400.
         expect(server.last_request.query).to eq("")
         expect(server.last_request.body).to include("<h1>Invoice #1234</h1>")
       end
     end
   end
 
-  describe "ビューヘルパ" do
-    it "public/のCSSを<style>へ展開する" do
+  describe "the view helpers" do
+    it "inlines CSS from public/ into a <style>" do
       get "/invoices/with_stylesheet"
       inlined = last_response.body
 
-      # ヘルパを通したPDFは、CSSが当たっていない同じHTMLとは異なる。
+      # A PDF through the helper differs from the same HTML with no CSS applied.
       plain = Sghtmltopdf.render("<h1>Invoice</h1>")
 
       expect(normalize(inlined)).not_to eq(normalize(plain))
     end
 
-    it "見つからないアセットはnilを返す" do
+    it "returns nil for an asset that is not found" do
       view = InvoicesController.new.view_context
 
       expect(view.sghtmltopdf_asset_path("no-such-file.css")).to be_nil

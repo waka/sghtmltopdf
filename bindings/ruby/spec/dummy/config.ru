@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-# 手動確認用にdummyアプリをWebサーバで起動する。
+# Start the dummy app on a web server for manual checking.
 #
 #   bundle exec rackup spec/dummy/config.ru
 #   → http://localhost:9292/invoices/show
 #
-# specの`spec/rails_helper.rb`と同じアプリだが、あちらはRSpec前提で
-# ブート直後に`reset_config!`する(specの独立性のため)。ここでは
-# Railtieが入れた既定値をそのまま残したいので、独立して組んでいる。
+# The same app as the specs' `spec/rails_helper.rb`, but that one calls `reset_config!`
+# straight after boot (for spec independence). Here the defaults the Railtie injected are to
+# be kept, so it is assembled separately.
 ENV["RAILS_ENV"] ||= "development"
 
 require "bundler/setup"
@@ -24,7 +24,7 @@ module DummyServer
     config.eager_load = false
     config.secret_key_base = "sghtmltopdf" * 8
     config.logger = Logger.new($stdout)
-    # 例外はブラウザにバックトレースを出す。
+    # Exceptions print a backtrace to the browser.
     config.consider_all_requests_local = true
     config.hosts.clear
   end

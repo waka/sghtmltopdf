@@ -1,12 +1,12 @@
-//! `@page`(`size`/`margin`の文書全体上書き・`:first`/`:left`/`:right`による
-//! margin box出し分け)・`@media`(print/all常時適用・screen常時無視)・
-//! margin box(16個)・`counter(page)`/`counter(pages)`のE2Eテスト。
+//! E2E tests for `@page` (overriding `size`/`margin` document-wide, and varying the margin
+//! boxes with `:first`/`:left`/`:right`), `@media` (print/all always applied, screen always
+//! ignored), the 16 margin boxes, and `counter(page)`/`counter(pages)`.
 //!
-//! `background.rs`/`box_sizing.rs`と同じ方針: 実際のパイプラインを通して
-//! 回帰を検知する。この機能は`Engine`(`core/src/engine.rs`)に直接配線されて
-//! いる(`@page`の解決・`counter(pages)`のMode::Streaming制限・総ページ数の
-//! 事前カウントは`Engine`層の責務)ため、他のE2Eテストファイルと異なり
-//! `Engine` APIを直接使う。
+//! The same approach as `background.rs`/`box_sizing.rs`: catch regressions by going through
+//! the real pipeline. This feature is wired directly into `Engine` (`core/src/engine.rs`)
+//! (resolving `@page`, the Mode::Streaming restriction on `counter(pages)` and pre-counting
+//! the total pages are all the `Engine` layer's job), so unlike the other E2E test files it
+//! uses the `Engine` API directly.
 
 use sghtmltopdf_core::engine::{Engine, EngineError, EngineOptions, FontSpec, Mode};
 use sghtmltopdf_core::sink::MemorySink;
@@ -27,8 +27,8 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// `/MediaBox`の期待値をCSS pxで書けるようにするヘルパ。PDFへはpt(既定で
-/// 0.75倍)で書かれるため、ここで換算する。
+/// A helper letting the expected `/MediaBox` be written in CSS px. It is written to the PDF
+/// in pt (0.75x by default), so the conversion happens here.
 fn media_box(width_px: f32, height_px: f32) -> String {
     format!(
         "/MediaBox [0 0 {} {}]",
@@ -37,9 +37,9 @@ fn media_box(width_px: f32, height_px: f32) -> String {
     )
 }
 
-/// PDFのcontent streamはFlateDecodeで圧縮されているため、`/ToUnicode`CMap内の
-/// 文字を検索するには解凍が必要(`engine.rs`/`pdf::document`テストモジュール
-/// 内の同名関数と同じロジック、`/Length N`で正確にストリーム境界を切り出す)。
+/// A PDF's content stream is FlateDecode compressed, so searching for a character inside the
+/// `/ToUnicode` CMap requires inflating first (the same logic as the identically named
+/// functions in the `engine.rs` and `pdf::document` test modules, cutting the stream
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -114,8 +114,8 @@ fn at_page_size_and_margin_override_the_whole_document() {
 
 #[test]
 fn at_page_pseudo_class_size_is_ignored_only_unconditional_rules_apply() {
-    // `:first`等のsize/margin宣言はパースされるが適用されない(文書全体で
-    // 単一のジオメトリのまま)。無条件ルールのみが効く。
+    // The size/margin declarations of `:first` and friends parse but are not applied (the
+    // document keeps a single geometry throughout). Only the unconditional rules take effect.
     let bytes = build_pdf_batch(
         r#"<html><head><style>
              @page { size: 300px 400px; }
@@ -178,10 +178,10 @@ fn counter_page_and_pages_resolve_to_the_correct_glyphs_across_pages() {
            </style></head><body><div></div><div></div></body></html>"#,
     );
     let decompressed = decompressed_stream_bytes(&bytes);
-    // 2ページ文書: "counter(pages)"は常に'2'、"counter(page)"は'1'と'2'。
-    // 本文には数字が一切登場しないため、これらのToUnicode CMapエントリは
-    // margin box専用の使用グリフ収集(`collect_margin_box_usage`)経由でしか
-    // 生成されえない。
+    // A two-page document: "counter(pages)" is always '2' and "counter(page)" is '1' and '2'.
+    // No digit appears in the body at all, so those ToUnicode CMap entries can only be
+    // generated through the margin-box-specific glyph usage collection
+    // (`collect_margin_box_usage`).
     assert!(count_occurrences(&decompressed, b"<0031>") > 0, "'1' glyph");
     assert!(count_occurrences(&decompressed, b"<0032>") > 0, "'2' glyph");
 }

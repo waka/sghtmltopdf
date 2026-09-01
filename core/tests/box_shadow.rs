@@ -1,7 +1,7 @@
-//! `box-shadow`のE2Eテスト。
+//! E2E tests for `box-shadow`.
 //!
-//! `box_sizing.rs`と同じ方針: 実際のパイプライン(HTMLパース→スタイル
-//! カスケード→ページ分割→PDFエンコード)を通して回帰を検知する。
+//! The same approach as `box_sizing.rs`: catch regressions by going through the real
+//! pipeline (HTML parse, style cascade, pagination, PDF encode).
 
 use std::collections::HashMap;
 
@@ -26,11 +26,11 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// PDFバイト列中の全`stream`〜`endstream`区間を展開して連結したものを返す。
-/// 各ストリームの`/Length N`をパースして正確に`N`バイトを切り出す
-/// (`\nendstream`を素朴に探すだけの実装は、フォント埋め込みバイナリ中に
-/// 偶然そのバイト列が出現すると誤って区切ってしまうため、`engine.rs`の
-/// テストモジュール内の同名ヘルパーと同じ正確な実装を使う)。
+/// Return every `stream` to `endstream` region in the PDF bytes, inflated and concatenated.
+/// Each stream's `/Length N` is parsed and exactly `N` bytes are taken
+/// (an implementation naively searching for `\nendstream` cuts in the wrong place when those
+/// bytes happen to occur inside an embedded font binary, so this uses the same exact
+/// implementation as the identically named helper in `engine.rs`'s test module).
 fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         haystack.windows(needle.len()).position(|w| w == needle)
@@ -127,7 +127,7 @@ fn box_shadow_none_draws_nothing_extra_end_to_end() {
 
 #[test]
 fn box_shadow_inset_is_parsed_but_not_rendered_end_to_end() {
-    // `inset`はパースするが描画は非対応(既知の簡略化)。
+    // `inset` parses but drawing it is not supported (a known simplification).
     let with_inset = build_pdf(
         r#"<div class="box">x</div>"#,
         "body { margin: 0; } \
@@ -148,11 +148,11 @@ fn box_shadow_with_zero_blur_draws_exactly_one_rect_end_to_end() {
          .box { width: 100px; height: 60px; box-shadow: 4px 4px rgb(0, 0, 0); }",
     );
     let decompressed = decompressed_stream_bytes(&bytes);
-    // ぼかし無し(blur-radius: 0)は同心矩形近似のループをスキップし、コア矩形1
-    // 枚だけを描画する。`rounded_rect_path`は角丸パス(`m`/`l`/`c`/`h`)を
-    // 使うため、`close_path`+`fill_nonzero`の組み合わせ(`h\nf\n`)の出現回数で
-    // 描画枚数を数えられる。div自身にbackground-colorが無いため、この出現は
-    // box-shadow由来の1枚のみのはず。
+    // With no blur (blur-radius: 0) the concentric rectangle approximation loop is skipped
+    // and only the core rectangle is drawn. `rounded_rect_path` uses a rounded path
+    // (`m`/`l`/`c`/`h`), so the number drawn can be counted from the occurrences of
+    // `close_path` plus `fill_nonzero` (`h\nf\n`). The div itself has no background-color, so
+    // this occurrence should be the single one from the box-shadow.
     assert_eq!(count_occurrences(&decompressed, b"h\nf\n"), 1);
 }
 
@@ -164,7 +164,7 @@ fn box_shadow_with_blur_draws_multiple_concentric_rects_end_to_end() {
          .box { width: 100px; height: 60px; box-shadow: 0 0 20px rgba(0, 0, 0, 0.5); }",
     );
     let decompressed = decompressed_stream_bytes(&bytes);
-    // ぼかし近似は4段階のリング+コア矩形=5枚。
+    // The blur approximation is 4 rings plus the core rectangle = 5.
     assert_eq!(count_occurrences(&decompressed, b"h\nf\n"), 5);
 }
 
@@ -177,7 +177,7 @@ fn box_shadow_comma_separated_list_draws_each_shadow_end_to_end() {
                 box-shadow: 2px 2px rgb(255,0,0), 4px 4px rgb(0,0,255); }",
     );
     let decompressed = decompressed_stream_bytes(&bytes);
-    // 各シャドウがblur-radius: 0(コア矩形1枚)なので、2つ合わせて2枚。
+    // Each shadow has blur-radius: 0 (one core rectangle), so two together make 2.
     assert_eq!(count_occurrences(&decompressed, b"h\nf\n"), 2);
 }
 

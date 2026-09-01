@@ -1,113 +1,113 @@
 # frozen_string_literal: true
 
 RSpec.describe Sghtmltopdf::Options do
-  # argvの先頭は常に固定なので、比較しやすいよう取り除く。
+  # The first entries of argv are always fixed, so they are dropped to make comparison easier.
   def argv(options)
     described_class.to_argv(options).drop(Sghtmltopdf::Options::ARGV_PREFIX.size)
   end
 
-  it "入力と出力に標準ストリームを置いた先頭を必ず付ける" do
+  it "always prefixes the standard streams for input and output" do
     expect(described_class.to_argv({})).to eq(["sghtmltopdf", "-", "--output", "-"])
   end
 
-  describe "キーの変換" do
-    it "アンダースコアをハイフンにする" do
+  describe "key conversion" do
+    it "turns underscores into hyphens" do
       expect(argv(page_size: "A4")).to eq(["--page-size", "A4"])
     end
 
-    it "文字列のキーも受ける" do
+    it "accepts string keys too" do
       expect(argv("page-size" => "A4")).to eq(["--page-size", "A4"])
     end
   end
 
-  describe "値の変換" do
-    it "trueはフラグだけにする" do
+  describe "value conversion" do
+    it "turns true into the flag alone" do
       expect(argv(grayscale: true)).to eq(["--grayscale"])
     end
 
-    it "falseは指定なしと同じにする" do
+    it "treats false the same as not given" do
       expect(argv(grayscale: false)).to eq([])
     end
 
-    it "nilは指定なしと同じにする" do
+    it "treats nil the same as not given" do
       expect(argv(title: nil)).to eq([])
     end
 
-    it "数値はto_sする" do
+    it "calls to_s on a number" do
       expect(argv(dpi: 300)).to eq(["--dpi", "300"])
       expect(argv(zoom: 1.5)).to eq(["--zoom", "1.5"])
     end
 
-    it "Pathnameのようなオブジェクトもto_sする" do
+    it "calls to_s on an object such as a Pathname too" do
       require "pathname"
       expect(argv(user_style_sheet: Pathname.new("/tmp/a.css")))
         .to eq(["--user-style-sheet", "/tmp/a.css"])
     end
 
-    it "配列は同じオプションの繰り返しにする" do
+    it "turns an array into a repeated option" do
       expect(argv(allow: ["/a", "/b"])).to eq(["--allow", "/a", "--allow", "/b"])
     end
 
-    it "配列の中のtrue/falseにも同じ規則を使う" do
+    it "applies the same rules to true/false inside an array" do
       expect(argv(allow: ["/a", nil, "/b"])).to eq(["--allow", "/a", "--allow", "/b"])
     end
 
-    it "font以外にHashを渡すとエラーにする" do
-      expect { argv(page_size: {a: 1}) }.to raise_error(ArgumentError, /Hashは渡せません/)
+    it "raises for a Hash given to anything but font" do
+      expect { argv(page_size: {a: 1}) }.to raise_error(ArgumentError, /a Hash cannot be passed/)
     end
 
-    it "wicked_pdf形式の入れ子は平坦なキーを案内する" do
+    it "points at flat keys for wicked_pdf-style nesting" do
       expect { argv(margin: {top: 10}) }
         .to raise_error(ArgumentError, /margin_top/)
     end
   end
 
-  describe "複数オプション" do
-    it "渡された順に並べる" do
+  describe "several options" do
+    it "lists them in the order given" do
       expect(argv(page_size: "A4", margin_top: "20mm", grayscale: true))
         .to eq(["--page-size", "A4", "--margin-top", "20mm", "--grayscale"])
     end
   end
 
-  describe "font(位置依存)" do
-    it "文字列ひとつを--fontにする" do
+  describe "font (position-dependent)" do
+    it "turns a single string into --font" do
       expect(argv(font: "a.ttf")).to eq(["--font", "a.ttf"])
     end
 
-    it "pathとindexのHashではindexを直後に置く" do
+    it "puts the index immediately after, for a Hash of path and index" do
       expect(argv(font: {path: "a.ttc", index: 1}))
         .to eq(["--font", "a.ttc", "--font-index", "1"])
     end
 
-    it "配列では各fontの直後にそのindexを置く" do
-      # `--font-index`は「手前にある最後の--font」に対応付けられるため、
-      # この並び順でなければ別のフォントへ適用されてしまう。
+    it "puts each font's index immediately after it, in an array" do
+      # The `--font-index` is tied to "the last --font before it", so any other order
+      # would apply it to a different font.
       expect(argv(font: ["a.ttf", {path: "b.ttc", index: 2}]))
         .to eq(["--font", "a.ttf", "--font", "b.ttc", "--font-index", "2"])
     end
 
-    it "index: 0も省略しない" do
+    it "does not omit index: 0" do
       expect(argv(font: {path: "a.ttc", index: 0}))
         .to eq(["--font", "a.ttc", "--font-index", "0"])
     end
 
-    it "文字列キーのHashも受ける" do
+    it "accepts a Hash with string keys too" do
       expect(argv(font: {"path" => "a.ttc", "index" => 3}))
         .to eq(["--font", "a.ttc", "--font-index", "3"])
     end
 
-    it "pathが無いHashはエラーにする" do
-      expect { argv(font: {index: 1}) }.to raise_error(ArgumentError, /pathが必要/)
+    it "raises for a Hash with no path" do
+      expect { argv(font: {index: 1}) }.to raise_error(ArgumentError, /needs a path/)
     end
 
-    it "gothic_fontなど他のフォントオプションは通常の変換にする" do
+    it "treats the other font options such as gothic_font as ordinary conversions" do
       expect(argv(gothic_font: "g.ttf", gothic_font_index: 1))
         .to eq(["--gothic-font", "g.ttf", "--gothic-font-index", "1"])
     end
   end
 
-  describe "妥当性検査をしないこと" do
-    it "未知のオプションもそのままargvにする(判定はclapに任せる)" do
+  describe "not validating" do
+    it "puts an unknown option straight into argv (leaving the decision to clap)" do
       expect(argv(no_such_option: "x")).to eq(["--no-such-option", "x"])
     end
   end

@@ -1,9 +1,9 @@
-//! ローマ数字・アルファベット表記への変換。
-//! `layout::box_tree`(`list-style-type`のマーカー)と
-//! `style::computed`(`content: counter`)の両方から使われる共通ロジック。
+//! Conversion to Roman numerals and alphabetic notation.
+//! Shared logic used both by `layout::box_tree` (markers for `list-style-type`)
+//! and by `style::computed` (`content: counter`).
 
-/// アラビア数字からローマ数字(大文字)へ変換する。CSS2.1の慣習上意味を持つ
-/// 1〜3999の範囲外はアラビア数字のまま返す。
+/// Convert an Arabic number to an uppercase Roman numeral. Values outside 1-3999,
+/// the range CSS 2.1 gives meaning to, are returned as Arabic digits.
 pub fn to_roman(n: usize) -> String {
     const VALUES: [(usize, &str); 13] = [
         (1000, "M"),
@@ -34,7 +34,7 @@ pub fn to_roman(n: usize) -> String {
     out
 }
 
-/// アラビア数字からアルファベット(大文字、1-indexed: 1→A, 26→Z, 27→AA)へ変換する。
+/// Convert an Arabic number to letters (uppercase, 1-indexed: 1 -> A, 26 -> Z, 27 -> AA).
 pub fn to_alpha(n: usize) -> String {
     if n == 0 {
         return n.to_string();

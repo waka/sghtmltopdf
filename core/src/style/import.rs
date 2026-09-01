@@ -1,11 +1,11 @@
-//! `@import`文の検出・再帰展開(パース前のテキスト前処理)。
+//! Detecting and recursively expanding `@import` statements (text preprocessing before parsing).
 //!
-//! `parse_stylesheet`本体にI/Oを持ち込まず、パース前のCSSテキストに対する
-//! 文字列レベルの展開として実装する。`@import`文の検出はCSS仕様上の
-//! 「先頭にしか書けない」規定を厳密にvalidateせず、CSS内のどこにあっても
-//! 検出・展開する。
-//! 展開結果は、`@import`文があった位置にそのままフェッチ内容を差し込む
-//! (hoistして先頭にまとめるのではない、真の意味でのin-place置換)。
+//! Rather than bringing I/O into `parse_stylesheet` itself, this is implemented as a
+//! string-level expansion of the CSS text before parsing. Detection does not strictly
+//! validate the CSS rule that `@import` may only appear at the top; a statement is detected
+//! and expanded wherever it appears.
+//! The fetched content is spliced in exactly where the `@import` statement was: a genuine
+//! in-place substitution, not a hoist to the top.
 
 use std::ops::Range;
 
@@ -13,20 +13,20 @@ use cssparser::{Delimiter, Parser, ParserInput, Token};
 
 use crate::img::{DocumentImageCache, ImageFetcher};
 
-/// 循環import対策の再帰深さ上限。URL正規化による訪問済み集合の判定は相対/絶対
-/// /data:混在下でのコストが見合わないため、単純な深さ上限で代替する。
+/// Recursion depth limit, to guard against import cycles. Deciding a visited set through URL
+/// normalisation is not worth the cost here, so a simple depth limit stands in for it.
 const MAX_IMPORT_DEPTH: u32 = 16;
 
 struct ImportStatement {
     href: String,
-    /// 文全体(`@import`から終端の`;`まで)の元cssにおけるバイト範囲。
+    /// Byte range of the whole statement (from `@import` to the terminating `;`) in the original css.
     range: Range<usize>,
 }
 
-/// `css`中の`@import`文を検出し、フェッチした内容で再帰的に展開したCSS
-/// テキストを返す。フェッチ・デコードに失敗した`@import`、または
-/// [`MAX_IMPORT_DEPTH`]を超えた`@import`は、その1件だけ無視して標準エラー
-/// 出力に警告を出し、処理を継続する(画像・外部スタイルシートと同じ方針)。
+/// Detect the `@import` statements in `css` and return the CSS text with them recursively
+/// expanded from what was fetched. An `@import` that fails to fetch or decode, or that
+/// exceeds [`MAX_IMPORT_DEPTH`], is skipped on its own with a warning on standard error,
+/// and processing continues (the same policy as images and external stylesheets).
 pub fn resolve_imports(
     css: &str,
     fetcher: &ImageFetcher,
@@ -47,7 +47,7 @@ pub fn resolve_imports(
 
         if depth >= MAX_IMPORT_DEPTH {
             eprintln!(
-                "警告: @importの再帰が深すぎるため無視しました(上限{MAX_IMPORT_DEPTH}階層): {}",
+                "warning: ignoring an @import nested too deeply (limit {MAX_IMPORT_DEPTH} levels): {}",
                 import.href
             );
             continue;
@@ -60,18 +60,18 @@ pub fn resolve_imports(
                     result.push('\n');
                 }
                 Err(_) => eprintln!(
-                    "警告: @importで取得したCSSがUTF-8として解釈できません: {}",
+                    "warning: the CSS fetched by @import is not valid UTF-8: {}",
                     import.href
                 ),
             },
-            Err(e) => eprintln!("警告: @importの取得に失敗しました: {}: {e}", import.href),
+            Err(e) => eprintln!("warning: @import failed to fetch: {}: {e}", import.href),
         }
     }
     result.push_str(&css[cursor..]);
     result
 }
 
-/// `css`中の`@import`文をトークン走査で検出する(I/Oは行わない)。
+/// Detect the `@import` statements in `css` by scanning tokens (no I/O).
 fn find_imports(css: &str) -> Vec<ImportStatement> {
     let mut input = ParserInput::new(css);
     let mut parser = Parser::new(&mut input);
@@ -81,9 +81,9 @@ fn find_imports(css: &str) -> Vec<ImportStatement> {
         let start_state = parser.state();
         match parser.next_including_whitespace_and_comments() {
             Ok(Token::AtKeyword(name)) if name.eq_ignore_ascii_case("import") => {
-                // メディアクエリ付き(`@import url(...) screen;`)であっても、
-                // hrefだけを取り出しメディア部分は無条件import扱いで捨てる
-                // (`@media`自体が非対応スコープのため)。
+                // Even with a media query (`@import url(...) screen;`), only the href is
+                // taken and the media part is discarded, treating it as an unconditional
+                // import (`@media` itself is out of scope).
                 let href = parser
                     .parse_until_before::<_, _, ()>(Delimiter::Semicolon, |input| {
                         input
@@ -92,7 +92,7 @@ fn find_imports(css: &str) -> Vec<ImportStatement> {
                             .map_err(|_| input.new_custom_error(()))
                     })
                     .ok();
-                let _ = parser.next(); // 終端の`;`(あれば)まで読み飛ばす。
+                let _ = parser.next(); // Skip to the terminating `;` (if there is one).
                 let end = parser.position().byte_index();
                 if let Some(href) = href {
                     found.push(ImportStatement {
@@ -194,7 +194,7 @@ mod tests {
         let fetcher = ImageFetcher::new(dir.clone(), false);
         let cache = DocumentImageCache::new();
 
-        // 無限再帰にならず、MAX_IMPORT_DEPTHで打ち切られて終了することを確認する。
+        // Check that it does not recurse forever but stops at MAX_IMPORT_DEPTH.
         let expanded = resolve_imports(r#"@import url("a.css");"#, &fetcher, &cache, 0);
         assert!(expanded.contains("a { color: red; }"));
         assert!(expanded.contains("b { color: blue; }"));

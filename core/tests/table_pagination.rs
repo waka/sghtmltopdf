@@ -1,7 +1,7 @@
-//! テーブルの行単位ページ分割のE2Eテスト。
+//! E2E tests for splitting a table across pages row by row.
 //!
-//! 回帰の本体: 実装前は「テーブルはページ分割に対してアトミック」だったため、
-//! ページに収まらない行が描画されずに出力から失われ、空ページも生まれていた。
+//! The regression itself: before this was implemented a table was atomic with respect to
+//! pagination, so rows that did not fit a page were lost undrawn and empty pages appeared.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -29,7 +29,7 @@ fn table_html(row_count: usize) -> String {
     format!("<table border=\"1\" cellspacing=\"0\">{rows}</table>")
 }
 
-/// ページ分割の結果から、ページごとの「テーブル行の数」を返す。
+/// From the pagination result, return the number of table rows per page.
 fn rows_per_page(html_src: &str) -> Vec<usize> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
@@ -183,7 +183,7 @@ fn a_long_table_also_splits_in_streaming_mode() {
     let bytes = engine.finish().unwrap();
 
     assert!(bytes.starts_with(b"%PDF-"));
-    // `/Count N`(ページツリー)で複数ページになっていることを確認する。
+    // Confirm from `/Count N` (the page tree) that it really is several pages.
     let text = String::from_utf8_lossy(&bytes);
     assert!(
         !text.contains("/Count 1\n"),
@@ -191,7 +191,7 @@ fn a_long_table_also_splits_in_streaming_mode() {
     );
 }
 
-// ===== `<thead>`のページまたぎ繰り返し =====
+// ===== Repeating `<thead>` across pages =====
 
 fn table_with_head(row_count: usize) -> String {
     let rows: String = (0..row_count)
@@ -205,7 +205,7 @@ fn table_with_head(row_count: usize) -> String {
     )
 }
 
-/// ページごとに、各行の1つ目のセルのテキストを返す。
+/// Return the text of each row's first cell, per page.
 fn first_cell_texts_per_page(html_src: &str) -> Vec<Vec<String>> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
@@ -270,11 +270,11 @@ fn the_table_header_repeats_on_every_page() {
             "page {i} should start with the repeated header, got {rows:?}"
         );
     }
-    // 見出しは各ページに1回だけ。
+    // The heading appears exactly once per page.
     for rows in &per_page {
         assert_eq!(rows.iter().filter(|t| *t == "No").count(), 1);
     }
-    // 本文の行は複製されない(0〜79が1回ずつ)。
+    // The body rows are not duplicated (0 to 79, once each).
     let body: Vec<&String> = per_page.iter().flatten().filter(|t| *t != "No").collect();
     assert_eq!(body.len(), 80);
     assert_eq!(body[0], "0");
@@ -290,7 +290,7 @@ fn a_table_that_fits_on_one_page_does_not_duplicate_its_header() {
 
 #[test]
 fn tfoot_is_moved_to_the_end_of_the_table() {
-    // HTML4では`<tfoot>`を`<tbody>`より前に書く決まりだった。
+    // HTML4 required `<tfoot>` to be written before `<tbody>`.
     let html_src = "<table>\
           <thead><tr><td>H</td></tr></thead>\
           <tfoot><tr><td>F</td></tr></tfoot>\

@@ -1,4 +1,4 @@
-//! HTMLパースとDOM構築(html5ever)。
+//! HTML parsing and DOM construction (html5ever).
 
 mod dom;
 mod parse;
@@ -10,25 +10,25 @@ pub use dom::{
     Node, NodeData, NodeId,
 };
 
-/// 受け付けるDOMの最大深さ。これを超える入力はエラーで拒否する。
+/// Maximum DOM depth accepted. Deeper input is rejected with an error.
 ///
-/// 1段あたりのスタック消費は実測で最適化ビルド約4.6KiB・デバッグビルド約11KiB
-/// だった(2MiBスタックでの限界がそれぞれ深さ約450・約195)。この上限は
-/// デバッグビルド換算で約2.8MiBに相当するため、レンダリングを行うスレッドには
-/// [`STACK_SIZE`](crate::cli::STACK_SIZE)程度のスタックが要る。CLI・HTTPサーバ・
-/// Ruby拡張はいずれも自前でスタックを確保したスレッド上で実行する。
+/// Measured stack use per level is about 4.6KiB in an optimised build and about 11KiB
+/// in a debug build (limits of roughly depth 450 and 195 on a 2MiB stack). This cap
+/// works out to about 2.8MiB in debug-build terms, so the rendering thread needs a
+/// stack of roughly [`STACK_SIZE`](crate::cli::STACK_SIZE). The CLI, the HTTP server
+/// and the Ruby extension all run on a thread whose stack they allocate themselves.
 pub const MAX_ELEMENT_DEPTH: u32 = 256;
 
-/// 同時に保持できるノード数の上限。これを超える入力はエラーで拒否する。
+/// Maximum number of nodes held at once. Larger input is rejected with an error.
 ///
-/// DOMだけでなく、算出スタイル・ボックスツリー・レイアウト結果・ページが
-/// ノード数に比例して積み上がる。実測(最適化ビルド)では1ノードあたり
-/// 472B(テーブル)〜1210B(インライン要素の羅列)で、形状によらずノード数に
-/// ほぼ線形だった。50万ノードなら最悪でも約600MiBに収まる。
+/// Not just the DOM: computed styles, the box tree, layout results and pages all grow
+/// in proportion to the node count. Measurements (optimised build) came out at 472B per
+/// node (tables) to 1210B (a run of inline elements), and stayed roughly linear in node
+/// count regardless of shape. 500,000 nodes therefore stay under about 600MiB.
 ///
-/// テキスト量に比例するメモリはこの上限では抑えられない(ノード3個でも
-/// 10MiBのテキストなら1.7GiB使う)。そちらはHTTPサーバの
-/// `--max-body-size`が担当する。
+/// Memory proportional to the amount of text is not bounded by this cap (three nodes
+/// holding 10MiB of text still use 1.7GiB). That is what the HTTP server's
+/// `--max-body-size` is for.
 pub const MAX_NODES: usize = 500_000;
 pub use encoding::{decode_html, StreamingDecoder};
 pub use parse::{parse, StreamingParser};

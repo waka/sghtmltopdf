@@ -1,36 +1,36 @@
-//! `<img>`要素のDOM属性抽出。
+//! Extraction of DOM attributes from `<img>` elements.
 //!
-//! `width`/`height`はCSSの値ではなくHTML属性(単位なしの整数px)を指す。
+//! `width`/`height` here means the HTML attributes (unitless integer px), not the CSS values.
 //!
-//! HTML仕様の"rules for parsing non-negative integers"は、先頭の空白を
-//! 読み飛ばした後、数字が続く限り読んで残りは無視する(文字列全体が数字列
-//! である必要はない)。そのため`width="100px"`のような単位付きの値も
-//! ブラウザ実装では`100`として解釈される。この挙動に合わせ、`str::parse`の
-//! ような文字列全体一致ではなく、先頭の数字列だけを取り出して解釈する。
+//! The HTML spec's "rules for parsing non-negative integers" skip leading whitespace,
+//! then read digits for as long as they continue and ignore the rest (the whole string
+//! does not have to be digits). That is why a value with a unit, such as `width="100px"`,
+//! is read as `100` by browsers. We match that: instead of a whole-string match like
+//! `str::parse`, we take only the leading run of digits.
 
 use html5ever::Attribute;
 
 use crate::html::{Dom, NodeData, NodeId};
 
-/// `<img>`要素から読み取った属性(URL解決前の生の値)。
+/// Attributes read from an `<img>` element (raw values, before URL resolution).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImgAttrs {
-    /// `src`属性の値(空文字列は`None`扱いになるためここには来ない)。
+    /// Value of the `src` attribute (an empty string becomes `None`, so it never lands here).
     pub src: String,
-    /// `width`属性の値(px単位、未指定または非数値は`None`)。
+    /// Value of the `width` attribute (in px; `None` if absent or non-numeric).
     pub width: Option<u32>,
-    /// `height`属性の値(px単位、未指定または非数値は`None`)。
+    /// Value of the `height` attribute (in px; `None` if absent or non-numeric).
     pub height: Option<u32>,
-    /// `alt`属性の値。属性そのものが無ければ`None`、`alt=""`のような
-    /// 明示的な空値は`Some(String::new())`として区別する(装飾目的の画像を
-    /// 表す`alt=""`と、未指定を区別するHTMLの慣習に合わせる)。
+    /// Value of the `alt` attribute. `None` if the attribute is absent; an explicitly empty
+    /// value such as `alt=""` is kept as `Some(String::new())`, following the HTML
+    /// convention of distinguishing decorative `alt=""` from an unset attribute.
     pub alt: Option<String>,
 }
 
-/// `node`が`src`属性を持つ`<img>`要素の場合のみ属性を読み取る。
+/// Read the attributes only if `node` is an `<img>` element carrying a `src` attribute.
 ///
-/// `<img>`要素でない、または`src`が無い(あっても空文字列)場合は`None`を
-/// 返す。呼び出し側はこれを「画像なしの置換要素」として扱う。
+/// Returns `None` if it is not an `<img>`, or if `src` is missing (or present but empty).
+/// Callers treat that as a "replaced element with no image".
 pub fn read_img_attrs(dom: &Dom, node: NodeId) -> Option<ImgAttrs> {
     let NodeData::Element { name, attrs, .. } = &dom.node(node).data else {
         return None;
@@ -65,10 +65,10 @@ fn read_pixel_attr(attrs: &[Attribute], name: &str) -> Option<u32> {
     find_attr(attrs, name).and_then(parse_non_negative_integer_prefix)
 }
 
-/// HTML仕様の"rules for parsing non-negative integers"を簡略化して適用する:
-/// 先頭の空白を読み飛ばし、後続の数字列を読めるだけ読んで10進数として
-/// 解釈する(以降の非数字はすべて無視する)。
-/// 数字が1つも無ければ`None`。先頭が`-`なら数字の収集そのものが始まらないため自然に`None`になる。
+/// A simplified version of the HTML spec's "rules for parsing non-negative integers":
+/// skip leading whitespace, then read as many digits as follow and interpret them as
+/// decimal (everything after the first non-digit is ignored).
+/// `None` if there is no digit at all. A leading `-` never starts collecting digits, so it naturally yields `None`.
 fn parse_non_negative_integer_prefix(value: &str) -> Option<u32> {
     let digits: String = value
         .trim_start()
@@ -130,9 +130,9 @@ mod tests {
 
     #[test]
     fn width_and_height_accept_a_trailing_unit_suffix() {
-        // HTML仕様上、width/height属性値は先頭の数字列だけを読んで残りは
-        // 無視するため、`100px`や`50%`のような単位付きの値も実質px指定として
-        // 解釈される(ブラウザの実際の挙動と一致させる)。
+        // Per the HTML spec, a width/height attribute value is read only up to its leading
+        // run of digits, so values with a unit such as `100px` or `50%` are effectively
+        // read as px (matching what browsers actually do).
         let dom = html::parse(br#"<img src="logo.png" width="100px" height="50%">"#);
         let img = find(&dom, dom.document(), "img").expect("img not found");
 

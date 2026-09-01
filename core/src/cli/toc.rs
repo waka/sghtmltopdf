@@ -1,37 +1,37 @@
-//! 目次(`--toc`)のHTML組み立て。
+//! Building the HTML for the table of contents (`--toc`).
 //!
-//! 生成する構造と既定スタイルはwkhtmltopdfの既定TOC XSL
-//! (`src/lib/tocstylesheet.cc`)の出力に合わせる。
-//! 階層は入れ子の`<ul>`で表現し、各項目は
-//! `<li><div><a>見出し</a><span>ページ番号</span></div><ul>子</ul></li>`。
+//! The structure and default styles match the output of wkhtmltopdf's default TOC XSL
+//! (`src/lib/tocstylesheet.cc`).
+//! Nesting is expressed with nested `<ul>`, and each item is
+//! `<li><div><a>heading</a><span>page number</span></div><ul>children</ul></li>`.
 
 use std::fmt::Write as _;
 
-/// 目次1項目分。
+/// One table-of-contents entry.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TocEntry {
-    /// 見出しレベル(`h1`=1 … `h6`=6)。
+    /// Heading level (`h1` = 1 ... `h6` = 6).
     pub level: u8,
     pub title: String,
-    /// 表示するページ番号。
+    /// Page number to display.
     pub page: usize,
-    /// リンク先の名前付き宛先。
+    /// Named destination to link to.
     pub anchor: String,
-    /// `--enable-toc-back-links`用に、この項目自身へ付ける宛先名。
+    /// Destination name attached to this entry itself, for `--enable-toc-back-links`.
     pub back_anchor: Option<String>,
 }
 
-/// 目次の見た目に関わるオプション(wkhtmltopdf互換)。
+/// Options affecting how the table of contents looks (wkhtmltopdf compatible).
 #[derive(Debug, Clone)]
 pub struct TocOptions {
     pub header_text: String,
-    /// `ul`のインデント(CSSの長さとしてそのまま書く)。
+    /// Indentation of `ul` (written out verbatim as a CSS length).
     pub level_indentation: String,
-    /// 入れ子1段ごとの文字サイズ比(既定0.8)。
+    /// Font-size ratio per nesting level (default 0.8).
     pub text_size_shrink: f32,
-    /// `div`に破線の下線を引くか。
+    /// Whether to draw a dashed underline on the `div`.
     pub dotted_lines: bool,
-    /// 目次→見出しのリンクを張るか。
+    /// Whether to link entries to their headings.
     pub links: bool,
 }
 
@@ -47,7 +47,7 @@ impl Default for TocOptions {
     }
 }
 
-/// 目次のHTMLドキュメントを組み立てる。
+/// Build the table-of-contents HTML document.
 pub fn build_toc_html(entries: &[TocEntry], options: &TocOptions) -> String {
     let mut html = String::from("<html><head><style>\n");
     let _ = write!(
@@ -73,7 +73,7 @@ pub fn build_toc_html(entries: &[TocEntry], options: &TocOptions) -> String {
     html
 }
 
-/// 見出しレベルの相対関係で入れ子の`<ul>`を作る。
+/// Build nested `<ul>` from the relative heading levels.
 fn write_entries(html: &mut String, entries: &[TocEntry], options: &TocOptions) {
     if entries.is_empty() {
         html.push_str("<ul></ul>\n");
@@ -81,17 +81,17 @@ fn write_entries(html: &mut String, entries: &[TocEntry], options: &TocOptions) 
     }
 
     html.push_str("<ul>\n");
-    // 現在開いている`<li>`のレベルを積む。
+    // Stack of levels for the `<li>` elements currently open.
     let mut open_levels: Vec<u8> = Vec::new();
 
     for entry in entries {
         while let Some(&top) = open_levels.last() {
             if entry.level > top {
-                // 深くなる: 子のリストを開く。
+                // Going deeper: open a child list.
                 html.push_str("<ul>\n");
                 break;
             }
-            // 同じか浅い: 開いている項目を閉じる。
+            // Same level or shallower: close the open entry.
             html.push_str("</li>\n");
             open_levels.pop();
             if let Some(&next_top) = open_levels.last() {
@@ -106,7 +106,7 @@ fn write_entries(html: &mut String, entries: &[TocEntry], options: &TocOptions) 
         open_levels.push(entry.level);
     }
 
-    // 残りを閉じる。
+    // Close what is left.
     while open_levels.pop().is_some() {
         html.push_str("</li>\n");
         if !open_levels.is_empty() {
@@ -169,10 +169,10 @@ mod tests {
 
     #[test]
     fn an_entry_uses_the_div_a_span_structure() {
-        let html = build_toc_html(&[entry(1, "はじめに", 3)], &TocOptions::default());
+        let html = build_toc_html(&[entry(1, "Introduction", 3)], &TocOptions::default());
         assert!(
-            // `"#`を含むためraw stringは`r##`で囲む。
-            html.contains(r##"<li><div><a href="#a3">はじめに</a><span>3</span></div>"##),
+            // Contains `"#`, so the raw string needs `r##` delimiters.
+            html.contains(r##"<li><div><a href="#a3">Introduction</a><span>3</span></div>"##),
             "got: {html}"
         );
     }
@@ -183,7 +183,7 @@ mod tests {
             &[entry(1, "A", 1), entry(2, "A-1", 2), entry(1, "B", 3)],
             &TocOptions::default(),
         );
-        // A の下に子 <ul> が開き、B の前に閉じる。
+        // A child <ul> opens under A and closes before B.
         let a = html.find("A</a>").unwrap();
         let child_ul = html[a..].find("<ul>").unwrap() + a;
         let a1 = html.find("A-1</a>").unwrap();
@@ -193,14 +193,14 @@ mod tests {
             "child <ul> must open before the nested entry"
         );
         assert!(a1 < b);
-        // 閉じタグの数が釣り合っている。
+        // Opening and closing tags balance.
         assert_eq!(html.matches("<ul>").count(), html.matches("</ul>").count());
         assert_eq!(html.matches("<li>").count(), html.matches("</li>").count());
     }
 
     #[test]
     fn a_level_jump_counts_as_one_nesting_step() {
-        // h1 -> h3 の飛びも1段だけ深くする。
+        // A jump from h1 to h3 still only nests one level.
         let html = build_toc_html(
             &[entry(1, "A", 1), entry(3, "A-x", 2)],
             &TocOptions::default(),
@@ -212,14 +212,14 @@ mod tests {
     #[test]
     fn options_change_the_generated_css_and_links() {
         let options = TocOptions {
-            header_text: "目次".to_string(),
+            header_text: "Contents".to_string(),
             level_indentation: "2em".to_string(),
             text_size_shrink: 0.5,
             dotted_lines: false,
             links: false,
         };
         let html = build_toc_html(&[entry(1, "A", 1)], &options);
-        assert!(html.contains("<h1>目次</h1>"));
+        assert!(html.contains("<h1>Contents</h1>"));
         assert!(html.contains("padding-left: 2em;"));
         assert!(html.contains("ul ul { font-size: 50%; }"));
         assert!(!html.contains("border-bottom"));

@@ -1,27 +1,27 @@
-//! CSS Custom Properties(`--foo`/`var()`)の、パース前テキスト置換による対応。
+//! Support for CSS Custom Properties (`--foo`/`var()`) by text substitution before parsing.
 //!
-//! `style/import.rs::resolve_imports`(`@import`展開)と同じ「トークン走査で
-//! バイト範囲を特定し、元テキストから置換後の文字列を再構築する」パターンを
-//! 使う。cascade/継承ベースの実装ではなく、文書全体でフラットな名前空間の
-//! 単純なテキスト置換であることに注意。`parse_stylesheet`本体はこの
-//! モジュールを経由した後のテキストを受け取るため、`var()`も
-//! カスタムプロパティも一切知らないままでよい。
+//! It uses the same pattern as `style/import.rs::resolve_imports` (`@import` expansion):
+//! locate byte ranges by scanning tokens, then rebuild the substituted string from the
+//! original text. Note that this is not a cascade- or inheritance-based implementation, but
+//! a simple text substitution over one flat namespace across the whole document.
+//! `parse_stylesheet` itself receives the text after it has been through this module, so it
+//! never has to know about `var()` or custom properties at all.
 
 use std::collections::HashMap;
 
 use cssparser::{ParseError, Parser, ParserInput, Token};
 
-/// `declared`自身に含まれる`var()`の解決・文書全体への適用それぞれで安定する
-/// まで繰り返す反復回数の上限(`MAX_IMPORT_DEPTH`と同じ考え方)。
+/// Iteration cap for repeating until both the `var()`s inside `declared` itself and the
+/// application across the document settle (the same idea as `MAX_IMPORT_DEPTH`).
 const MAX_SUBSTITUTION_ITERATIONS: u32 = 8;
 
-/// `css`中の`--foo: value;`宣言・`var(--foo, fallback)`呼び出しをすべて
-/// テキストとして解決した後のCSSテキストを返す。
+/// Return the CSS text after resolving, as text, every `--foo: value;` declaration and
+/// every `var(--foo, fallback)` call in `css`.
 pub fn substitute_custom_properties(css: &str) -> String {
     let mut declared = collect_custom_properties(css);
 
-    // 他のカスタムプロパティを参照するカスタムプロパティ(`--b: var(--a)`)を、
-    // 宣言順に関係なく解決できるよう安定するまで解決する。
+    // Resolve until it settles, so a custom property referring to another (`--b: var(--a)`)
+    // works regardless of declaration order.
     for _ in 0..MAX_SUBSTITUTION_ITERATIONS {
         let mut changed = false;
         let next: HashMap<String, String> = declared
@@ -38,9 +38,8 @@ pub fn substitute_custom_properties(css: &str) -> String {
         }
     }
 
-    // 文書全体へ適用する。フォールバック値の中に別の`var()`が残っているケース
-    // (`var(--a, var(--b))`で`--a`が未定義の場合)も解決できるよう、安定する
-    // まで繰り返す。
+    // Apply across the whole document. Repeat until it settles so a `var()` left inside a
+    // fallback value (`var(--a, var(--b))` where `--a` is undefined) is resolved too.
     let mut result = css.to_string();
     for _ in 0..MAX_SUBSTITUTION_ITERATIONS {
         let next = substitute_var_calls(&result, &declared);
@@ -52,12 +51,12 @@ pub fn substitute_custom_properties(css: &str) -> String {
     result
 }
 
-/// トークンがブロック開始(`{`/`(`/`[`/`func(`)であれば、`cssparser`の
-/// 仕様上その中身は`Parser::parse_nested_block`で明示的に入らない限り
-/// 見えない(次の`next()`呼び出しで自動的にブロック終端まで読み飛ばされる)。
-/// `--foo: value`は`{ }`ルール本体の中にしかない(`@page`/`@media`等の
-/// at-ruleブロックも含む)ため、収集・置換のどちらも全ブロック型に対して
-/// 再帰的に降りる必要がある。
+/// If a token starts a block (`{`/`(`/`[`/`func(`), then by cssparser's rules its contents
+/// are invisible unless entered explicitly with `Parser::parse_nested_block` (the next
+/// `next()` call skips automatically to the end of the block).
+/// `--foo: value` only ever appears inside a `{ }` rule body (including at-rule blocks such
+/// as `@page` and `@media`), so both collection and substitution have to descend
+/// recursively into every block type.
 fn is_block_start(token: &Token) -> bool {
     matches!(
         token,
@@ -68,9 +67,9 @@ fn is_block_start(token: &Token) -> bool {
     )
 }
 
-/// `css`中の`--foo: value;`宣言を走査して収集する(トークン走査、I/Oなし)。
-/// 同名の宣言が複数あれば、テキスト出現順で最後のものが勝つ(セレクタの
-/// 詳細度・オリジンは見ない)。
+/// Scan `css` and collect its `--foo: value;` declarations (token scan, no I/O).
+/// With several declarations of the same name, the last in text order wins (selector
+/// specificity and origin are not considered).
 fn collect_custom_properties(css: &str) -> HashMap<String, String> {
     let mut input = ParserInput::new(css);
     let mut parser = Parser::new(&mut input);
@@ -79,9 +78,8 @@ fn collect_custom_properties(css: &str) -> HashMap<String, String> {
     declared
 }
 
-/// `parser`の現在のスコープ(文書全体、または`parse_nested_block`で入った
-/// ブロックの内部)を走査する。ブロック開始トークンに遭遇したら再帰的に
-/// 中身も走査する。
+/// Scan `parser`'s current scope (the whole document, or the inside of a block entered via
+/// `parse_nested_block`). On a block-start token, recurse into the contents as well.
 fn collect_custom_properties_in_scope(
     parser: &mut Parser,
     css: &str,
@@ -100,16 +98,15 @@ fn collect_custom_properties_in_scope(
                     match parser.next() {
                         Ok(Token::Semicolon) => break state.position().byte_index(),
                         Ok(Token::CloseCurlyBracket) => {
-                            // このブロックの終端`}`は消費せず、外側のループへ戻す。
+                            // Do not consume this block's closing `}`; hand it back to the outer loop.
                             parser.reset(&state);
                             break state.position().byte_index();
                         }
                         Ok(token) if is_block_start(token) => {
-                            // ここで即座に消費してしまう(`continue`で先送りに
-                            // すると、次のイテレーションで捕まえる`state()`が
-                            // 保留中のブロックスキップより前の不正確な位置に
-                            // なってしまうため)。値の一部としての中身は
-                            // 素通りしてよいので、単に最後まで読み飛ばす。
+                            // Consume it right here (deferring with `continue` would make
+                            // the `state()` captured on the next iteration land at an
+                            // inaccurate position, before the pending block skip). The
+                            // contents are just part of a value, so simply skip to the end.
                             let _ = parser.parse_nested_block(
                                 |input| -> Result<(), ParseError<'_, ()>> {
                                     while input.next().is_ok() {}
@@ -139,9 +136,9 @@ fn collect_custom_properties_in_scope(
     }
 }
 
-/// `css`中の`var(--foo)`/`var(--foo, fallback)`を、`declared`を使って1回分
-/// テキスト置換する(ネストしたフォールバック中の`var()`解決は
-/// [`substitute_custom_properties`]側の反復に任せる)。
+/// Substitute `var(--foo)`/`var(--foo, fallback)` in `css` once, using `declared`
+/// (resolving `var()` inside a nested fallback is left to the iteration in
+/// [`substitute_custom_properties`]).
 fn substitute_var_calls(css: &str, declared: &HashMap<String, String>) -> String {
     let mut input = ParserInput::new(css);
     let mut parser = Parser::new(&mut input);
@@ -152,11 +149,11 @@ fn substitute_var_calls(css: &str, declared: &HashMap<String, String>) -> String
     result
 }
 
-/// `parser`の現在のスコープを走査し、見つけた`var()`の置換テキストを
-/// `result`へ書き出す(`cursor`は`css`中で未書き出しの開始位置)。
-/// ブロック開始トークンに遭遇したら再帰的に中身も処理する(`{`/`(`/`[`
-/// 自体はここでは書き出さず、`cursor`を進めないままにすることで、次の
-/// 書き出しタイミングでまとめて元テキストのまま流れるようにする)。
+/// Scan `parser`'s current scope and write the substituted text of each `var()` found into
+/// `result` (`cursor` is the start of what has not been written yet in `css`).
+/// On a block-start token, recurse into the contents as well (the `{`/`(`/`[` itself is not
+/// written here; leaving `cursor` where it is lets the original text flow through together
+/// at the next write).
 fn substitute_var_calls_in_scope(
     parser: &mut Parser,
     css: &str,
@@ -189,9 +186,9 @@ fn substitute_var_calls_in_scope(
                         Some(value) => value.clone(),
                         None => match fallback_range {
                             Some((start, end)) => css[start..end].trim().to_string(),
-                            // 未定義でフォールバックも無い場合は元の
-                            // テキストのまま残す(後段のプロパティパーサが未知
-                            // トークンとして黙って無視する)。
+                            // Undefined and with no fallback: leave the original text in
+                            // place (the property parser downstream silently ignores it as
+                            // an unknown token).
                             None => css[call_start..call_end].to_string(),
                         },
                     },

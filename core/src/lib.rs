@@ -1,4 +1,4 @@
-/// CLI実装。`cli` feature(既定ON)でのみ有効。
+/// CLI implementation. Only available with the `cli` feature (on by default).
 #[cfg(feature = "cli")]
 pub mod cli;
 pub mod engine;

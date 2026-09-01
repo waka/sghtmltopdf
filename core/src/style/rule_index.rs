@@ -1,15 +1,15 @@
-//! スタイルルールの索引。
+//! An index over the style rules.
 //!
-//! セレクタマッチングは要素ごとに行うため、素直に実装すると
-//! 「要素数 x ルール数」回の照合になる。実際にはほとんどのルールは
-//! 末尾の複合セレクタ(`div p`なら`p`の部分)にタグ名・クラス・idの
-//! いずれかを要求しており、それを持たない要素とは照合するまでもなく
-//! 非マッチと分かる。ここではルールをその要求ごとにバケットへ分け、
-//! 要素が持つタグ名・クラス・idに対応するバケットだけを候補として
-//! 返すことで、要素あたりの照合回数を候補数まで減らす。
+//! Selector matching runs per element, so a naive implementation performs
+//! "element count x rule count" comparisons. In practice almost every rule requires a tag
+//! name, class or id in its rightmost compound selector (the `p` part of `div p`), and an
+//! element without it can be ruled out without any comparison at all. This module buckets
+//! rules by that requirement and returns only the buckets matching an element's tag name,
+//! classes and id as candidates, cutting the comparisons per element down to the number of
+//! candidates.
 //!
-//! 索引が返すのはあくまで候補であり、実際にマッチするかの判定は
-//! 従来どおり`selectors`の照合が行う(索引は取りこぼしを作らない)。
+//! What the index returns is only candidates; whether a rule actually matches is decided as
+//! before by `selectors` (the index never drops a match).
 
 use std::collections::HashMap;
 
@@ -20,13 +20,13 @@ use crate::html::{Dom, NodeData, NodeId};
 use super::selector_impl::SgSelectorImpl;
 use super::stylesheet::StyleRule;
 
-/// ルールが要求する、末尾の複合セレクタの絞り込みキー。
+/// The narrowing key a rule requires of its rightmost compound selector.
 enum Bucket {
     Id(String),
     Class(String),
     LocalName(String),
-    /// タグ名・クラス・idのいずれも要求しない(`*`、属性セレクタ、
-    /// 複数セレクタの`:is()`など)。どの要素に対しても候補になる。
+    /// Requires no tag name, class or id (`*`, an attribute selector, a multi-selector
+    /// `:is()` and so on). A candidate for every element.
     Any,
 }
 
@@ -35,13 +35,13 @@ pub struct RuleIndex {
     by_id: HashMap<String, Vec<u32>>,
     by_class: HashMap<String, Vec<u32>>,
     by_local_name: HashMap<String, Vec<u32>>,
-    /// 絞り込めないルール(常に候補になる)。
+    /// Rules that cannot be narrowed (always candidates).
     any: Vec<u32>,
-    /// 擬似要素セレクタを持つルール。通常のマッチングでは決してマッチ
-    /// しないため上のバケットには入れず、擬似要素向けのマッチングだけが使う。
+    /// Rules carrying a pseudo-element selector. They never match during ordinary matching,
+    /// so they stay out of the buckets above and are used only by pseudo-element matching.
     pseudo: Vec<u32>,
-    /// 索引を作った時点のルール数([`super::stylesheet::Stylesheet::index`]が
-    /// 作り直しの要否を判断するために使う)。
+    /// The rule count when the index was built (used by
+    /// [`super::stylesheet::Stylesheet::index`] to decide whether to rebuild).
     rule_count: usize,
 }
 
@@ -75,12 +75,12 @@ impl RuleIndex {
         index
     }
 
-    /// 索引を作った時点のルール数。
+    /// The rule count when the index was built.
     pub fn rule_count(&self) -> usize {
         self.rule_count
     }
 
-    /// `element`にマッチしうるルールの番号を、ソース順の昇順で`out`へ入れる。
+    /// Put the numbers of the rules that could match `element` into `out`, in ascending source order.
     pub fn candidates(&self, dom: &Dom, element: NodeId, out: &mut Vec<u32>) {
         out.clear();
         let NodeData::Element { name, attrs, .. } = &dom.node(element).data else {
@@ -107,49 +107,49 @@ impl RuleIndex {
                 _ => {}
             }
         }
-        // バケットをまたいで同じルールが入りうる(`h1, .lead`のような
-        // セレクタリスト)ため、ソース順に整えたうえで重複を落とす。
+        // The same rule can land in several buckets (a selector list such as `h1, .lead`),
+        // so sort into source order and then drop duplicates.
         out.sort_unstable();
         out.dedup();
     }
 
-    /// 擬似要素セレクタを持つルールの番号(ソース順の昇順)。
+    /// The numbers of the rules carrying a pseudo-element selector (in ascending source order).
     pub fn pseudo_candidates(&self) -> &[u32] {
         &self.pseudo
     }
 }
 
-/// 末尾が同じバケットになるセレクタが1つのルールに複数あっても、
-/// ルールは1回だけ候補に入れる(番号は昇順に積まれる)。
+/// A rule is added to the candidates only once even when several of its selectors end up in
+/// the same bucket (numbers are pushed in ascending order).
 fn push_unique(rules: &mut Vec<u32>, rule_index: u32) {
     if rules.last() != Some(&rule_index) {
         rules.push(rule_index);
     }
 }
 
-/// `selector`の末尾の複合セレクタが要求する絞り込みキー。
-/// id > クラス > タグ名の順に強い(絞り込みが効く)ものを選ぶ。
+/// The narrowing key required by `selector`'s rightmost compound selector.
+/// Preference goes id, then class, then tag name (strongest narrowing first).
 fn bucket_of(selector: &selectors::parser::Selector<SgSelectorImpl>) -> Bucket {
     let mut bucket = Bucket::Any;
-    // `iter`は末尾の複合セレクタだけを返す(結合子の手前で止まる)。
+    // `iter` returns only the rightmost compound selector (it stops before the combinator).
     for component in selector.iter() {
         match component {
             Component::ID(name) => return Bucket::Id(name.0.to_string()),
             Component::Class(name) => bucket = Bucket::Class(name.0.to_string()),
-            // 大文字を含む型セレクタはHTML以外の名前空間でのみ大小を区別
-            // するため、素直に絞り込めない。候補を取りこぼさないよう、
-            // 絞り込みの対象から外す(=`Bucket::Any`のままにする)。
+            // A type selector containing uppercase is only case-sensitive outside the HTML
+            // namespace, so it cannot be narrowed straightforwardly. To avoid dropping a
+            // match, it is left out of the narrowing (that is, kept as `Bucket::Any`).
             Component::LocalName(name)
                 if matches!(bucket, Bucket::Any) && name.name == name.lower_name =>
             {
                 bucket = Bucket::LocalName(name.lower_name.0.to_string());
             }
-            // CSS Nestingの`&`は`:is(親セレクタ)`へ展開されるため、
-            // `&:hover`のように`&`が絞り込みキーを担う形は、中を見ないと
-            // 全て`Bucket::Any`に落ちて全要素と照合される。
-            // 中が単一セレクタのときは、その絞り込みキーをそのまま引き継ぐ。
-            // (`:is(.a, .b)`のような複数セレクタは、どれか1つを選ぶと
-            // 取りこぼすため`Bucket::Any`のままにする。)
+            // CSS Nesting's `&` expands to `:is(parent selector)`, so a form where `&`
+            // carries the narrowing key, such as `&:hover`, would fall all the way to
+            // `Bucket::Any` and be compared against every element unless we look inside.
+            // When the inside is a single selector, its narrowing key is carried over.
+            // (A multi-selector such as `:is(.a, .b)` stays `Bucket::Any`, since picking
+            // just one of them would drop matches.)
             Component::Is(list) if list.slice().len() == 1 => match bucket_of(&list.slice()[0]) {
                 Bucket::Id(name) => return Bucket::Id(name),
                 Bucket::Class(name) => bucket = Bucket::Class(name),
@@ -211,11 +211,11 @@ mod tests {
 
     #[test]
     fn the_rightmost_compound_decides_the_bucket() {
-        // `div p`は末尾が`p`なので、`p`を持つ要素の候補に入る。
+        // `div p` ends in `p`, so it is a candidate for elements that are `p`.
         let out = candidates_for("div p { color: red; }", "<div><p>text</p></div>", "p");
         assert_eq!(out, vec![0]);
 
-        // 同じルールは`div`自身の候補には入らない。
+        // The same rule is not a candidate for the `div` itself.
         let out = candidates_for("div p { color: red; }", "<div><p>text</p></div>", "div");
         assert!(out.is_empty());
     }
@@ -238,7 +238,7 @@ mod tests {
             candidates_for(css, r#"<div class="lead">t</div>"#, "div"),
             vec![0]
         );
-        // 末尾が`p`のセレクタとクラスのセレクタの両方に該当しても1回だけ。
+        // Matching both a selector ending in `p` and a class selector still counts once.
         assert_eq!(
             candidates_for(css, r#"<p class="lead">t</p>"#, "p"),
             vec![0]
@@ -247,21 +247,21 @@ mod tests {
 
     #[test]
     fn a_nested_rule_is_narrowed_by_the_parent_inside_is() {
-        // `&:hover`は`:is(.lead):hover`へ展開される。`:is()`の中を見ないと
-        // 絞り込みキーが取れず、全要素の候補になってしまう。
+        // `&:hover` expands to `:is(.lead):hover`. Without looking inside `:is()` no
+        // narrowing key can be taken and it becomes a candidate for every element.
         let css = ".lead { &:hover { color: red; } } .other { &:hover { color: blue; } }";
         assert_eq!(
             candidates_for(css, r#"<p class="lead">t</p>"#, "p"),
             vec![0]
         );
-        // クラスの違う要素の候補には入らない。
+        // It is not a candidate for an element with a different class.
         assert!(candidates_for(css, "<p>t</p>", "p").is_empty());
     }
 
     #[test]
     fn a_multi_selector_is_stays_a_candidate_for_every_element() {
-        // `:is(.a, .b)`はどれか1つのバケットを選ぶと取りこぼすため、
-        // 絞り込まずに常に候補へ入れる。
+        // Picking one bucket for `:is(.a, .b)` would drop matches, so it is always a
+        // candidate, unnarrowed.
         let out = candidates_for(":is(.a, .b):hover { color: red; }", "<p>t</p>", "p");
         assert_eq!(out, vec![0]);
     }

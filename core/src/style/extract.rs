@@ -1,22 +1,22 @@
-//! DOM中の`<style>`/`<link rel=stylesheet>`要素からauthorスタイルシートを
-//! 組み立てる。
+//! Assembling the author stylesheet from the `<style>` and `<link rel=stylesheet>`
+//! elements in the DOM.
 //!
-//! `style="..."`属性(インラインスタイル)の抽出は未対応。
+//! Extracting `style="..."` attributes (inline styles) is not handled here.
 //!
-//! DOM走査(I/O無し、[`collect_css_sources`])とhref解決(I/Oあり)を分離する。全
-//! CSSソース(インライン・外部いずれも)をdocument順に連結してから
-//! `parse_stylesheet`を1回だけ呼ぶため、フェッチした外部CSS内の相対`url()`は
-//! 常に元HTMLの`base_dir`基準で解決される
-//! (スタイルシートごとの基準切り替えは非対応)。
+//! DOM traversal (no I/O, [`collect_css_sources`]) is kept separate from href resolution
+//! (which does I/O). Every CSS source, inline and external alike, is concatenated in
+//! document order before `parse_stylesheet` is called once, so a relative `url()` inside a
+//! fetched external stylesheet always resolves against the original HTML's `base_dir`
+//! (a per-stylesheet base is not supported).
 //!
-//! 各CSSソースのテキストは、連結する前に[`resolve_imports`]で`@import`を
-//! 再帰展開する。`parse_stylesheet`自体は`@import`を知らないまま(cssparserの
-//! エラー回復で無視される)なので、`extract_author_stylesheet`を経由しない
-//! 直接呼び出しでは従来通り`@import`は展開されず単に無視される。
+//! Each CSS source's text has its `@import`s expanded recursively by [`resolve_imports`]
+//! before concatenation. `parse_stylesheet` itself knows nothing about `@import` (it is
+//! ignored by cssparser's error recovery), so a direct call that bypasses
+//! `extract_author_stylesheet` still leaves `@import` unexpanded and simply ignored.
 //!
-//! 連結後・パース前に[`substitute_custom_properties`]でCSS Custom
-//! Properties(`--foo`/`var`)をテキスト置換で解決する(`<style>`/`<link>`をまた
-//! いだ文書全体でフラットな名前空間として扱う)。
+//! After concatenation and before parsing, [`substitute_custom_properties`] resolves CSS
+//! Custom Properties (`--foo`/`var`) by text substitution (treating the whole document as
+//! one flat namespace across `<style>` and `<link>`).
 
 use crate::html::{is_stylesheet_link, Dom, NodeData, NodeId};
 use crate::img::{DocumentImageCache, ImageFetcher};
@@ -25,22 +25,22 @@ use super::custom_properties::substitute_custom_properties;
 use super::import::resolve_imports;
 use super::stylesheet::{parse_stylesheet, Stylesheet};
 
-/// DOM中のCSSソース1件(document順)。
+/// One CSS source in the DOM (in document order).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CssSource {
-    /// `<style>`要素のテキスト内容。
+    /// The text content of a `<style>` element.
     Inline(String),
-    /// `<link rel=stylesheet href="...">`のhref(未解決の生の値)。
+    /// The href of a `<link rel=stylesheet href="...">` (the raw, unresolved value).
     External(String),
 }
 
-/// DOM中の全ての`<style>`/`<link rel=stylesheet>`のCSSを、document順を
-/// 保ったまま連結してパースする。
+/// Concatenate the CSS of every `<style>` and `<link rel=stylesheet>` in the DOM,
+/// preserving document order, and parse it.
 ///
-/// 外部スタイルシート(`<link>`)の取得に失敗した場合(ネットワークエラー・SSRF
-/// ブロック・非2xx・不正なUTF-8等、いずれも同列)は、画像と同じくその
-/// スタイルシートだけを無視して標準エラー出力に警告を出し、処理全体は継続する
-/// (壊れた/ブロックされたURLで文書生成全体を止めない)。
+/// When fetching an external stylesheet (`<link>`) fails - a network error, an SSRF block,
+/// a non-2xx response, invalid UTF-8; all treated alike - only that stylesheet is ignored,
+/// with a warning on standard error, and processing continues (a broken or blocked URL
+/// must not stop the whole document).
 pub fn extract_author_stylesheet(
     dom: &Dom,
     fetcher: &ImageFetcher,
@@ -61,12 +61,12 @@ pub fn extract_author_stylesheet(
                     }
                     Err(_) => {
                         eprintln!(
-                            "警告: 外部スタイルシートの取得は成功しましたが、UTF-8として解釈できません: {href}"
+                            "warning: the external stylesheet was fetched but is not valid UTF-8: {href}"
                         );
                     }
                 },
                 Err(e) => {
-                    eprintln!("警告: 外部スタイルシートの取得に失敗しました: {href}: {e}");
+                    eprintln!("warning: failed to fetch an external stylesheet: {href}: {e}");
                 }
             },
         }
@@ -74,8 +74,8 @@ pub fn extract_author_stylesheet(
     parse_stylesheet(&substitute_custom_properties(&css))
 }
 
-/// DOM木を1回走査し、document順を保ったまま「インラインCSSテキスト」か
-/// 「`<link>`のhref」かを列挙する。I/Oは一切行わない(純粋なDOM走査)。
+/// Walk the DOM tree once and enumerate either "inline CSS text" or "a `<link>` href",
+/// preserving document order. Does no I/O at all (a pure DOM walk).
 fn collect_css_sources(dom: &Dom) -> Vec<CssSource> {
     let mut sources = Vec::new();
     collect_css_sources_rec(dom, dom.document(), &mut sources);
@@ -104,7 +104,7 @@ fn collect_css_sources_rec(dom: &Dom, node: NodeId, out: &mut Vec<CssSource>) {
             if let Some(href) = href {
                 out.push(CssSource::External(href));
             }
-            return; // <link>はvoid element(子を持たない)。
+            return; // <link> is a void element (it has no children).
         }
     }
     for child in dom.children(node) {
@@ -184,8 +184,8 @@ mod tests {
 
     #[test]
     fn preserves_document_order_between_link_and_style() {
-        // 後勝ちのカスケード順が保たれるよう、<link>と<style>の出現順
-        // (この場合<link>が先)を維持したまま連結・パースされるはず。
+        // So that later-wins cascade order is preserved, the order in which <link> and
+        // <style> appear (here <link> first) should survive concatenation and parsing.
         use super::super::values::SpecifiedLength;
         use crate::style::PropertyDeclaration;
 

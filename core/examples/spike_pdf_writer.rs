@@ -1,20 +1,20 @@
-//! T1スパイク: pdf-writerで最小PDF(矩形+1行テキスト)を生成するPoC。
+//! T1 spike: a PoC generating a minimal PDF (a rectangle plus one line of text) with pdf-writer.
 //!
-//! krillaのspike(`spike_krilla.rs`)と異なり、こちらは`Pdf`型を使わず
-//! `Chunk`単位で直接バイト列を組み立て、ページが確定するたびに
-//! 疑似Sink(`output: Vec<u8>`。実装では`Sink::write`相当)へ即座に書き出す。
-//! 各Chunkのバイト列自体はそのつど破棄でき、以後保持するのは
-//! `(Ref, 書き込み済みオフセット)`という軽量なメタ情報のみでよい。
-//! これによりページ数が増えても「書き込み済みページの生データ」がメモリに
-//! 積み上がらないことを確認する。xref/trailerはpdf-writerの内部実装が
-//! 非公開のため自前で組み立てる。
+//! Unlike the krilla spike (`spike_krilla.rs`), this one does not use the `Pdf` type: it
+//! assembles the bytes directly a `Chunk` at a time and writes each page to a fake Sink
+//! (`output: Vec<u8>`, standing in for `Sink::write`) the moment it is settled.
+//! Each Chunk's bytes can then be discarded straight away, and all that is kept afterwards
+//! is the lightweight metadata `(Ref, the offset it was written at)`.
+//! This confirms that the raw data of pages already written does not pile up in memory as
+//! the page count grows. The xref and trailer are assembled by hand, pdf-writer's
+//! implementation of them being private.
 //!
-//! 実行: `cargo run --example spike_pdf_writer`(フォント埋め込み不要。base14のHelveticaを使用)
+//! Run with: `cargo run --example spike_pdf_writer` (no font embedding needed; it uses the base14 Helvetica)
 
 use pdf_writer::writers::Catalog;
 use pdf_writer::{Chunk, Content, Name, Rect, Ref, Str};
 
-/// 疑似Sink。書き込みごとにオフセットを記録するだけの最小実装。
+/// The fake Sink. A minimal implementation that merely records the offset on each write.
 struct FakeSink {
     output: Vec<u8>,
     offsets: Vec<(Ref, usize)>,
@@ -22,8 +22,8 @@ struct FakeSink {
 
 impl FakeSink {
     fn new() -> Self {
-        // ファイルヘッダ(`Pdf::new()`が内部で書いているものと同一)。
-        // `Chunk`単体にはヘッダが含まれないため自前で先頭に書く。
+        // The file header (identical to what `Pdf::new()` writes internally).
+        // A `Chunk` on its own carries no header, so it is written at the front by hand.
         let output = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n".to_vec();
         Self {
             output,
@@ -31,8 +31,8 @@ impl FakeSink {
         }
     }
 
-    /// Chunkが単一の間接オブジェクトだけを含む前提で、
-    /// そのオブジェクトの開始オフセットを記録しつつバイト列を書き出す。
+    /// Assuming the Chunk holds a single indirect object, write its bytes while recording
+    /// that object's starting offset.
     fn write_chunk(&mut self, id: Ref, chunk: &Chunk) {
         self.offsets.push((id, self.output.len()));
         self.output.extend_from_slice(chunk.as_bytes());
@@ -76,7 +76,7 @@ fn main() {
 
     let mut sink = FakeSink::new();
 
-    // フォント定義(base14のHelvetica。埋め込み不要なのでPoCとしては最小)
+    // The font definition (the base14 Helvetica; no embedding needed, so minimal for a PoC)
     let mut chunk = Chunk::new();
     chunk
         .type1_font(font_id)
@@ -90,9 +90,9 @@ fn main() {
         let content_id = next_id();
         page_ids.push(page_id);
 
-        // ページの内容ストリーム(矩形+1行テキスト)。
-        // レイアウトが確定した時点でこのChunkを組み立て、即座にSinkへ書き出す
-        // ── 確定済みページのバイト列をメモリに残さないのが狙い。
+        // The page's content stream (a rectangle plus one line of text).
+        // This Chunk is assembled the moment layout is settled and written to the Sink
+        // immediately -- the point being to keep the bytes of settled pages out of memory.
         let mut content = Content::new();
         content.set_fill_rgb(0.8, 0.8, 0.8);
         content.rect(20.0, 20.0, 100.0, 50.0);
@@ -123,8 +123,8 @@ fn main() {
         sink.write_chunk(page_id, &chunk);
     }
 
-    // 全ページのRefが出そろって初めて構築できる、ドキュメント全体を跨ぐ小さな部分
-    // (ページツリー・カタログ)。ここまで、保持していたのはRefとオフセットのみ。
+    // The small document-wide part that can only be built once every page's Ref is known
+    // (the page tree and the catalog). Up to here, only Refs and offsets were held.
     let mut chunk = Chunk::new();
     chunk
         .pages(pages_tree_id)

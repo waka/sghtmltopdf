@@ -1,7 +1,7 @@
-//! テーブルセルの`vertical-align`(top/middle/bottom/baseline)のE2Eテスト。
+//! E2E tests for `vertical-align` on table cells (top/middle/bottom/baseline).
 //!
-//! `table_caption.rs`と同じ方針: 実際のパイプラインを通して回帰を検知する。
-//! 座標の詳細な検証は`layout_document`(ページ分割前)の結果に対して行う。
+//! The same approach as `table_caption.rs`: catch regressions by going through the real
+//! pipeline. The detailed coordinate checks run against the result of `layout_document` (before pagination).
 
 use std::collections::HashMap;
 

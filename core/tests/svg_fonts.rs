@@ -1,19 +1,19 @@
-//! SVG内の`<text>`が使うフォントのE2Eテスト。
+//! E2E tests for the fonts used by `<text>` inside an SVG.
 //!
-//! 要求は「HTML文書で使えるフォントは、翻訳後のPDFチャンクの中でも使える」
-//! こと。SVGの翻訳(svg2pdf)はこの処理系とは別のフォント解決の仕組み
-//! (usvgの`fontdb`)を持っているため、そこへ文書のフォントを渡してやらないと
-//! **HTMLでは出るのにSVGの中だけ字が消える**という食い違いが起きる。
-//! [`SvgFontDb`]がその橋渡しで、ここではその両端を確認する。
+//! The requirement is that "a font usable in the HTML document is usable inside the
+//! translated PDF chunk too". The SVG translation (svg2pdf) has its own font resolution
+//! machinery (usvg's `fontdb`) separate from this engine's, so without handing the
+//! document's fonts over, the text **appears in HTML but vanishes inside the SVG**.
+//! [`SvgFontDb`] is that bridge, and both ends of it are checked here.
 //!
-//! 確認の仕方: svg2pdfが埋め込むフォントは`/BaseFont /TAG+FamilyName`
-//! (6文字のサブセットタグ + `+` + family名)という名前になる。この処理系
-//! 自身のフォント書き出しは`/BaseFont /EmbeddedFont`で、タグを持たない。
-//! したがって「`+`を含む`/BaseFont`」の有無で、SVG側にフォントが渡って
-//! 埋め込まれたかどうかが分かる。
+//! How it is checked: the fonts svg2pdf embeds are named `/BaseFont /TAG+FamilyName`
+//! (a six-character subset tag, a `+`, then the family name). This engine's own font output
+//! is `/BaseFont /EmbeddedFont`, with no tag.
+//! So the presence of a `/BaseFont` containing a `+` tells us whether the fonts reached the
+//! SVG side and were embedded.
 //!
-//! `svg-text` featureが無い場合はSVG内のテキストを描かない(そのぶん
-//! rustybuzz・resvg等を引き込まない)。その場合の挙動もここで確認する。
+//! Without the `svg-text` feature, text inside an SVG is not drawn (and rustybuzz, resvg and
+//! the rest are not pulled in). That behaviour is checked here too.
 
 #![cfg(feature = "svg")]
 
@@ -30,7 +30,7 @@ const BOLD_FONT_PATH: &str = concat!(
 );
 const BIN: &str = env!("CARGO_BIN_EXE_sghtmltopdf");
 
-/// `DejaVuSans.ttf`が`name`テーブルで名乗っているfamily名。
+/// The family name `DejaVuSans.ttf` gives in its `name` table.
 const INTERNAL_FAMILY: &str = "DejaVu Sans";
 
 fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
@@ -40,7 +40,7 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// PDF中の`/BaseFont /...`の値をすべて集める。
+/// Collect every `/BaseFont /...` value in the PDF.
 fn base_font_names(pdf: &[u8]) -> Vec<String> {
     const KEY: &[u8] = b"/BaseFont /";
     let mut names = Vec::new();
@@ -61,11 +61,11 @@ fn base_font_names(pdf: &[u8]) -> Vec<String> {
     names
 }
 
-/// svg2pdfが埋め込んだフォントの名前(サブセットタグ`TAG+`が付いているもの)。
-/// この処理系自身の書き出しは`EmbeddedFont`でタグを持たないので混ざらない。
+/// The names of the fonts svg2pdf embedded (the ones carrying a subset tag `TAG+`).
+/// This engine's own output is `EmbeddedFont` with no tag, so it does not get mixed in.
 ///
-/// `/BaseFont`はType0辞書とCIDFont辞書の両方に書かれるので、1つのフォントでも
-/// 2回現れる。重複は畳んで「何種類埋め込まれたか」を返す。
+/// `/BaseFont` is written in both the Type0 dictionary and the CIDFont dictionary, so one
+/// font appears twice. Duplicates are folded to return "how many distinct fonts were embedded".
 fn svg_embedded_fonts(pdf: &[u8]) -> Vec<String> {
     let mut names: Vec<String> = base_font_names(pdf)
         .into_iter()
@@ -76,7 +76,7 @@ fn svg_embedded_fonts(pdf: &[u8]) -> Vec<String> {
     names
 }
 
-/// 埋め込まれたフォントプログラム(`/FontFile2`)の数。サブセット1つにつき1本。
+/// The number of embedded font programs (`/FontFile2`). One per subset.
 fn embedded_font_programs(pdf: &[u8]) -> usize {
     count_occurrences(pdf, b"/FontFile2")
 }
@@ -107,14 +107,13 @@ impl Fixture {
         std::fs::copy(from, self.dir.join(to)).unwrap();
     }
 
-    /// `svg-text`が無効なときはstderrまで見るテストしか残らないので、
-    /// こちらは使われない。
+    /// With `svg-text` disabled only the tests looking at stderr remain, so this is unused.
     #[cfg_attr(not(feature = "svg-text"), allow(dead_code))]
     fn convert(&self, extra: &[&str]) -> Vec<u8> {
         self.convert_capturing_stderr(extra).0
     }
 
-    /// 変換結果と、そのときのstderr(警告の確認用)。
+    /// The conversion result plus the stderr from it (for checking the warnings).
     fn convert_capturing_stderr(&self, extra: &[&str]) -> (Vec<u8>, String) {
         let output = self.dir.join("out.pdf");
         let result = Command::new(BIN)
@@ -145,7 +144,7 @@ impl Drop for Fixture {
     }
 }
 
-/// `<text>`を1つ持つSVG。`family`が`None`なら`font-family`を書かない。
+/// An SVG with one `<text>`. With `family` as `None`, no `font-family` is written.
 fn svg_with_text(family: Option<&str>) -> String {
     let family_attr = family
         .map(|f| format!(r#" font-family="{f}""#))
@@ -158,10 +157,10 @@ fn svg_with_text(family: Option<&str>) -> String {
     )
 }
 
-// ===== `SvgFontDb`(橋渡しそのもの) =====
+// ===== `SvgFontDb` (the bridge itself) =====
 
-/// 文書のフォントコレクションから組んだデータベースには、コレクションにある
-/// フォントが入る。`svg-text`が無効なときは空(SVG内のテキストを描かない)。
+/// A database built from the document's font collection contains the collection's fonts.
+/// With `svg-text` disabled it is empty (text inside an SVG is not drawn).
 #[test]
 fn the_font_db_is_built_from_the_documents_font_collection() {
     let collection = FontCollection::new(vec![
@@ -190,16 +189,16 @@ fn an_empty_font_db_has_no_faces() {
     assert_eq!(SvgFontDb::empty().len(), 0);
 }
 
-/// フォントを持たない文書から組んでも空になるだけで、パニックしない。
+/// Building one from a document with no fonts merely gives an empty database; it does not panic.
 #[test]
 fn an_empty_collection_produces_an_empty_font_db() {
     let db = SvgFontDb::from_collection(&FontCollection::new(Vec::new()));
     assert!(db.is_empty());
 }
 
-// ===== `svg-text`が有効なとき: 文書のフォントがSVGへ渡る =====
+// ===== With `svg-text` enabled: the document's fonts reach the SVG =====
 
-/// `--font`で渡したフォントを、SVGの中からフォント内部のfamily名で引ける。
+/// A font passed with `--font` can be looked up from inside the SVG by its internal family name.
 #[cfg(feature = "svg-text")]
 #[test]
 fn a_font_given_to_the_document_is_usable_from_the_svg_by_its_internal_family_name() {
@@ -218,9 +217,9 @@ fn a_font_given_to_the_document_is_usable_from_the_svg_by_its_internal_family_na
     );
 }
 
-/// `font-family`を書かない`<text>`は、usvgの既定("Times New Roman")ではなく
-/// 文書の既定フォントで描く。手元に無い名前を既定に据えると、指定の無い
-/// テキストが必ず消えてしまう。
+/// A `<text>` with no `font-family` is drawn in the document's default font rather than
+/// usvg's default ("Times New Roman"). Making a locally absent name the default would
+/// guarantee that unstyled text disappears.
 #[cfg(feature = "svg-text")]
 #[test]
 fn text_without_a_font_family_falls_back_to_the_documents_font() {
@@ -239,9 +238,9 @@ fn text_without_a_font_family_falls_back_to_the_documents_font() {
     );
 }
 
-/// `@font-face`で宣言した名前でもSVGから引ける。フォント内部の`name`テーブルは
-/// `DejaVu Sans`なので、宣言名`BrandFace`は別名として登録されていないと
-/// 解決できない。
+/// A name declared with `@font-face` can be looked up from the SVG too. The font's internal
+/// `name` table says `DejaVu Sans`, so the declared name `BrandFace` cannot resolve unless it
+/// is registered as an alias.
 #[cfg(feature = "svg-text")]
 #[test]
 fn a_font_face_declared_family_name_is_usable_from_the_svg() {
@@ -256,7 +255,7 @@ fn a_font_face_declared_family_name_is_usable_from_the_svg() {
            </style>
            <body><img src="logo.svg" width="200" height="40"></body>"#,
     );
-    // `--font`は渡さない。SVGから引けるフォントは`@font-face`のものだけになる。
+    // `--font` is not passed. The only font reachable from the SVG is the `@font-face` one.
     let pdf = fx.convert(&[]);
 
     let embedded = svg_embedded_fonts(&pdf);
@@ -266,13 +265,13 @@ fn a_font_face_declared_family_name_is_usable_from_the_svg() {
     );
 }
 
-/// 文書が持っていないfamilyは、勝手に別のフォントで代用しない
-/// 文書が持っていないfamilyは、**文書の既定フォント**で描く。
+/// A family the document does not have is not silently substituted with some other font:
+/// it is drawn in the **document's default font**.
 ///
-/// usvgの既定の選択関数は候補の末尾に`Family::Serif`を足す。fontdbの
-/// `serif`の既定値は"Times New Roman"で、この処理系はそれを持っていないので、
-/// 総称ファミリを文書側へ向けておかないとテキストが黙って消える。
-/// 「消える」より「文書のフォントで出る」方が、HTML側の挙動とも揃う。
+/// usvg's default selection function appends `Family::Serif` to the candidates. fontdb's
+/// default for `serif` is "Times New Roman", which this engine does not have, so without
+/// pointing the generic families at the document the text would silently disappear.
+/// "Drawn in the document's font" beats "disappears", and matches the HTML-side behaviour.
 #[cfg(feature = "svg-text")]
 #[test]
 fn a_family_the_document_does_not_have_falls_back_to_the_documents_font() {
@@ -292,8 +291,8 @@ fn a_family_the_document_does_not_have_falls_back_to_the_documents_font() {
         embedded.iter().any(|name| name.contains("DejaVuSans")),
         "an unknown family should fall back to the document's font, got {embedded:?}"
     );
-    // 代用先は必ず文書が持っているフォント。システムフォントを探しに行かないので、
-    // 文書に無いフォントが混ざることはない。
+    // The substitute is always a font the document has. No system font is searched for, so a
+    // font absent from the document can never creep in.
     assert_eq!(
         embedded.len(),
         1,
@@ -301,8 +300,8 @@ fn a_family_the_document_does_not_have_falls_back_to_the_documents_font() {
     );
 }
 
-/// SVG内の総称ファミリ(`serif`/`sans-serif`/`monospace`)は、HTML側と同じ
-/// フォントに解決される。`--mono-font`を渡せばSVGの`monospace`もそれになる。
+/// A generic family inside an SVG (`serif`/`sans-serif`/`monospace`) resolves to the same
+/// font as on the HTML side. Passing `--mono-font` makes the SVG's `monospace` that too.
 #[cfg(feature = "svg-text")]
 #[test]
 fn generic_families_inside_an_svg_resolve_to_the_documents_generic_fonts() {
@@ -312,7 +311,7 @@ fn generic_families_inside_an_svg_resolve_to_the_documents_generic_fonts() {
         "in.html",
         r#"<body style="margin:0"><img src="logo.svg" width="200" height="40"></body>"#,
     );
-    // 既定フォントと`monospace`に別のファイルを渡し、どちらが使われたか見る。
+    // Pass different files for the default font and for `monospace`, and see which was used.
     let pdf = fx.convert(&["--font", FONT_PATH, "--mono-font", BOLD_FONT_PATH]);
 
     let embedded = svg_embedded_fonts(&pdf);
@@ -322,8 +321,8 @@ fn generic_families_inside_an_svg_resolve_to_the_documents_generic_fonts() {
     );
 }
 
-/// 総称ファミリに何も指定されていなければ、既定フォントへ落ちる
-/// ("Times New Roman"を探しに行って消えたりしない)。
+/// With nothing given for a generic family it falls back to the default font
+/// (it does not go looking for "Times New Roman" and disappear).
 #[cfg(feature = "svg-text")]
 #[test]
 fn an_unset_generic_family_falls_back_to_the_documents_font() {
@@ -333,7 +332,7 @@ fn an_unset_generic_family_falls_back_to_the_documents_font() {
         "in.html",
         r#"<body style="margin:0"><img src="logo.svg" width="200" height="40"></body>"#,
     );
-    // `--serif-font`は渡さない。
+    // `--serif-font` is not passed.
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
     let embedded = svg_embedded_fonts(&pdf);
@@ -343,8 +342,8 @@ fn an_unset_generic_family_falls_back_to_the_documents_font() {
     );
 }
 
-/// 文書側のフォント埋め込みとSVG側のフォント埋め込みはそれぞれ独立に行われる。
-/// 同じフォントファイルでも、サブセットは別(必要なグリフが違う)。
+/// The document-side and SVG-side font embeddings happen independently.
+/// Even for the same font file, the subsets differ (they need different glyphs).
 #[cfg(feature = "svg-text")]
 #[test]
 fn the_svg_text_font_is_embedded_alongside_the_documents_own_font() {
@@ -357,7 +356,7 @@ fn the_svg_text_font_is_embedded_alongside_the_documents_own_font() {
     );
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    // 文書側(`/BaseFont /EmbeddedFont`)とSVG側(タグ付き)の両方がある。
+    // Both the document side (`/BaseFont /EmbeddedFont`) and the SVG side (tagged) are present.
     let names = base_font_names(&pdf);
     assert!(
         names.iter().any(|n| n == "EmbeddedFont"),
@@ -373,8 +372,8 @@ fn the_svg_text_font_is_embedded_alongside_the_documents_own_font() {
     );
 }
 
-/// 同じSVGを複数回参照しても、フォントの埋め込みは1回だけ
-/// (SVGのチャンクごと共有される)。
+/// Referencing the same SVG several times embeds the font only once
+/// (it is shared along with the SVG's chunk).
 #[cfg(feature = "svg-text")]
 #[test]
 fn a_repeated_svg_does_not_embed_its_font_twice() {
@@ -410,8 +409,8 @@ fn a_repeated_svg_does_not_embed_its_font_twice() {
     );
 }
 
-/// ストリーミング書き出しでも同じこと(フォントを含むSVGのチャンクは
-/// オブジェクトが更に増えるので、xrefが崩れやすい経路でもある)。
+/// The same for the streaming writer (a chunk for an SVG containing fonts has even more
+/// objects, so it is also a path where the xref breaks easily).
 #[cfg(feature = "svg-text")]
 #[test]
 fn streaming_mode_also_embeds_the_documents_font_for_svg_text() {
@@ -429,11 +428,11 @@ fn streaming_mode_also_embeds_the_documents_font_for_svg_text() {
     );
 }
 
-// ===== `svg-text`が無効なとき =====
+// ===== With `svg-text` disabled =====
 
-/// テキストは描かれないが、SVGの他の図形は描かれ、変換は成功する。
-/// 黙って消えるのは分かりにくいので警告する(usvg/svg2pdf側の警告は`log`
-/// クレート経由で、ロガーが無いこのクレートでは消えてしまう)。
+/// The text is not drawn, but the SVG's other shapes are and the conversion succeeds.
+/// Disappearing silently is hard to diagnose, so it warns (usvg's and svg2pdf's warnings go
+/// through the `log` crate and vanish in this crate, which configures no logger).
 #[cfg(not(feature = "svg-text"))]
 #[test]
 fn without_the_svg_text_feature_the_text_is_dropped_but_the_svg_still_renders() {
@@ -443,7 +442,7 @@ fn without_the_svg_text_feature_the_text_is_dropped_but_the_svg_still_renders() 
         "in.html",
         r#"<body style="margin:0"><img src="logo.svg" width="200" height="40"></body>"#,
     );
-    // `convert`が`/Subtype /Form`の存在を確かめている(=矩形は描かれている)。
+    // `convert` confirms the presence of `/Subtype /Form` (that is, the rectangle is drawn).
     let (pdf, stderr) = fx.convert_capturing_stderr(&["--font", FONT_PATH]);
 
     assert!(
@@ -455,8 +454,8 @@ fn without_the_svg_text_feature_the_text_is_dropped_but_the_svg_still_renders() 
         "dropping the text should be reported, got: {stderr}"
     );
 
-    // テキストの無い同じ大きさのSVGと比べて、埋め込まれるフォントプログラムの
-    // 数が変わらないこと(=`<text>`が何も足していない)。
+    // The number of embedded font programs is unchanged compared with the same-sized SVG
+    // containing no text (that is, `<text>` added nothing).
     let plain = Fixture::new("no-text-feature-plain");
     plain.write(
         "logo.svg",
@@ -474,7 +473,7 @@ fn without_the_svg_text_feature_the_text_is_dropped_but_the_svg_still_renders() 
         embedded_font_programs(&plain_pdf),
         "a dropped <text> should not embed a font program"
     );
-    // `<text>`が無いSVGでは警告しない(出しすぎると意味がなくなる)。
+    // An SVG with no `<text>` does not warn (warning too much makes it meaningless).
     assert!(
         !plain_stderr.contains("<text>"),
         "an SVG with no text should not warn, got: {plain_stderr}"

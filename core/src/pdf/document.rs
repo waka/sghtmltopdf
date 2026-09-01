@@ -1,44 +1,44 @@
-//! レイアウト結果(ページごとの[`LaidOutBox`]木)をPDFへエンコードする。
+//! Encoding the layout result (a [`LaidOutBox`] tree per page) into PDF.
 //!
-//! 一括変換(ストリーミングなし)では、文書全体を`pdf_writer::Pdf`で
-//! 組み立てて最後に1回だけ[`Sink`]へ書き出す。
+//! In a batch conversion (no streaming), the whole document is assembled with
+//! `pdf_writer::Pdf` and written to the [`Sink`] once at the end.
 //!
-//! エンコードは2パスで行う: (1) 全ページを走査し、フォントごとに実際に使われた
-//! グリフを集める、(2) 使用グリフだけにサブセット化したフォントを埋め込み、
-//! 元グリフID→サブセット後グリフID(CID)の対応表を得てから、コンテンツ
-//! ストリームを実際に書く。レイアウト時([`crate::layout::inline`])に
-//! シェイピング済みの[`crate::fonts::ShapedGlyph`]をそのまま使うため、
-//! テキストの再シェイピングは発生しない。
+//! Encoding runs in two passes: (1) walk every page and collect, per font, the glyphs
+//! actually used; (2) embed the fonts subsetted to just those glyphs, obtain the mapping
+//! from original glyph ID to subsetted glyph ID (CID), and only then write the content
+//! streams. The already-shaped [`crate::fonts::ShapedGlyph`]s from layout
+//! ([`crate::layout::inline`]) are used as-is, so no text is ever reshaped.
 //!
-//! テキストの色・太字・イタリックは[`crate::layout::inline::TextRun`]に
-//! レイアウト時点で焼き込み済み(`<b>`/`<span style="...">`等のインライン要素
-//! ごとに異なりうる)なので、ページ分割で無名化されたインライン断片
-//! (`node: None`)であっても正しい見た目で描画される。
 //!
-//! 枠線は`border-style`が`none`でなく、かつ幅が0より大きい辺のみ描画する。
-//! `solid`/`double`は、border-box外周から内周までを辺ごとの四角形(太さが
-//! 不揃いなら台形)として塗りつぶす。隣接する2辺は共有する頂点(外側の角・
-//! 内側の角)から独立に頂点を計算するため、太さ・色が異なっていても角が
-//! 斜めにミトー結合される(ピクチャーフレームと同じ要領)。`dashed`/`dotted`
-//! はダッシュパターンをストロークで表現する都合上、太さの中心線を
-//! ストロークする従来方式のまま(ミトー結合はしない)。
-//! `border-radius`が指定されておらず、かつ4辺すべての太さ・スタイル・色が
-//! 同一の場合は角丸のベジェ曲線パスでまとめてストロークし、それ以外
-//! (角丸なし、または4辺が不揃い)は上記の辺ごとの描画にフォールバックする。
+//! Text colour, bold and italic are baked into [`crate::layout::inline::TextRun`] at layout
+//! time (they can differ per inline element, such as `<b>` or `<span style="...">`), so even
+//! an inline fragment left anonymous by pagination (`node: None`) is drawn with the correct
+//! appearance.
 //!
-//! ページ分割で断片化したボックス([`crate::layout::FragmentPosition`]参照)は、
-//! 継続中の辺(分割位置に接する辺)に`border-radius`を適用しない
-//! (レイアウト側で`Layout::fragment`として渡された情報を見て角丸を抑制する)。
+//! A border edge is drawn only where `border-style` is not `none` and the width is greater
+//! than 0. `solid`/`double` fill each edge as a quadrilateral running from the outside of
+//! the border box to the inside (a trapezium where the widths differ). Two adjacent edges
+//! compute their vertices independently from the shared corners (outer and inner), so even
+//! with differing widths and colours the corners mitre diagonally (as in a picture frame).
+//! `dashed`/`dotted` express the dash pattern as a stroke, so they keep the traditional
+//! approach of stroking the centre line of the width (no mitring).
+//! Where no `border-radius` is set and all four edges share a width, style and colour, they
+//! are stroked together as one rounded Bezier path; anything else (no rounding, or four
+//! edges that differ) falls back to the per-edge drawing above.
 //!
-//! - 太字・イタリックは対応する字形を持つフォントファイルを別途要求せず、
-//!   通常字形に対して塗り+縁取り(疑似太字)・テキスト行列のせん断(疑似
-//!   イタリック)で代用する
-//! - 1行の中で複数フォント・複数フォントサイズが混在する場合、行のベースライン
-//!   位置は先頭ランのフォント・サイズのメトリクスを基準に揃える
-//! - `border-radius`が指定されていても4辺の太さ・スタイル・色が不揃いな場合は
-//!   角丸を諦め、直線4辺のストロークにフォールバックする(角ごとの複雑な
-//!   ブレンド処理は非対応)
-//! - `border-style`の`groove`/`ridge`/`inset`/`outset`(2階調の疑似立体陰影)は非対応
+//! A box fragmented by pagination (see [`crate::layout::FragmentPosition`]) does not apply
+//! `border-radius` to a continuing edge (one touching a break)
+//! (the rounding is suppressed using the information layout passed as `Layout::fragment`).
+//!
+//! - Bold and italic do not require a separate font file with those glyph shapes: the
+//!   regular shapes are filled and outlined (faux bold) or the text matrix is sheared (faux
+//!   italic) instead
+//! - Where several fonts and font sizes are mixed on one line, the line's baseline is
+//!   aligned against the metrics of the first run's font and size
+//! - Even where `border-radius` is set, if the four edges differ in width, style or colour
+//!   the rounding is given up and it falls back to stroking four straight edges (complex
+//!   per-corner blending is not supported)
+//! - `border-style`'s `groove`/`ridge`/`inset`/`outset` (two-tone pseudo-3D shading) are not supported
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -66,13 +66,12 @@ use super::font::{deflate, embed_font, FontIds, FontUsage};
 use super::img::{embed_image, ids_for_image, image_resource_name, ImageIds, PreparedImage};
 use super::options::{current_datetime, producer_string, DocumentMetadata, PdfOutputOptions};
 
-/// `Content`に色変換を挟むラッパー。
+/// A wrapper interposing colour conversion on `Content`.
 ///
-/// `--grayscale`のために描画関数すべてへ`PdfOutputOptions`を配るのは
-/// 影響が大きい(`settings`は244箇所で参照されている)ため、
-/// 色を書く経路だけをこの型で包む。`Deref`/`DerefMut`により
-/// `Content`のメソッドはそのまま使え、`set_fill_rgb`/`set_stroke_rgb`だけが
-/// ここの実装で上書きされる。
+/// Handing `PdfOutputOptions` to every drawing function for the sake of `--grayscale` would
+/// be too invasive (`settings` is referenced in 244 places), so only the paths that write
+/// colour are wrapped in this type. `Deref`/`DerefMut` keep `Content`'s methods usable as-is,
+/// and only `set_fill_rgb`/`set_stroke_rgb` are overridden by the implementation here.
 pub(super) struct RenderTarget<'a> {
     content: &'a mut Content,
     grayscale: bool,
@@ -83,7 +82,7 @@ impl<'a> RenderTarget<'a> {
         Self { content, grayscale }
     }
 
-    /// 同じ設定で別の`Content`(form XObjectの中身など)を包む。
+    /// Wrap another `Content` (a form XObject's contents, say) with the same settings.
     pub(super) fn wrap<'b>(&self, content: &'b mut Content) -> RenderTarget<'b> {
         RenderTarget::new(content, self.grayscale)
     }
@@ -121,7 +120,7 @@ impl std::ops::DerefMut for RenderTarget<'_> {
     }
 }
 
-/// DOM由来のレイアウト結果(ページ列)をPDFバイト列にエンコードする。
+/// Encode a DOM-derived layout result (a list of pages) into PDF bytes.
 pub fn encode_pdf(
     pages: &[Page],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -139,11 +138,11 @@ pub fn encode_pdf(
     )
 }
 
-/// [`encode_pdf`]に、内部アンカー(`<a href="#id">`)の対応表を渡せるようにした版。
+/// The version of [`encode_pdf`] that also takes the internal anchor table (`<a href="#id">`).
 ///
-/// `links`は内部アンカーの対応表と`<base href>`([`LinkSettings`])。
-/// 既定値を渡した場合は外部リンクの注釈だけが生成される(既存の`encode_pdf`の
-/// シグネチャを変えずに済ませるための分割)。
+/// `links` is the internal anchor table plus `<base href>` ([`LinkSettings`]).
+/// Passing the default value generates only external link annotations (the split exists so
+/// the existing `encode_pdf` signature need not change).
 pub fn encode_pdf_with_anchors(
     pages: &[Page],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -163,8 +162,8 @@ pub fn encode_pdf_with_anchors(
     )
 }
 
-/// [`encode_pdf_with_anchors`]に、PDF書き出しオプション(メタデータ・
-/// 圧縮・スケール・グレースケール)を渡せるようにした版。
+/// The version of [`encode_pdf_with_anchors`] that also takes the PDF output options
+/// (metadata, compression, scale and grayscale).
 pub fn encode_pdf_with_options(
     pages: &[Page],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -187,17 +186,17 @@ pub fn encode_pdf_with_options(
             cid_font: alloc.next(),
             type0_font: alloc.next(),
             to_unicode: alloc.next(),
-            // `encode_pdf`は`/CIDToGIDMap /Identity`(embed_font)を使うため
-            // 参照しないが、`FontIds`を`embed_font_streaming_chunks`と共通の
-            // 型に保つため確保だけしておく。
+            // `encode_pdf` uses `/CIDToGIDMap /Identity` (embed_font) and never refers to it,
+            // but it is allocated anyway to keep `FontIds` the same type as the one
+            // `embed_font_streaming_chunks` uses.
             cid_to_gid_map: alloc.next(),
         })
         .collect();
     let font_resource_names: Vec<String> = (0..fonts.len()).map(|i| format!("F{i}")).collect();
 
-    // `background-color`/`box-shadow`の半透明描画用ExtGState。使用状況に
-    // 関わらず0.05刻み・21段階を文書全体で1回だけ確保し、フォントと同じく全
-    // ページのResourcesへ無条件で列挙する。
+    // The ExtGStates for semi-transparent drawing of `background-color`/`box-shadow`.
+    // Regardless of use, 21 steps of 0.05 are allocated once for the whole document and, like
+    // the fonts, listed unconditionally in every page's Resources.
     let alpha_gs_ids: Vec<Ref> = (0..=ALPHA_STEPS).map(|_| alloc.next()).collect();
     let alpha_gs_names: Vec<String> = (0..=ALPHA_STEPS).map(alpha_gs_resource_name).collect();
     for (step, &id) in alpha_gs_ids.iter().enumerate() {
@@ -205,7 +204,7 @@ pub fn encode_pdf_with_options(
         pdf.ext_graphics(id).non_stroking_alpha(a).stroking_alpha(a);
     }
 
-    // Pass 1: 使用グリフを収集する(コンテンツストリームはまだ書かない)。
+    // Pass 1: collect the glyphs used (no content stream is written yet).
     let mut usages: Vec<FontUsage> = (0..fonts.len()).map(|_| FontUsage::default()).collect();
     for page in pages {
         for b in &page.boxes {
@@ -213,7 +212,7 @@ pub fn encode_pdf_with_options(
         }
     }
 
-    // 使用グリフだけにサブセット化してフォントを埋め込み、元GID→CIDの対応表を得る。
+    // Embed the fonts subsetted to just those glyphs, obtaining the original GID to CID mapping.
     let remaps: Vec<HashMap<u16, u16>> = fonts
         .fonts()
         .iter()
@@ -226,14 +225,14 @@ pub fn encode_pdf_with_options(
         })
         .collect();
 
-    // Pass 2: 実際にページのコンテンツストリームを書く。画像XObjectは、
-    // フォントと違ってページ間で使い回すための事前サブセット化情報が
-    // 不要なため、ページごとに「初出なら書き出す」形で済ませる。
+    // Pass 2: actually write the pages' content streams. Unlike fonts, image XObjects need no
+    // up-front subsetting information to be reused across pages, so "write it if this is its
+    // first appearance" per page is enough.
     let mut image_ids: HashMap<usize, ImageIds> = HashMap::new();
-    // 振り直しに失敗したSVGを1文書内で1回しか警告しないための記録。
+    // A record so an SVG whose renumbering failed is warned about only once per document.
     let mut failed_svg_ids: HashSet<usize> = HashSet::new();
     let mut page_ids = Vec::with_capacity(pages.len());
-    // 名前付き宛先(`/Dests`)は全ページを書き終えてから解決する。
+    // Named destinations (`/Dests`) are resolved once every page has been written.
     let mut destinations: Vec<(String, Ref, f32, f32)> = Vec::new();
     let mut link_annotations: Vec<(Ref, LinkArea)> = Vec::new();
     for page in pages {
@@ -247,7 +246,7 @@ pub fn encode_pdf_with_options(
         }
         let mut page_image_refs = Vec::with_capacity(used_images.len());
         for image in &used_images {
-            // `Ref`の振り直しに失敗したSVGは`None`になる(描画されない)。
+            // An SVG whose `Ref` renumbering failed becomes `None` (and is not drawn).
             let Some((ids, is_new)) =
                 ids_for_image(&mut alloc, &mut image_ids, &mut failed_svg_ids, image)
             else {
@@ -259,9 +258,9 @@ pub fn encode_pdf_with_options(
             page_image_refs.push(ids.root);
         }
 
-        // `opacity < 1`の要素を先に集めてRefを払い出す(画像・フォントと同じ
-        // 構造)。実際のForm XObject化(サブツリーの描画・埋め込み)は
-        // `render_box`の中で行われ、その結果は`pending_forms`に積まれる。
+        // Collect the elements with `opacity < 1` first and allocate their Refs (the same
+        // structure as images and fonts). Turning them into Form XObjects (drawing and
+        // embedding the subtree) happens inside `render_box`, piling up in `pending_forms`.
         let mut opacity_nodes = Vec::new();
         for b in &page.boxes {
             collect_opacity_uses(b, styles, &mut opacity_nodes);
@@ -271,9 +270,9 @@ pub fn encode_pdf_with_options(
         let mut pending_forms: Vec<(Ref, Vec<u8>)> = Vec::new();
 
         let mut content = Content::new();
-        // CSS px → PDF ptの換算はページ全体のCTMで行う。
+        // The CSS px to PDF pt conversion is done by the page's overall CTM.
         content.transform([output.scale, 0.0, 0.0, output.scale, 0.0, 0.0]);
-        // 色変換を挟むラッパー。
+        // A wrapper interposing the colour conversion.
         let mut target = RenderTarget::new(&mut content, output.grayscale);
         for b in &page.boxes {
             render_box(
@@ -293,14 +292,14 @@ pub fn encode_pdf_with_options(
         }
         let content_bytes = content.finish();
 
-        // `<a href>`の注釈と、このページに落ちたアンカーの位置を集める。
+        // Collect the `<a href>` annotations and the positions of the anchors landing on this page.
         let mut page_links = Vec::new();
         let mut page_anchors = Vec::new();
         for b in &page.boxes {
             collect_link_areas(b, settings, &mut page_links);
             collect_anchor_positions(b, &links.anchor_names, settings, &mut page_anchors);
         }
-        // 無効化された種類のリンク(`--disable-external-links`等)を落とす。
+        // Drop the kinds of link that have been disabled (`--disable-external-links` and so on).
         links.retain_enabled(&mut page_links);
         for (name, x, y) in page_anchors {
             if !destinations.iter().any(|(existing, ..)| *existing == name) {
@@ -351,10 +350,10 @@ pub fn encode_pdf_with_options(
         }
         content_stream.finish();
 
-        // opacityグループのForm XObjectを実際に書き出す。`/BBox`はページの
-        // content area全体(box-shadowのにじみ出し・`overflow: visible`・
-        // transformとの組み合わせでborder-boxを超える描画がある可能性を
-        // 考慮し、安全側に倒す。
+        // Write out the Form XObjects of the opacity groups for real. `/BBox` is the page's
+        // whole content area, erring on the safe side given that drawing can exceed the border
+        // box through box-shadow bleed, `overflow: visible` or a combination with transform.
+
         for (form_ref, bytes) in &pending_forms {
             let mut form = pdf.form_xobject(*form_ref, bytes);
             form.bbox(PdfRect::new(
@@ -376,8 +375,8 @@ pub fn encode_pdf_with_options(
         }
     }
 
-    // 注釈本体を書く。内部アンカーは名前付き宛先を参照するだけなので、
-    // 対象がどのページにあるか(前方参照かどうか)を気にしなくてよい。
+    // Write the annotations themselves. An internal anchor only references a named
+    // destination, so which page the target is on (a forward reference or not) does not matter.
     for (id, area) in &link_annotations {
         write_link_annotation(
             pdf.annotation(*id),
@@ -418,8 +417,8 @@ pub fn encode_pdf_with_options(
     pdf.finish()
 }
 
-/// `/Link`注釈1つを書く。内部アンカー(`#id`)は名前付き宛先(`/Dest`)を、外部
-/// リンクは`/URI`アクションを書く。
+/// Write one `/Link` annotation. An internal anchor (`#id`) writes a named destination
+/// (`/Dest`), and an external link a `/URI` action.
 pub(super) fn write_link_annotation(
     mut annotation: pdf_writer::writers::Annotation<'_>,
     area: &LinkArea,
@@ -427,28 +426,28 @@ pub(super) fn write_link_annotation(
     scale: f32,
 ) {
     annotation.subtype(AnnotationType::Link);
-    // 注釈の`/Rect`はページ座標系(content streamのCTMの影響を受けない)なので、
-    // ここでCSS px → ptへ換算する。
+    // An annotation's `/Rect` is in page coordinates (unaffected by the content stream's CTM),
+    // so the CSS px to pt conversion happens here.
     annotation.rect(PdfRect::new(
         area.x0 * scale,
         area.y0 * scale,
         area.x1 * scale,
         area.y1 * scale,
     ));
-    // 既定の枠線(ビューアによっては黒枠が出る)を消す。
+    // Remove the default border (some viewers draw a black frame).
     annotation.border(0.0, 0.0, 0.0, None);
 
     match internal_anchor_target(&area.href) {
-        // 名前を書くだけなので、対象がまだ書き出していない後方のページに
-        // あっても構わない。対象が存在しない場合は`/Dests`に名前が現れず、
-        // ビューアはクリックしても何もしない。
+        // It only writes a name, so the target may be on a later page not yet written. If the
+        // target does not exist, the name never appears in `/Dests` and a viewer simply does
+        // nothing on a click.
         Some(id) => {
             let name = anchor_destination_name(id);
             annotation.pair(Name(b"Dest"), Name(name.as_bytes()));
         }
         None => {
-            // 相対URLのままではPDFビューアが解決できないため、`<base href>`が
-            // 絶対URLなら解決してから書く。
+            // A PDF viewer cannot resolve a relative URL, so it is resolved first when
+            // `<base href>` is an absolute URL.
             let uri = resolve_against_base_href(base_href, &area.href);
             annotation
                 .action()
@@ -458,12 +457,12 @@ pub(super) fn write_link_annotation(
     }
 }
 
-/// アンカーの`id`から、PDFの名前付き宛先で使う名前を作る。
+/// Build the name used for the PDF named destination from an anchor's `id`.
 ///
-/// `id`の値をそのまま名前オブジェクトにすると、空白・`#`・区切り文字の
-/// エスケープが必要になる。ASCIIの英数字と`-`/`_`だけを残し、それ以外を
-/// `_`に置き換えた上で接頭辞を付ける(衝突しても「同じ名前の宛先が最初の
-/// 1つに解決される」だけで壊れない)。
+/// Using the `id` value directly as a name object would require escaping spaces, `#` and
+/// delimiters. Only ASCII alphanumerics plus `-`/`_` are kept, everything else is replaced
+/// with `_`, and a prefix is added (a collision merely resolves "destinations of the same
+/// name to the first one" and breaks nothing).
 pub fn anchor_destination_name(id: &str) -> String {
     let mut name = String::with_capacity(id.len() + 2);
     name.push_str("a_");
@@ -477,7 +476,7 @@ pub fn anchor_destination_name(id: &str) -> String {
     name
 }
 
-/// [`crate::layout::paginate_document`]の結果を、実際に`sink`へ書き出すところまで行う。
+/// Take the result of [`crate::layout::paginate_document`] all the way through to writing it to `sink`.
 pub fn write_document<S: Sink>(
     pages: &[Page],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -498,7 +497,7 @@ pub fn write_document<S: Sink>(
     )
 }
 
-/// [`write_document`]に、リンク設定とPDF書き出しオプションを渡せる版。
+/// The version of [`write_document`] that also takes the link settings and the PDF output options.
 #[allow(clippy::too_many_arguments)]
 pub fn write_document_with_options<S: Sink>(
     pages: &[Page],
@@ -523,22 +522,22 @@ pub fn write_document_with_options<S: Sink>(
     sink.finish()
 }
 
-/// trailerに書く`/ID`(ファイル識別子)。
+/// The `/ID` (file identifier) written in the trailer.
 ///
-/// PDFの規定では2つの文字列の配列で、1つ目は文書の作成時に決まる恒久的な
-/// 識別子、2つ目は更新のたびに変わる識別子。このクレートは追記更新
-/// (incremental update)を行わないので、両方に同じ値を書く。
+/// The PDF spec makes it an array of two strings: the first a permanent identifier fixed
+/// when the document is created, the second one that changes on every update. This crate
+/// performs no incremental updates, so the same value is written for both.
 ///
-/// 値の中身に規定は無く、文書ごとに一意であればよい。Info辞書に書くのと
-/// 同じメタデータ・作成日時・ページ数を混ぜたハッシュから16バイトを作る。
-/// PDF/Aはファイル識別子を要求するため、無いと適合しない。
+/// The spec says nothing about the contents beyond being unique per document. Sixteen bytes
+/// are built from a hash mixing the same metadata, creation date and page count written to
+/// the Info dictionary. PDF/A requires a file identifier, so without one it does not conform.
 pub(super) fn file_identifier(metadata: &DocumentMetadata, page_count: usize) -> Vec<u8> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let datetime = current_datetime();
     let mut id = Vec::with_capacity(16);
-    // 64bitのハッシュを2本つないで16バイトにする(saltを変えて別の値にする)。
+    // Two 64-bit hashes joined to make 16 bytes (a different salt gives a different value).
     for salt in [0u64, 0x9e37_79b9_7f4a_7c15] {
         let mut hasher = DefaultHasher::new();
         salt.hash(&mut hasher);
@@ -549,14 +548,14 @@ pub(super) fn file_identifier(metadata: &DocumentMetadata, page_count: usize) ->
         metadata.keywords.hash(&mut hasher);
         datetime.hash(&mut hasher);
         page_count.hash(&mut hasher);
-        // `pdf_writer::Finish`もスコープにあるので、どちらの`finish`かを明示する。
+        // `pdf_writer::Finish` is also in scope, so which `finish` is meant is made explicit.
         id.extend_from_slice(&Hasher::finish(&hasher).to_be_bytes());
     }
     id
 }
 
-/// PDF Info辞書を書く。`/Producer`と`/CreationDate`は常時、残りは
-/// 指定されたものだけを書く。
+/// Write the PDF Info dictionary. `/Producer` and `/CreationDate` are always written; the
+/// rest only when given.
 pub(super) fn write_document_info(
     mut info: pdf_writer::writers::DocumentInfo<'_>,
     metadata: &DocumentMetadata,
@@ -588,8 +587,8 @@ pub(super) fn write_document_info(
     info.finish();
 }
 
-/// ページの`/Resources`辞書、および各opacityグループForm XObjectの
-/// `/Resources`辞書(ページと同じ内容)を組み立てる共有ロジック。
+/// The shared logic assembling a page's `/Resources` dictionary, and the `/Resources`
+/// dictionary of each opacity group Form XObject (which has the same contents as the page's).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn write_resources(
     mut resources: pdf_writer::writers::Resources<'_>,
@@ -628,21 +627,21 @@ impl RefAllocator {
         Ref::new(self.0)
     }
 
-    /// 次に払い出される`Ref`を、消費せずに覗く。
+    /// Peek at the next `Ref` to be allocated without consuming it.
     ///
-    /// 「払い出してみて、駄目だったら払い出さなかったことにする」ために使う
-    /// (SVGの`Ref`振り直しは失敗しうるが、失敗しても番号を消費してしまうと
-    /// 書き出されないオブジェクト番号が生まれ、`StreamingPdfWriter`の
-    /// 「1から連番で全部書かれている」前提のxrefが壊れる)。
+    /// Used to "try allocating and, if it did not work out, pretend we never did"
+    /// (an SVG's `Ref` renumbering can fail, and consuming the numbers on failure would leave
+    /// object numbers that are never written, breaking `StreamingPdfWriter`'s xref assumption
+    /// that "everything from 1 upwards is written in sequence").
     #[cfg(feature = "svg")]
     pub(super) fn peek(&self) -> Ref {
         Ref::new(self.0 + 1)
     }
 
-    /// [`peek`](Self::peek)から始まる`count`個をまとめて消費する。
+    /// Consume `count` numbers starting from [`peek`](Self::peek), all at once.
     #[cfg(feature = "svg")]
     pub(super) fn commit(&mut self, count: usize) {
-        self.0 += i32::try_from(count).expect("Refの払い出し数がi32に収まらない");
+        self.0 += i32::try_from(count).expect("the number of Refs allocated does not fit an i32");
     }
 }
 
@@ -664,8 +663,8 @@ pub(super) fn collect_usage(b: &LaidOutBox, fonts: &FontCollection, usages: &mut
         LaidOutContent::Inline(lines) => {
             for line in lines {
                 collect_line_usage(line, fonts, usages);
-                // 行内の`display: inline-block`の
-                // 中身も同じ文書のグリフを使う。
+                // The contents of a `display: inline-block` within a line use the same
+                // document's glyphs.
                 for atomic in &line.atomics {
                     collect_usage(&atomic.content, fonts, usages);
                 }
@@ -685,8 +684,8 @@ pub(super) fn collect_usage(b: &LaidOutBox, fonts: &FontCollection, usages: &mut
     }
 }
 
-/// `line`(通常の行、または`display: list-item`のマーカーを表す1ラン限りの
-/// 合成`LineBox`)が実際に使うグリフを集める。
+/// Collect the glyphs `line` really uses (an ordinary line, or a synthesised single-run
+/// `LineBox` representing a `display: list-item` marker).
 fn collect_line_usage(line: &LineBox, fonts: &FontCollection, usages: &mut [FontUsage]) {
     for run in &line.runs {
         let Some(font) = fonts.get(run.font_index) else {
@@ -696,9 +695,9 @@ fn collect_line_usage(line: &LineBox, fonts: &FontCollection, usages: &mut [Font
             let text = cluster_text(&run.text, &run.glyphs, i);
             usages[run.font_index].record(font, glyph.glyph_id, text);
         }
-        // `text-emphasis-style: <string>`のマークはテキストに現れない文字を
-        // グリフとして描くため、サブセットから落ちないようここで記録する
-        // (キーワード指定のマークはパスで描くので収集は不要)。
+        // A `text-emphasis-style: <string>` mark draws as a glyph a character that never
+        // appears in the text, so it is recorded here to keep it out of the subsetting
+        // (a keyword mark is drawn as a path, so it needs no collecting).
         if let Some(EmphasisStyle::String(ch)) = run.emphasis.as_ref().map(|mark| &mark.style) {
             if let Some(glyph_id) = font.glyph_id(*ch) {
                 usages[run.font_index].record(font, glyph_id, ch.encode_utf8(&mut [0u8; 4]));
@@ -707,18 +706,18 @@ fn collect_line_usage(line: &LineBox, fonts: &FontCollection, usages: &mut [Font
     }
 }
 
-/// `glyphs[index]`が表す元テキスト(クラスタ)を`text`から切り出す。
+/// Cut from `text` the original text (the cluster) that `glyphs[index]` represents.
 ///
-/// `ShapedGlyph::cluster`は元テキスト内のバイトオフセットで、シェイピングの
-/// 結果1グリフが複数文字に対応することがある(`fl`のような合字)。次に
-/// オフセットが進むグリフの手前までを、そのグリフが表す文字列として扱う。
-/// これを1文字に切り詰めると、`/ToUnicode`が不完全になりPDFのテキスト検索・
-/// コピーで文字が欠ける。
+/// `ShapedGlyph::cluster` is a byte offset into the original text, and shaping can leave one
+/// glyph corresponding to several characters (a ligature such as `fl`). Everything up to the
+/// next glyph whose offset advances is treated as the string that glyph represents.
+/// Truncating that to one character would leave `/ToUnicode` incomplete and lose characters
+/// when a PDF is searched or copied.
 ///
-/// 逆に、1つのクラスタに複数グリフが対応する場合(結合文字等)や、
-/// クラスタが前へ戻る場合(RTL)は、従来どおり先頭1文字だけを割り当てる。
-/// 前者で全グリフにクラスタ全体を割り当てると抽出時に文字が重複し、後者では
-/// クラスタの範囲を前方だけからは決められないため。
+/// Conversely, where several glyphs correspond to one cluster (combining characters and the
+/// like), or the cluster moves backwards (RTL), only the first character is assigned, as
+/// before. In the first case assigning the whole cluster to every glyph would duplicate
+/// characters on extraction, and in the second the cluster's extent cannot be decided from the front alone.
 fn cluster_text<'a>(text: &'a str, glyphs: &[crate::fonts::ShapedGlyph], index: usize) -> &'a str {
     let start = (glyphs[index].cluster as usize).min(text.len());
     let single_char = || {
@@ -726,7 +725,7 @@ fn cluster_text<'a>(text: &'a str, glyphs: &[crate::fonts::ShapedGlyph], index: 
         &text[start..start + len]
     };
 
-    // このグリフだけがクラスタを担当しているときのみ、クラスタ全体を割り当てる。
+    // The whole cluster is assigned only when this glyph alone is responsible for it.
     if index > 0 && glyphs[index - 1].cluster as usize == start {
         return single_char();
     }
@@ -736,16 +735,15 @@ fn cluster_text<'a>(text: &'a str, glyphs: &[crate::fonts::ShapedGlyph], index: 
         None => text.len(),
     };
 
-    // クラスタ境界が文字境界と食い違っている場合(想定外のシェイピング結果)に
-    // 部分文字列の切り出しでpanicしないよう、`get`で確かめる。
+    // Where a cluster boundary disagrees with a character boundary (an unexpected shaping
+    // result), `get` is used so slicing the substring cannot panic.
     text.get(start..end).unwrap_or_else(single_char)
 }
 
-/// ページ(群)を再帰的に走査し、実際に使われている画像(`<img>`本体と
-/// `background-image`の両方)を`Rc`のポインタアイデンティティで重複排除して
-/// 集める。フォントの`collect_usage`と同じ「使用状況を先に集めてから
-/// Refを払い出す」構造。`background_images`は`NodeId → Rc<PreparedImage>`
-/// 側マップ。
+/// Walk the page (or pages) recursively and collect the images actually used (both `<img>`
+/// itself and `background-image`), deduplicated by `Rc` pointer identity. The same
+/// "collect the usage first, then allocate the Refs" structure as fonts' `collect_usage`.
+/// `background_images` is the `NodeId` to `Rc<PreparedImage>` side map.
 pub(super) fn collect_image_uses(
     b: &LaidOutBox,
     background_images: &HashMap<NodeId, Rc<PreparedImage>>,
@@ -788,21 +786,21 @@ pub(super) fn collect_image_uses(
     }
 }
 
-/// リンク注釈の生成に必要な文書単位の設定。
+/// The document-wide settings needed to generate link annotations.
 #[derive(Debug, Clone)]
 pub struct LinkSettings {
-    /// アンカー対象要素の`NodeId` → 名前付き宛先の名前。空なら内部アンカーの
-    /// 宛先は生成されない(リンク自体は書かれるが、
-    /// ビューアがクリックしても何も起きない)。
+    /// The `NodeId` of an anchor target element, mapped to the named destination's name. When
+    /// empty, no internal anchor destinations are generated (the links themselves are still
+    /// written, but clicking one in a viewer does nothing).
     pub anchor_names: HashMap<NodeId, String>,
-    /// `<base href>`。外部リンクの相対URLをこれに対して解決する。
+    /// The `<base href>`. External links' relative URLs resolve against it.
     pub base_href: Option<String>,
-    /// 外部リンク(http(s))の注釈を出すか(`--disable-external-links`)。
+    /// Whether to emit annotations for external links (http(s)) (`--disable-external-links`).
     pub external: bool,
-    /// 内部リンク(`#id`)の注釈を出すか(`--disable-internal-links`)。
+    /// Whether to emit annotations for internal links (`#id`) (`--disable-internal-links`).
     pub internal: bool,
-    /// 相対URLを`<base href>`で絶対化せずそのまま書くか
-    /// (`--keep-relative-links`)。
+    /// Whether to write a relative URL as-is rather than making it absolute with `<base href>`
+    /// (`--keep-relative-links`).
     pub keep_relative: bool,
 }
 
@@ -819,7 +817,7 @@ impl Default for LinkSettings {
 }
 
 impl LinkSettings {
-    /// 収集済みのリンク矩形から、無効化された種類のものを取り除く。
+    /// Remove the kinds that have been disabled from the collected link rectangles.
     pub(super) fn retain_enabled(&self, areas: &mut Vec<LinkArea>) {
         areas.retain(|area| {
             if internal_anchor_target(&area.href).is_some() {
@@ -830,8 +828,8 @@ impl LinkSettings {
         });
     }
 
-    /// 注釈へ渡す`<base href>`。`--keep-relative-links`のときは
-    /// 解決に使わせないため`None`にする。
+    /// The `<base href>` handed to the annotations. With `--keep-relative-links` it is
+    /// `None`, so it is never used for resolution.
     pub(super) fn annotation_base_href(&self) -> Option<&str> {
         if self.keep_relative {
             None
@@ -841,9 +839,9 @@ impl LinkSettings {
     }
 }
 
-/// PDFの`/Link`注釈1個分(ページ内の矩形+リンク先)。
+/// One PDF `/Link` annotation (a rectangle within the page plus its destination).
 ///
-/// 矩形はPDF座標系(左下原点、y上向き、ページ左下からの絶対座標)。
+/// The rectangle is in PDF coordinates (origin at the bottom left, y upwards, absolute from the page's bottom left).
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct LinkArea {
     pub href: Rc<str>,
@@ -853,9 +851,9 @@ pub(super) struct LinkArea {
     pub y1: f32,
 }
 
-/// ページ内のボックスを走査し、`<a href>`に属するテキストランから
-/// `/Link`注釈の矩形を集める。行内で同じリンクが連続するランは1つの
-/// 矩形にまとめ、折り返しで別の行になった分は別の矩形にする。
+/// Walk the boxes on a page and collect the `/Link` annotation rectangles from the text runs
+/// belonging to an `<a href>`. Consecutive runs of the same link within a line are merged
+/// into one rectangle, and what wrapped onto another line becomes a separate rectangle.
 pub(super) fn collect_link_areas(b: &LaidOutBox, settings: &PageSettings, out: &mut Vec<LinkArea>) {
     match &b.content {
         LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -901,14 +899,14 @@ fn push_line_link_areas(line: &LineBox, settings: &PageSettings, out: &mut Vec<L
         };
         let x0 = settings.margin.left + line.rect.x + run.x_offset;
         let x1 = x0 + run.width;
-        // ランのベースライン(`vertical-align`のずれ込み)を基準に、ascent〜
-        // descentの範囲を注釈の高さにする。
+        // The annotation's height is the ascent-to-descent range, relative to the run's
+        // baseline (including any `vertical-align` shift).
         let baseline_y = to_pdf_y(settings, line.rect.y + line.baseline) + run.baseline_shift;
         let y0 = baseline_y - run.descent;
         let y1 = baseline_y + run.ascent;
 
         match &mut current {
-            // 同じリンクが連続する間は1つの矩形へ広げる。
+            // The rectangle is extended while the same link continues.
             Some(area) if area.href == *href => {
                 area.x1 = area.x1.max(x1);
                 area.y0 = area.y0.min(y0);
@@ -933,8 +931,8 @@ fn push_line_link_areas(line: &LineBox, settings: &PageSettings, out: &mut Vec<L
     }
 }
 
-/// ページ内のボックスを走査し、アンカー対象(`anchor_names`に含まれる
-/// `NodeId`)が最初に現れた位置(border box上端のPDF y座標)を集める。
+/// Walk the boxes on a page and collect where each anchor target (a `NodeId` present in
+/// `anchor_names`) first appears (the PDF y coordinate of the top of its border box).
 pub(super) fn collect_anchor_positions(
     b: &LaidOutBox,
     anchor_names: &HashMap<NodeId, String>,
@@ -984,15 +982,15 @@ pub(super) fn collect_anchor_positions(
     }
 }
 
-/// `href`が内部アンカー(`#id`)なら、その`id`部分を返す。
+/// If `href` is an internal anchor (`#id`), return its `id` part.
 pub(super) fn internal_anchor_target(href: &str) -> Option<&str> {
     href.strip_prefix('#').filter(|id| !id.is_empty())
 }
 
-/// ページ(群)を再帰的に走査し、`opacity < 1`の要素の`NodeId`を集める。
-/// フォント・画像と同じ「使用状況を先に集めてからRefを払い出す」構造。
-/// `opacity`要素は必ず実DOM要素に対応する(無名ボックスには`style`が
-/// 付かないため`opacity`を持ちようがない)ので`b.node`は常に`Some`のはず。
+/// Walk the page (or pages) recursively and collect the `NodeId`s of elements with
+/// `opacity < 1`. The same "collect the usage first, then allocate the Refs" structure as
+/// fonts and images. An `opacity` element always corresponds to a real DOM element (an
+/// anonymous box has no `style` and so cannot carry `opacity`), so `b.node` should always be `Some`.
 pub(super) fn collect_opacity_uses(
     b: &LaidOutBox,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1035,8 +1033,8 @@ pub(super) fn collect_opacity_uses(
     }
 }
 
-/// [`collect_opacity_uses`]で払い出した`Ref`の、Form XObject用の固定
-/// リソース名(画像の`image_resource_name`と同じパターン)。
+/// The fixed resource name for the Form XObject of a `Ref` allocated by
+/// [`collect_opacity_uses`] (the same pattern as images' `image_resource_name`).
 pub(super) fn form_resource_name(form_ref: Ref) -> String {
     format!("Fo{}", form_ref.get())
 }
@@ -1084,14 +1082,14 @@ pub(super) fn render_box(
     );
 }
 
-/// [`render_box`]の本体。通常は`b.node`から引いた素の`style`で描画するが、
-/// `border-collapse: collapse`時のセル(隣接セルと統合した枠線を使う必要が
-/// ある)のように、呼び出し側が上書きしたスタイルで描画したい場合のために
-/// `style`を引数として分離してある。
+/// The body of [`render_box`]. It normally draws with the plain `style` looked up from
+/// `b.node`, but `style` is a separate parameter so the caller can draw with an overridden
+/// style, as with a cell under `border-collapse: collapse` (which needs the borders merged
+/// with its neighbours).
 ///
-/// `transform`が指定されている場合、実際の描画([`render_box_with_style_inner`])
-/// をコンテンツストリームの`q cm ... Q`(CTM操作)で包む。レイアウトには
-/// 一切影響しない(視覚効果のみ、CSS仕様通り)。
+/// Where a `transform` is set, the actual drawing
+/// ([`render_box_with_style_inner`]) is wrapped in a `q cm ... Q` (a CTM operation) in the
+/// content stream. It never affects layout (a visual effect only, as the CSS spec says).
 #[allow(clippy::too_many_arguments)]
 fn render_box_with_style(
     content: &mut RenderTarget<'_>,
@@ -1148,11 +1146,11 @@ fn render_box_with_style(
     content.restore_state();
 }
 
-/// `opacity < 1`の場合、実際の描画([`render_box_with_style_inner`])を別の
-/// `Content`へ書いてPDFの透明グループ(Form XObject + `/Group /S
-/// /Transparency`)として`pending_forms`へ積み、元の`content`側には
-/// `q /GSn gs /FoN Do Q`だけを書く。`transform`のCTM包みより内側で呼ぶ
-/// 必要があるため、`render_box_with_style`から分離してある。
+/// Where `opacity < 1`, the actual drawing ([`render_box_with_style_inner`]) is written to a
+/// separate `Content` and pushed onto `pending_forms` as a PDF transparency group (a Form
+/// XObject with `/Group /S /Transparency`), while the original `content` gets only
+/// `q /GSn gs /FoN Do Q`. It has to be called inside the `transform` CTM wrapper, hence its
+/// separation from `render_box_with_style`.
 #[allow(clippy::too_many_arguments)]
 fn render_box_opacity_wrapped(
     content: &mut RenderTarget<'_>,
@@ -1188,12 +1186,12 @@ fn render_box_opacity_wrapped(
         return;
     }
 
-    // `collect_opacity_uses`が事前にこのノードのRefを払い出し済みのはず
-    // (`b.node`は必ず実DOM要素)。
+    // `collect_opacity_uses` should have allocated this node's Ref in advance
+    // (`b.node` is always a real DOM element).
     let form_ref = *b
         .node
         .and_then(|n| opacity_form_ids.get(&n))
-        .expect("opacity < 1の要素は事前にRefが払い出されているはず");
+        .expect("an element with opacity < 1 should have had a Ref allocated in advance");
 
     let mut sub_content = Content::new();
     let mut sub_target = content.wrap(&mut sub_content);
@@ -1220,14 +1218,14 @@ fn render_box_opacity_wrapped(
     content.restore_state();
 }
 
-/// `b`の`transform`/`transform-origin`から、PDFの`cm`オペランドを組み立てる。
-/// CSS座標系(Y下向き)で関数を合成してから、まずPDF座標系(Y上向き)へ変換し
-/// (この時点の平行移動成分は`translate`由来の相対量のままなので、Y成分の
-/// 符号反転だけで正しく変換できる)、最後に`transform-origin`をPDF座標(ページ
-/// 絶対座標)へ変換した上で基準点として適用する。原点の平行移動を先にCSS
-/// 座標側で行ってしまうと、ページ高さのオフセットが変形行列の回転・拡大成分と
-/// 混ざり込み誤った結果になるため、「原点調整はPDF座標に変換した後で行う」
-/// という順序が重要。
+/// Build the PDF `cm` operands from `b`'s `transform`/`transform-origin`.
+/// The functions are composed in CSS coordinates (Y downwards) and then converted to PDF
+/// coordinates (Y upwards) first (at that point the translation component is still the
+/// relative amount from `translate`, so flipping the sign of Y converts it correctly), and
+/// finally `transform-origin` is converted to PDF coordinates (absolute within the page) and
+/// applied as the reference point. Translating the origin on the CSS side first would mix
+/// the page height offset into the matrix's rotation and scale components and give the wrong
+/// result, so the order matters: adjust the origin only after converting to PDF coordinates.
 fn transform_matrix_pdf_space(
     b: &LaidOutBox,
     style: &ComputedStyle,
@@ -1236,8 +1234,8 @@ fn transform_matrix_pdf_space(
     let border_box = b.layout.border_box();
     let css_matrix = compose_transform(&style.transform, border_box.width, border_box.height);
     let [a, b_, c, d, e, f] = css_matrix;
-    // Y軸反転の共役変換。`translate`/`matrix`のe/fは常に相対量(ページ
-    // 絶対座標ではない)なので、符号反転だけで正しくPDF座標系の相対量になる。
+    // The conjugate of the Y-axis flip. The e/f of `translate`/`matrix` are always relative
+    // amounts (never absolute page coordinates), so flipping the sign alone gives the correct relative amount in PDF coordinates.
     let pdf_matrix_no_origin = [a, -b_, -c, d, e, -f];
 
     let origin_x = settings.margin.left
@@ -1259,9 +1257,9 @@ fn resolve_length_percentage(lp: LengthPercentage, basis: f32) -> f32 {
     }
 }
 
-/// `transform-origin`(基準点`(ox, oy)`)を基準に`m`を適用できるよう、
-/// `Translate(ox,oy) ∘ m ∘ Translate(-ox,-oy)`へ調整する。`m`と`(ox, oy)`は
-/// 同じ座標系(このプロジェクトでは常にPDF座標系)で揃っている必要がある。
+/// Adjust `m` to `Translate(ox,oy) * m * Translate(-ox,-oy)` so it can be applied about the
+/// `transform-origin` reference point `(ox, oy)`. `m` and `(ox, oy)` must be in the same
+/// coordinate system (always PDF coordinates in this project).
 fn apply_transform_origin(m: [f32; 6], ox: f32, oy: f32) -> [f32; 6] {
     let [a, b, c, d, e, f] = m;
     [
@@ -1274,8 +1272,8 @@ fn apply_transform_origin(m: [f32; 6], ox: f32, oy: f32) -> [f32; 6] {
     ]
 }
 
-/// [`render_box_with_style`]の実体(装飾〜子要素再帰)。`transform`のCTM包み
-/// より内側に置く必要があるため分離してある。
+/// The body of [`render_box_with_style`] (decoration through to child recursion). It has to
+/// sit inside the `transform` CTM wrapper, hence its separation.
 #[allow(clippy::too_many_arguments)]
 fn render_box_with_style_inner(
     content: &mut RenderTarget<'_>,
@@ -1292,13 +1290,13 @@ fn render_box_with_style_inner(
     opacity_form_ids: &HashMap<NodeId, Ref>,
     pending_forms: &mut Vec<(Ref, Vec<u8>)>,
 ) {
-    // `visibility: hidden`(`collapse`も同一視)。このボックス自身の装飾・
-    // 内容は描画しないが、`Blocks`/`Table`の子要素へは引き続き再帰する(子孫が
-    // `visibility: visible`で上書きしていれば、`render_box`が子自身の計算
-    // スタイルを個別に評価し直すため正しく再描画される、仕様通り)。テーブルの
-    // 場合は`border-collapse`統合描画の簡略化として通常の`render_box`で
-    // 再帰する(隠れたテーブル内で特定セルだけ`visible`に上書きする、という
-    // 稀なケースでは隣接セルとの枠線統合は行われない)。
+    // `visibility: hidden` (with `collapse` treated the same). This box's own decoration and
+    // content are not drawn, but recursion into the `Blocks`/`Table` children continues (if a
+    // descendant overrides it with `visibility: visible`, `render_box` re-evaluates that
+    // child's own computed style and redraws it correctly, as the spec requires). For a
+    // table it recurses through the ordinary `render_box` as a simplification of the
+    // `border-collapse` merged drawing (in the rare case of overriding one cell to `visible`
+    // inside a hidden table, borders are not merged with the neighbours).
     if style.visibility.is_hidden() {
         match &b.content {
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -1378,8 +1376,8 @@ fn render_box_with_style_inner(
         return;
     }
 
-    // `background-image`は`<img>`と異なりboxの中身ではなく装飾なので、
-    // `b.node`から側マップを引いて`Ref`とintrinsicサイズを解決する。
+    // Unlike `<img>`, a `background-image` is decoration rather than the box's content, so
+    // the `Ref` and intrinsic size are resolved from the side map keyed on `b.node`.
     let background_image_paint = b
         .node
         .and_then(|n| background_images.get(&n))
@@ -1403,8 +1401,8 @@ fn render_box_with_style_inner(
     );
     render_outline(content, &b.layout, style, settings);
 
-    // `display: list-item`のマーカー。通常のテキスト行と同じ`render_line`を
-    // 再利用する。
+    // The marker of a `display: list-item`. It reuses the same `render_line` as an ordinary
+    // text line.
     if let Some(marker) = &b.marker {
         render_line(
             content,
@@ -1417,10 +1415,10 @@ fn render_box_with_style_inner(
         );
     }
 
-    // `overflow: hidden`/`scroll`/`auto`(区別せず同じクリップとして扱う)。
-    // 装飾(背景・枠線・outline・マーカー)は上で描画済みでクリップの影響を
-    // 受けない。クリップ境界は常に直線の
-    // padding-box (`border-radius`には沿わせない)。
+    // `overflow: hidden`/`scroll`/`auto` (not distinguished; all clip the same way).
+    // The decoration (background, borders, outline, marker) is drawn above and is unaffected
+    // by the clip. The clip boundary is always the straight padding box
+    // (it never follows `border-radius`).
     if style.overflow.clips() {
         let padding_box = b.layout.padding_box();
         let x = settings.margin.left + padding_box.x;
@@ -1479,8 +1477,8 @@ fn render_box_with_style_inner(
                     font_resource_names,
                     alpha_gs_names,
                 );
-                // 行内の`display: inline-block`は通常のブロックと同じ
-                // 描画経路を通す(枠線・背景・中身のテキスト)。
+                // A `display: inline-block` within a line goes through the same drawing path
+                // as an ordinary block (borders, background and the text inside).
                 for atomic in &line.atomics {
                     render_box(
                         content,
@@ -1530,17 +1528,17 @@ fn render_box_with_style_inner(
                     pending_forms,
                 );
             }
-            // `border-collapse`は`table`/`inline-table`要素にのみ適用されるため
-            // テーブル自身の`style`を見るが、`empty-cells`は`table-cell`要素に
-            // 適用されるプロパティ(CSS2.1 17.6.1.1)なのでセル自身の計算済み
-            // スタイルを見る必要がある(セル単位の上書きに対応するため)。
-            // `empty-cells: hide`は`border-collapse: separate`でのみ意味を持つ
-            // (CSS仕様通り)。内容が空のセルは元々装飾以外何も描画しないため、
-            // `render_box`呼び出し自体をスキップしてよい。
+            // `border-collapse` applies only to `table`/`inline-table` elements, so the
+            // table's own `style` is consulted; but `empty-cells` is a property applying to
+            // `table-cell` elements (CSS2.1 17.6.1.1), so the cell's own computed style has to
+            // be consulted (to honour a per-cell override).
+            // `empty-cells: hide` is meaningful only with `border-collapse: separate` (as the
+            // CSS spec says). A cell with empty content draws nothing but decoration anyway,
+            // so the `render_box` call itself can be skipped.
             let collapse = style.border_collapse == BorderCollapse::Collapse;
-            // `border-collapse: collapse`時、隣接セル間の枠線を統合するために
-            // 全セルのフラットな一覧が要る
-            // (隣接判定は矩形の接触で幾何的に行う)。
+            // Under `border-collapse: collapse`, a flat list of every cell is needed to merge
+            // the borders between neighbours
+            // (adjacency is decided geometrically, by rectangles touching).
             let all_cells: Vec<&LaidOutBox> = if collapse {
                 table.rows.iter().flat_map(|row| &row.cells).collect()
             } else {
@@ -1563,10 +1561,10 @@ fn render_box_with_style_inner(
                     if collapse {
                         let (resolved_style, resolved_border) =
                             resolve_collapsed_cell_style(cell, &cell_style, &all_cells, styles);
-                        // 枠線の描画太さは`ComputedStyle`ではなく`layout.border`
-                        // (レイアウト確定時に計算済み)を見るため
-                        // ([`render_border`]参照)、統合後の太さを反映した
-                        // クローンを作って描画する。
+                        // The drawn border thickness comes from `layout.border` (computed
+                        // when layout settled) rather than `ComputedStyle`
+                        // (see [`render_border`]), so a clone reflecting the merged
+                        // thickness is made and drawn.
                         let mut resolved_cell = cell.clone();
                         resolved_cell.layout.border = resolved_border;
                         render_box_with_style(
@@ -1610,17 +1608,16 @@ fn render_box_with_style_inner(
     }
 }
 
-/// `children`を`z-index`とfloatに従って描画する順序へ並べ替える
-/// (`(z-index, floatか, 文書順)`で安定ソート)。`position: static`の要素には
-/// `z-index`が効果を持たない(仕様通り)ため実効値は常に`0`として扱う。
-/// `sort_by_key`は安定ソートなので、キーが同じ要素同士は文書順が保たれる。
-/// スタッキングコンテキストの分離は非対応(同一の直接の親を持つ兄弟間の
-/// 描画順のみを制御する)。
+/// Reorder `children` into drawing order according to `z-index` and float
+/// (a stable sort on `(z-index, is it a float, document order)`). `z-index` has no effect on
+/// a `position: static` element (as the spec says), so its effective value is always `0`.
+/// `sort_by_key` is stable, so elements with the same key keep their document order.
+/// Separate stacking contexts are not supported (this controls only the drawing order among
+/// siblings with the same direct parent).
 ///
-/// floatを同じ`z-index`の通常フローのブロックより後(上)に描画するのは
-/// CSS2.1 Appendix Eの規定による(ブロックの背景・枠線はfloatより前の
-/// レイヤー)。これが無いと、floatの直後に背景色を持つブロックが来たときに
-/// その背景がfloatを塗り潰してしまう。
+/// Drawing floats after (above) normal-flow blocks of the same `z-index` follows CSS2.1
+/// Appendix E (a block's background and borders are in a layer below floats). Without it, a
+/// block with a background colour immediately after a float would paint over that float.
 fn paint_order<'a>(
     children: &'a [LaidOutBox],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1640,13 +1637,13 @@ fn paint_order<'a>(
     order
 }
 
-/// セルの内容が空かどうか(テキストが空白のみ/子要素が無い)。`empty-cells:
-/// hide`の判定に使う。ネストしたテーブル・置換要素(`<img>`)は常に非空扱い
-/// (内容として意味を持つため)。
+/// Whether a cell's content is empty (whitespace-only text, or no children). Used for the
+/// `empty-cells: hide` decision. A nested table and a replaced element (`<img>`) always count
+/// as non-empty (being meaningful as content).
 fn laid_content_is_empty(content: &LaidOutContent) -> bool {
     match content {
-        // `<td>&nbsp;</td>`は「空のセル」ではない(枠を出すための定番の書き方)。
-        // `str::trim`は`&nbsp;`も落としてしまうためCSSの分類で判定する。
+        // `<td>&nbsp;</td>` is not "an empty cell" (it is the classic way to force a frame).
+        // `str::trim` would drop `&nbsp;` too, so the CSS classification decides.
         LaidOutContent::Inline(lines) => lines.iter().all(|line| {
             line.runs
                 .iter()
@@ -1664,35 +1661,34 @@ fn laid_content_is_empty(content: &LaidOutContent) -> bool {
     }
 }
 
-/// `border-collapse: collapse`時、`cell`の枠線を隣接セルと統合した
-/// `ComputedStyle`と、実際に描画する枠線の太さ(`layout.border`の差し替え用
-/// `EdgeSizes`)を作る(枠線以外は`cell_style`のまま)。
+/// Under `border-collapse: collapse`, build the `ComputedStyle` with `cell`'s borders merged
+/// with its neighbours, plus the thicknesses actually drawn (an `EdgeSizes` replacing
+/// `layout.border`). Everything but the borders stays as in `cell_style`.
 ///
-/// レイアウト自体は`border-collapse`の値に関わらずseparateモデルと同一に
-/// 保っているため、collapse時は`h_spacing`/`v_spacing`が0になり、隣接セルの
-/// 矩形は座標が一致するまで接する。これを利用して、矩形の接触を幾何的に
-/// 判定するだけでrowspan/colspanのグリッド
-/// 情報を別途持たずに隣接セルを見つけられる。
+/// Layout itself is identical to the separate model regardless of `border-collapse`, so
+/// under collapse `h_spacing`/`v_spacing` become 0 and neighbouring cells' rectangles touch
+/// at matching coordinates. That lets a neighbour be found purely by deciding geometrically
+/// whether the rectangles touch, without keeping separate rowspan/colspan grid
+/// information.
 ///
-/// 同じ境界が両側から二重に描画されるのを防ぐため、常に「左隣が見つかれば
-/// 自分の左辺は描画しない(右隣側が統合済みの枠線を右辺として描画する)」
-/// という向きで統一する(上/下も同様)。cellとtable自体の境界は対象外
-/// (テーブル自身の枠線はborder-box外側の帯として描画されセルの矩形と
-/// 重ならないため、二重描画の問題が生じない)。1つの辺に複数の隣接セルが接する
-/// 場合(rowspanが絡む場合等)は、先に見つかったものを使う(既知の簡略化)。
+/// To keep the same boundary from being drawn twice, from both sides, the direction is
+/// always "if a left neighbour is found, do not draw my left edge (the right-hand side draws
+/// the merged border as its right edge)" (and likewise for top and bottom). The boundary
+/// between a cell and the table itself is out of scope (the table's own borders are drawn as
+/// a band outside the border box and do not overlap a cell's rectangle, so no double drawing
+/// arises). Where several neighbours touch one edge (a rowspan, say), the first found is used.
 ///
-/// 枠線の実際の描画太さは(`ComputedStyle`ではなく)レイアウト確定時に計算
-/// 済みの`layout.border`(`EdgeSizes`)を見る([`render_border`]参照)ため、
-/// 統合後の`ComputedStyle`だけでなく、それに対応する`EdgeSizes`
-/// (`layout::resolve_border`と同じ正規化)も併せて返し、呼び出し側で
-/// `cell.layout.border`を差し替えてもらう。
+/// The thickness actually drawn comes from `layout.border` (an `EdgeSizes` computed when
+/// layout settled) rather than `ComputedStyle` (see [`render_border`]), so as well as the
+/// merged `ComputedStyle` the corresponding `EdgeSizes` is returned too (normalised the same
+/// way as `layout::resolve_border`), for the caller to substitute into `cell.layout.border`.
 fn resolve_collapsed_cell_style(
     cell: &LaidOutBox,
     cell_style: &ComputedStyle,
     all_cells: &[&LaidOutBox],
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
 ) -> (ComputedStyle, EdgeSizes) {
-    // 矩形の接触判定に許容する誤差(浮動小数点の丸め対策)。
+    // The tolerance allowed when deciding whether rectangles touch (guarding against floating-point rounding).
     const EPSILON: f32 = 0.5;
 
     fn ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
@@ -1778,9 +1774,9 @@ fn resolve_collapsed_cell_style(
     (resolved, border)
 }
 
-/// `style: none`の辺は指定幅に関わらず実効幅0として扱う
-/// (`layout::resolve_border`と同じ正規化、`resolve_border_conflict`の
-/// 幅比較を単純にするため)。
+/// An edge with `style: none` counts as an effective width of 0 regardless of the width set
+/// (the same normalisation as `layout::resolve_border`, to keep the width comparison in
+/// `resolve_border_conflict` simple).
 fn border_edge(width: f32, style: BorderStyle, color: RgbaColor) -> (f32, BorderStyle, RgbaColor) {
     if style == BorderStyle::None {
         (0.0, BorderStyle::None, color)
@@ -1789,10 +1785,10 @@ fn border_edge(width: f32, style: BorderStyle, color: RgbaColor) -> (f32, Border
     }
 }
 
-/// CSS2.1 §17.6.2の枠線競合解決の簡略版: 幅が太い方が勝ち、幅が同じなら
-/// スタイルの優先順位(仕様通りの強さの見た目順: double > solid > dashed >
-/// dotted > ridge > outset > groove > inset > none)で決める。`hidden`は
-/// [`BorderStyle`]に無いため非対応。幅・スタイルとも同着の場合は`a`を採用する
+/// A simplified version of CSS2.1 section 17.6.2's border conflict resolution: the thicker
+/// width wins, and at equal widths the style priority decides (in the spec's order of
+/// apparent strength: double > solid > dashed > dotted > ridge > outset > groove > inset >
+/// none). `hidden` is absent from [`BorderStyle`] and is unsupported. On a tie in both width and style, `a` is taken
 fn resolve_border_conflict(
     a: (f32, BorderStyle, RgbaColor),
     b: (f32, BorderStyle, RgbaColor),
@@ -1823,11 +1819,11 @@ fn resolve_border_conflict(
     a
 }
 
-/// 背景・枠線を描画する。角丸(`border-radius`)が指定されていなければ従来通り
-/// 直線の矩形/4辺独立ストロークで描き、指定されていれば[`render_rounded_decoration`]
-/// に委譲する。`background_image_ref`はborder-boxいっぱいにストレッチ表示する
-/// 背景画像のXObject Ref(`border-radius`によるクリップは非対応)。背景色→
-/// 背景画像→枠線の順で描画する。
+/// Draw the background and borders. With no `border-radius` set, it draws straight
+/// rectangles and four independently stroked edges as before; with one set, it delegates to
+/// [`render_rounded_decoration`]. `background_image_ref` is the XObject Ref of a background
+/// image stretched to fill the border box (clipping by `border-radius` is not supported).
+/// The order is background colour, then background image, then borders.
 #[allow(clippy::too_many_arguments)]
 fn render_box_decoration(
     content: &mut RenderTarget<'_>,
@@ -1872,11 +1868,11 @@ fn render_box_decoration(
     render_border(content, layout, style, settings);
 }
 
-/// ぼかし近似の段階数。
+/// The number of steps in the blur approximation.
 const BOX_SHADOW_BLUR_STEPS: u32 = 4;
 
-/// `box-shadow`を描画する(要素本体の背景・枠線より前に呼ぶこと)。リストの
-/// 先頭が最前面になるよう後ろから塗る。`inset`は非対応。
+/// Draw the `box-shadow`s (call before the element's own background and borders). They are
+/// painted back to front so the first in the list ends up frontmost. `inset` is not supported.
 fn render_box_shadows(
     content: &mut RenderTarget<'_>,
     layout: &Layout,
@@ -1902,11 +1898,11 @@ fn render_box_shadows(
     }
 }
 
-/// 1つの影を描く。ぼかしは真のガウスぼかしではなく、`spread-radius`分だけ
-/// 広げたコア矩形の外側に、`blur-radius`まで均等`BOX_SHADOW_BLUR_STEPS`段階で
-/// 広がる半透明の同心矩形を外側(最も広く・最も薄い)から内側(コアに近く・
-/// 最も濃い)の順に重ね塗りして近似する。角丸は要素本体の半径(`radii`)
-/// をそのまま使い、拡大に応じて広げない。
+/// Draw one shadow. The blur is not a true Gaussian: it is approximated by overpainting
+/// concentric semi-transparent rectangles outside a core rectangle expanded by
+/// `spread-radius`, spreading out to `blur-radius` in `BOX_SHADOW_BLUR_STEPS` even steps,
+/// from the outermost (widest and faintest) to the innermost (closest to the core and
+/// strongest). The corner radii use the element's own (`radii`) unchanged, without growing.
 fn render_single_box_shadow(
     content: &mut RenderTarget<'_>,
     border_box: Rect,
@@ -1932,8 +1928,8 @@ fn render_single_box_shadow(
             settings,
             border_box.y + border_box.height + shadow.offset_y + expand,
         );
-        // 既知の簡略化: `spread-radius`が負で矩形が縮退する場合はそのリングを
-        // 描画しない(ゼロ・負サイズの矩形は無意味なため)。
+        // A known simplification: where a negative `spread-radius` degenerates the rectangle,
+        // that ring is not drawn (a zero or negative sized rectangle being meaningless).
         if x1 <= x0 || y_top <= y_bottom {
             return;
         }
@@ -1966,18 +1962,18 @@ fn render_single_box_shadow(
             / BOX_SHADOW_BLUR_STEPS as f32;
         draw(content, expand, alpha);
     }
-    // コア(spreadのみ、フルアルファ)を最後に重ね、blur-radius: 0の場合と
-    // 輪郭が確実に一致するようにする。
+    // The core (spread only, at full alpha) is overpainted last, so the outline matches the
+    // blur-radius: 0 case exactly.
     draw(content, shadow.spread_radius, shadow.color.alpha);
 }
 
-/// 1コーナー分の実効半径(水平, 垂直)のpx値。真円は水平=垂直。
+/// The effective radii of one corner as px values (horizontal, vertical). A true circle has the two equal.
 type CornerRadiusPx = (f32, f32);
 
-/// スタイル上の`border-radius`を、そのボックスがページ分割された断片の
-/// どの位置にあるか([`FragmentPosition`])に応じて丸める。継続中の断片
-/// (`Middle`/上端なら`Last`/下端なら`First`)では、本来枠線が無い辺の角を
-/// 丸めてしまわないよう、その辺に接する角の半径を0にする。
+/// Round down the `border-radius` from the style according to where the box sits among the
+/// fragments pagination produced ([`FragmentPosition`]). On a continuing fragment
+/// (`Middle`, the top of a `Last`, the bottom of a `First`), the radius of any corner
+/// touching that edge is set to 0, so an edge that has no border is not rounded.
 fn effective_radii(
     layout: &Layout,
     style: &ComputedStyle,
@@ -2020,23 +2016,23 @@ fn effective_radii(
     )
 }
 
-/// アルファ量子化の段階数(0.05刻み・21段階)。
+/// The number of alpha quantisation steps (21 steps of 0.05).
 pub(super) const ALPHA_STEPS: usize = 20;
 
-/// アルファ値を`0..=ALPHA_STEPS`の段階(0.05刻み)へ丸める。
+/// Round an alpha value to a step in `0..=ALPHA_STEPS` (in 0.05 increments).
 fn quantize_alpha_step(alpha: f32) -> usize {
     (alpha.clamp(0.0, 1.0) * ALPHA_STEPS as f32).round() as usize
 }
 
-/// `alpha_gs_names`(`ALPHA_STEPS + 1`要素、段階インデックスで引く)の
-/// 固定リソース名(`"GSA{段階}"`)。
+/// The fixed resource name (`"GSA{step}"`) for `alpha_gs_names`
+/// (which has `ALPHA_STEPS + 1` entries, indexed by step).
 pub(super) fn alpha_gs_resource_name(step: usize) -> String {
     format!("GSA{step}")
 }
 
-/// アルファ値に応じて`gs`演算子(`/ca`・`/CA`)を発行する。1.0(完全不透明)は
-/// 何もしない(PDFの既定状態のため)。呼び出し側が
-/// `save_state`/`restore_state`でスコープを囲むこと。
+/// Emit the `gs` operator (`/ca` and `/CA`) for an alpha value. 1.0 (fully opaque) emits
+/// nothing (being PDF's default state). The caller must enclose the scope with
+/// `save_state`/`restore_state`.
 fn apply_fill_alpha(content: &mut RenderTarget<'_>, alpha: f32, alpha_gs_names: &[String]) {
     let step = quantize_alpha_step(alpha);
     if step >= ALPHA_STEPS {
@@ -2071,11 +2067,11 @@ fn render_background(
     }
 }
 
-/// `rect`いっぱいに画像XObjectを描画する。`<img>`(content box)・
-/// `background-image`(タイル1枚分の矩形、[`background_tile_rects`]参照)
-/// いずれの呼び出し元からも使う共通ヘルパー。`resource_ref`が指すXObjectは、
-/// 呼び出し元がページの`/Resources/XObject`辞書へ既に登録済みであること
-/// ([`image_resource_name`]と同じ命名規則でリソース名を導出する)。
+/// Draw an image XObject filling `rect`. A shared helper used both by `<img>` (its content
+/// box) and by `background-image` (the rectangle of one tile; see [`background_tile_rects`]).
+/// The XObject `resource_ref` points at must already be registered in the page's
+/// `/Resources/XObject` dictionary by the caller (the resource name is derived by the same
+/// naming rule as [`image_resource_name`]).
 fn render_image(
     content: &mut RenderTarget<'_>,
     rect: Rect,
@@ -2091,8 +2087,8 @@ fn render_image(
     content.restore_state();
 }
 
-/// `<img>`(置換要素)を`object-fit`/`object-position`に従って描画する。
-/// `object-fit`の値によらず常にcontent-boxへクリップする。
+/// Draw an `<img>` (a replaced element) according to `object-fit`/`object-position`.
+/// It always clips to the content box, whatever the `object-fit` value.
 fn render_replaced_image(
     content: &mut RenderTarget<'_>,
     content_box: Rect,
@@ -2113,10 +2109,10 @@ fn render_replaced_image(
     content.restore_state();
 }
 
-/// `object-fit`/`object-position`から実際に描画すべき画像の矩形(content-box
-/// 基準の座標系、レイアウト空間)を計算する。intrinsicサイズが縮退している
-/// 場合はcontent-box全体への単純な描画にフォールバックする
-/// (`background_tile_rects`と同じゼロ除算回避)。
+/// Compute, from `object-fit`/`object-position`, the rectangle the image should really be
+/// drawn in (in content-box-relative coordinates, in layout space). Where the intrinsic size
+/// is degenerate it falls back to drawing plainly over the whole content box
+/// (the same division-by-zero guard as `background_tile_rects`).
 fn object_fit_rect(content_box: Rect, style: &ComputedStyle, intrinsic: (f32, f32)) -> Rect {
     let (iw, ih) = intrinsic;
     if iw <= 0.0 || ih <= 0.0 {
@@ -2134,7 +2130,7 @@ fn object_fit_rect(content_box: Rect, style: &ComputedStyle, intrinsic: (f32, f3
             (iw * scale, ih * scale)
         }
         ObjectFit::None => (iw, ih),
-        // 仕様通り`none`と`contain`のうち小さい方。
+        // As the spec says, the smaller of `none` and `contain`.
         ObjectFit::ScaleDown => {
             if iw <= content_box.width && ih <= content_box.height {
                 (iw, ih)
@@ -2166,20 +2162,20 @@ fn object_fit_rect(content_box: Rect, style: &ComputedStyle, intrinsic: (f32, f3
     }
 }
 
-/// `background-image`の描画に必要な情報。`render_box`が`b.node`から
-/// 側マップ(`background_images`)経由で解決する。
+/// The information needed to draw a `background-image`. `render_box` resolves it from
+/// `b.node` through the side map (`background_images`).
 #[derive(Debug, Clone, Copy)]
 struct BackgroundImagePaint {
     resource: Ref,
-    /// 内在サイズ(px)。SVGでは小数になりうる([`PreparedImage`]参照)。
+    /// The intrinsic size (px). It can be fractional for an SVG (see [`PreparedImage`]).
     intrinsic_width: f32,
     intrinsic_height: f32,
 }
 
-/// `background-size`/`-position`/`-repeat`から、実際に描画すべき画像タイルの
-/// 矩形群(border-box基準の座標系、レイアウト空間)を計算する。intrinsic
-/// サイズが縮退している(0を含む)場合はborder-box全体への単純な1枚描画に
-/// フォールバックする(ゼロ除算回避)。
+/// Compute, from `background-size`/`-position`/`-repeat`, the rectangles of the image tiles
+/// that should really be drawn (in border-box-relative coordinates, in layout space). Where
+/// the intrinsic size is degenerate (contains a 0) it falls back to drawing one image plainly
+/// over the whole border box (a division-by-zero guard).
 fn background_tile_rects(
     border_box: Rect,
     style: &ComputedStyle,
@@ -2261,8 +2257,8 @@ fn background_tile_rects(
         .collect()
 }
 
-/// `background-size`の1軸分の指定値を、`auto`なら`None`(アスペクト比から
-/// 導出させる)、それ以外は`basis`(border-boxの対応する辺)基準のpx値へ解決する。
+/// Resolve one axis of the `background-size` setting: `None` for `auto` (leaving it to be
+/// derived from the aspect ratio), and otherwise a px value relative to `basis` (the corresponding side of the border box).
 fn resolve_background_size_component(value: LengthPercentageOrAuto, basis: f32) -> Option<f32> {
     match value {
         LengthPercentageOrAuto::Auto => None,
@@ -2270,9 +2266,9 @@ fn resolve_background_size_component(value: LengthPercentageOrAuto, basis: f32) 
     }
 }
 
-/// `background-position`の1軸分の計算値から、border-box原点からのオフセット
-/// (px)を求める。パーセンテージは`(コンテナ - タイル)`に対する割合
-/// (CSS仕様通りの式)、長さはそのまま原点からのオフセットとして使う。
+/// From the computed value of one axis of `background-position`, find the offset (px) from
+/// the border box's origin. A percentage is a proportion of `(container - tile)` (the
+/// formula the CSS spec gives); a length is used directly as the offset from the origin.
 fn resolve_background_position_offset(value: LengthPercentage, container: f32, tile: f32) -> f32 {
     match value {
         LengthPercentage::Length(l) => l,
@@ -2281,10 +2277,10 @@ fn resolve_background_position_offset(value: LengthPercentage, container: f32, t
     }
 }
 
-/// 1軸分のタイル開始座標を列挙する。`repeat`が偽、またはタイル幅が0以下なら
-/// `origin`の1枚のみ。それ以外は`[min, max)`(border-boxの範囲)を覆うのに
-/// 必要な分だけ`origin`から`tile`間隔で並べる。防御的に1軸あたり200枚を
-/// 超えたら打ち切る(病的な小さい`background-size`に対するフェイルセーフ)。
+/// Enumerate the tile start coordinates along one axis. With `repeat` false, or a tile width
+/// of 0 or less, only the one at `origin`. Otherwise they run from `origin` at intervals of
+/// `tile`, as many as are needed to cover `[min, max)` (the border box's extent).
+/// Defensively it stops past 200 tiles per axis (a failsafe against a pathologically small `background-size`).
 fn tile_starts(origin: f32, tile: f32, min: f32, max: f32, repeat: bool) -> Vec<f32> {
     if !repeat || tile <= 0.0 {
         return vec![origin];
@@ -2302,11 +2298,10 @@ fn tile_starts(origin: f32, tile: f32, min: f32, max: f32, repeat: bool) -> Vec<
     starts
 }
 
-/// [`background_tile_rects`]で計算した矩形群を描画する。タイルが1枚かつ
-/// border-boxとちょうど一致する場合(`background-repeat: no-repeat`+
-/// `background-size`未指定でも十分収まる等)を除き、border-boxへのクリップ
-/// (`overflow`クリップと同じパターン)を挟んでタイルがboxからはみ出さない
-/// ようにする。
+/// Draw the rectangles computed by [`background_tile_rects`]. Unless there is exactly one
+/// tile and it coincides with the border box (as with `background-repeat: no-repeat` plus no
+/// `background-size`, where it fits anyway), a clip to the border box is interposed (the
+/// same pattern as the `overflow` clip) so the tiles cannot spill out of the box.
 fn render_background_image(
     content: &mut RenderTarget<'_>,
     border_box: Rect,
@@ -2347,15 +2342,15 @@ fn render_background_image(
     }
 }
 
-/// `<tr>`(`display: table-row`)の`background-color`を、その行のセル群を
-/// 覆う矩形として塗る。
+/// Paint a `<tr>`'s (`display: table-row`'s) `background-color` as a rectangle covering that
+/// row's cells.
 ///
-/// 行ボックスは`LaidOutTableRow`にジオメトリを持たないため、行に属するセルの
-/// border boxの和集合を行の矩形とみなす(`border-spacing`がある場合、セル間の
-/// 隙間も行の背景で塗られる。これはCSS2.1 17.5.1の描画順=行の背景がセルの
-/// 背景の下に敷かれる、という規定と同じ見え方になる)。CSSの
-/// `tr { background-color: ... }`とレガシー表示属性の`<tr bgcolor>`のどちらも
-/// この経路で描画される。
+/// A row box carries no geometry on `LaidOutTableRow`, so the union of the border boxes of
+/// the cells belonging to the row is taken as the row's rectangle (with `border-spacing`, the
+/// gaps between cells are painted with the row background too, which looks the same as CSS2.1
+/// 17.5.1's drawing order, where the row background sits beneath the cell backgrounds).
+/// Both the CSS `tr { background-color: ... }` and the legacy presentational attribute
+/// `<tr bgcolor>` are drawn through this path.
 fn render_row_background(
     content: &mut RenderTarget<'_>,
     row: &LaidOutTableRow,
@@ -2363,7 +2358,7 @@ fn render_row_background(
     settings: &PageSettings,
     alpha_gs_names: &[String],
 ) {
-    // 無名行(`node: None`)は背景を指定しようがないので何も描かない。
+    // An anonymous row (`node: None`) cannot have a background set, so nothing is drawn.
     let Some(style) = row.node.and_then(|node| styles.get(&node)) else {
         return;
     };
@@ -2405,13 +2400,13 @@ fn render_row_background(
     }
 }
 
-/// `border-radius`が指定されている場合の背景・枠線描画。
+/// Background and border drawing when a `border-radius` is set.
 ///
-/// 背景は各角の半径に従った角丸矩形として塗りつぶす。枠線は、4辺すべての
-/// 太さ・スタイル・色が同一の場合のみ角丸パスをストロークする
-/// (辺ごとに異なる太さ・色・スタイルと角丸の組み合わせは、角での複雑な
-/// ブレンド処理が必要になるため非対応。その場合は角丸を諦め、
-/// 直線4辺の[`render_border`]にフォールバックする)。
+/// The background is filled as a rounded rectangle following each corner's radius. The
+/// borders are stroked as a rounded path only when all four edges share a width, style and
+/// colour (combining rounding with per-edge widths, colours and styles would need complex
+/// blending at the corners and is not supported; in that case the rounding is given up and
+/// it falls back to the straight four-edge [`render_border`]).
 #[allow(clippy::too_many_arguments)]
 fn render_rounded_decoration(
     content: &mut RenderTarget<'_>,
@@ -2450,15 +2445,15 @@ fn render_rounded_decoration(
             content.restore_state();
         }
     }
-    // 角丸パスへのクリップは行わず、常に直線の矩形として描画する
-    // (border-radiusとの組み合わせは非対応)。
+    // No clip to the rounded path: it is always drawn as a straight rectangle
+    // (combining it with border-radius is not supported).
     if let Some(paint) = background_image_paint {
         render_background_image(content, border_box, style, settings, &paint);
     }
 
-    // groove/ridge/inset/outsetは辺ごとの陰影が必要で、角丸パスの単純な
-    // ストロークでは表現できないため、常に直線4辺へフォールバックする
-    // (既存の「4辺不揃い+角丸」フォールバックと同じパターン)。
+    // groove/ridge/inset/outset need per-edge shading, which a plain stroke of a rounded path
+    // cannot express, so they always fall back to four straight edges
+    // (the same pattern as the existing "four uneven edges plus rounding" fallback).
     let is_shaded_style = matches!(
         style.border_top_style,
         BorderStyle::Groove | BorderStyle::Ridge | BorderStyle::Inset | BorderStyle::Outset
@@ -2480,8 +2475,8 @@ fn render_rounded_decoration(
     );
 
     if style.border_top_style == BorderStyle::Double {
-        // 太さを3等分し、外周から1/6・5/6の位置(それぞれの帯の中心線)に
-        // 1/3幅の角丸パスを2本ストロークする(中央の1/3は空白として残る)。
+        // The thickness is split into thirds and two rounded paths of one third the width are
+        // stroked at 1/6 and 5/6 from the outside (each band's centre line), leaving the middle third blank.
         let band = thickness / 3.0;
         content.set_line_cap(LineCapStyle::ButtCap);
         content.set_dash_pattern([], 0.0);
@@ -2500,8 +2495,8 @@ fn render_rounded_decoration(
         return;
     }
 
-    // ストロークは太さの中心線を通るため、外周パスを半分だけ内側へ詰める
-    // (半径も同じ量だけ縮める簡易近似)。
+    // A stroke runs along the centre line of the width, so the outer path is pulled inwards
+    // by half (a simple approximation shrinking the radii by the same amount).
     let inset = thickness / 2.0;
     content.set_line_width(thickness);
     apply_border_style_dash(content, style.border_top_style, thickness);
@@ -2516,7 +2511,7 @@ fn render_rounded_decoration(
     content.stroke();
 }
 
-/// 4辺すべての`border-width`/`border-style`/`border-color`が一致するか。
+/// Whether all four edges' `border-width`/`border-style`/`border-color` match.
 fn is_uniform_border(style: &ComputedStyle) -> bool {
     style.border_top_width == style.border_right_width
         && style.border_top_width == style.border_bottom_width
@@ -2529,13 +2524,13 @@ fn is_uniform_border(style: &ComputedStyle) -> bool {
         && style.border_top_color == style.border_left_color
 }
 
-/// 四分円をベジェ曲線で近似する際の制御点オフセット係数。
+/// The control point offset factor for approximating a quarter circle with a Bezier curve.
 const BEZIER_KAPPA: f32 = 0.552_284_8;
 
-/// PDF空間(Y-up、`y_top` > `y_bottom`)で角丸矩形のパスを構築して閉じる
-/// (塗り/ストロークは呼び出し側が行う)。半径は`(top_left, top_right,
-/// bottom_right, bottom_left)`の順(CSSの`border-radius`と同じ並び)、各コーナー
-/// は`(水平半径, 垂直半径)`のペア(楕円コーナー対応)。
+/// Build and close the path of a rounded rectangle in PDF space (Y-up, `y_top` > `y_bottom`)
+/// (filling and stroking are the caller's job). The radii are in the order
+/// `(top_left, top_right, bottom_right, bottom_left)` (the same order as CSS's
+/// `border-radius`), each corner being a `(horizontal radius, vertical radius)` pair (elliptical corners are supported).
 fn rounded_rect_path(
     content: &mut RenderTarget<'_>,
     x0: f32,
@@ -2637,11 +2632,11 @@ fn shrink_radii(
     )
 }
 
-/// `outline`を描く。`border`と違いレイアウトに一切影響しないため、`layout`は
-/// 参照するだけで書き換えない。border-boxの外側にoutline-widthの太さで
-/// 描画する点だけが`render_border`と異なり、それ以外(4辺の頂点構成・
-/// `render_border_side`への委譲)は全く同じ仕組みを再利用する。
-/// `outline-offset`(outlineとborder-boxの間隔)は非対応、常に0固定。
+/// Draw the `outline`. Unlike `border` it has no effect on layout at all, so `layout` is only
+/// read and never modified. The only difference from `render_border` is that it draws outside
+/// the border box, at the outline-width thickness; everything else (how the four edges'
+/// vertices are built, delegating to `render_border_side`) reuses exactly the same machinery.
+/// `outline-offset` (the gap between the outline and the border box) is not supported and is always 0.
 fn render_outline(
     content: &mut RenderTarget<'_>,
     layout: &Layout,
@@ -2658,12 +2653,12 @@ fn render_outline(
     let y_top = to_pdf_y(settings, border_box.y);
     let y_bottom = to_pdf_y(settings, border_box.y + border_box.height);
 
-    // outlineの内側の辺(border-boxそのもの)。
+    // The outline's inner edge (the border box itself).
     let tl_inner = (x0, y_top);
     let tr_inner = (x1, y_top);
     let br_inner = (x1, y_bottom);
     let bl_inner = (x0, y_bottom);
-    // outlineの外側の辺(border-boxから`t`だけ外側へ張り出す)。
+    // The outline's outer edge (extending `t` beyond the border box).
     let tl_outer = (x0 - t, y_top + t);
     let tr_outer = (x1 + t, y_top + t);
     let br_outer = (x1 + t, y_bottom - t);
@@ -2703,7 +2698,7 @@ fn render_outline(
     );
 }
 
-/// 4辺それぞれの`border-width`/`border-style`/`border-color`に従って枠線を描く。
+/// Draw the borders according to each of the four edges' `border-width`/`border-style`/`border-color`.
 fn render_border(
     content: &mut RenderTarget<'_>,
     layout: &Layout,
@@ -2760,8 +2755,8 @@ fn render_border(
     );
 }
 
-/// 辺の識別子。`groove`/`ridge`/`inset`/`outset`の陰影が上・左辺と下・右辺で
-/// 異なる色になるため必要。
+/// The identifier of an edge. Needed because the shading of `groove`/`ridge`/`inset`/`outset`
+/// differs in colour between the top and left edges and the bottom and right ones.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BorderSideKind {
     Top,
@@ -2770,8 +2765,8 @@ enum BorderSideKind {
     Left,
 }
 
-/// RGB各成分をwhiteへ`amount`だけブレンドして明るくする(簡易実装、正確な色
-/// 再現は目指さない)。
+/// Lighten by blending each RGB component `amount` towards white (a simple implementation;
+/// accurate colour reproduction is not the goal).
 fn lighten(color: RgbaColor, amount: f32) -> RgbaColor {
     let mix = |c: u8| (c as f32 + (255.0 - c as f32) * amount).round() as u8;
     RgbaColor {
@@ -2782,7 +2777,7 @@ fn lighten(color: RgbaColor, amount: f32) -> RgbaColor {
     }
 }
 
-/// RGB各成分をblackへ`amount`だけブレンドして暗くする。
+/// Darken by blending each RGB component `amount` towards black.
 fn darken(color: RgbaColor, amount: f32) -> RgbaColor {
     let mix = |c: u8| (c as f32 * (1.0 - amount)).round() as u8;
     RgbaColor {
@@ -2793,21 +2788,21 @@ fn darken(color: RgbaColor, amount: f32) -> RgbaColor {
     }
 }
 
-/// `groove`/`ridge`/`inset`/`outset`の明暗ブレンド比率。
+/// The light/dark blending ratio for `groove`/`ridge`/`inset`/`outset`.
 const SHADE_AMOUNT: f32 = 0.35;
 
-/// 1辺分の外側寄り帯・内側寄り帯それぞれの実効描画色。`solid`/`dashed`/
-/// `dotted`(呼び出し元で個別処理する`double`含む)は帯間で同色。
+/// The effective drawing colours of one edge's outer and inner bands. `solid`/`dashed`/
+/// `dotted` (and `double`, handled separately by the caller) use the same colour for both.
 struct BorderSideColors {
     outer: RgbaColor,
     inner: RgbaColor,
 }
 
-/// `border_style`/`side`から実効描画色を決める。光源は左上からと仮定する(CSS
-/// 仕様の一般的な慣習): `inset`は上・左辺が暗色、下・右辺が明色(押し込まれた
-/// 凹み)。`outset`はその逆(浮き出た凸み)。`groove`/`ridge`は各辺の太さを2
-/// 等分し、外側帯・内側帯に異なる色を割り
-/// 当てることで溝/稜線の視覚効果を出す。
+/// Decide the effective drawing colours from `border_style` and `side`. The light source is
+/// assumed to be at the top left (the usual convention in the CSS spec): `inset` makes the
+/// top and left edges dark and the bottom and right ones light (a pressed-in hollow), and
+/// `outset` the reverse (a raised bump). `groove`/`ridge` halve each edge's thickness and
+/// assign different colours to the outer and inner bands, producing the groove or ridge effect.
 fn border_side_colors(
     border_style: BorderStyle,
     side: BorderSideKind,
@@ -2859,8 +2854,8 @@ fn border_side_colors(
     }
 }
 
-/// 1辺分の枠線を構成する4頂点。`outer_a`→`outer_b`が外形の辺、
-/// `inner_b`→`inner_a`が内形の辺(`outer_b`/`inner_b`が隣の辺と共有する角)。
+/// The four vertices making up one edge's border. `outer_a` to `outer_b` is the outer edge
+/// and `inner_b` to `inner_a` the inner one (`outer_b`/`inner_b` being the corner shared with the next edge).
 struct BorderSideCorners {
     outer_a: (f32, f32),
     outer_b: (f32, f32),
@@ -2884,7 +2879,7 @@ impl BorderSideCorners {
     }
 }
 
-/// 1辺分の枠線を描く。
+/// Draw one edge's border.
 fn render_border_side(
     content: &mut RenderTarget<'_>,
     side: BorderSideKind,
@@ -2913,9 +2908,9 @@ fn render_border_side(
             fill_quad(content, outer_a, outer_b, inner_b, inner_a);
         }
         BorderStyle::Groove | BorderStyle::Ridge | BorderStyle::Inset | BorderStyle::Outset => {
-            // 太さを2等分し、外側帯・内側帯をそれぞれ`border_side_colors`が
-            // 決めた色で塗る(`inset`/`outset`は外側=内側で同色になり、結果的に
-            // 1色の`Solid`と同じ見た目になる)。
+            // Halve the thickness and paint the outer and inner bands in the colours
+            // `border_side_colors` decided (`inset`/`outset` give the same colour for both,
+            // which ends up looking like a single-colour `Solid`).
             let colors = border_side_colors(border_style, side, color);
             for (t0, t1, band_color) in [(0.0, 0.5, colors.outer), (0.5, 1.0, colors.inner)] {
                 content.set_fill_rgb(
@@ -2933,10 +2928,10 @@ fn render_border_side(
             }
         }
         BorderStyle::Double => {
-            // 太さを3等分し、外側1/3・内側1/3それぞれをミトー結合済みの帯として
-            // 塗る(中央の1/3は空白として残る)。外形/内形の頂点間を線形補間して
-            // 各帯の境界を求める(辺ごとに太さが異なっていても、隣接辺との
-            // 境界は共有する頂点から計算されるため引き続き綺麗に合う)。
+            // Split the thickness into thirds and paint the outer and inner thirds as mitred
+            // bands, leaving the middle third blank. Each band's boundary comes from linearly
+            // interpolating between the outer and inner vertices (so even with edges of
+            // differing thickness the boundary with a neighbour still meets cleanly, being computed from the shared corner).
             content.set_fill_rgb(
                 color.red as f32 / 255.0,
                 color.green as f32 / 255.0,
@@ -2954,8 +2949,8 @@ fn render_border_side(
             }
         }
         BorderStyle::Dashed | BorderStyle::Dotted => {
-            // ダッシュパターンはストロークでのみ表現できるため、太さの中心線を
-            // 従来通りストロークする(ミトー結合はしない)。
+            // A dash pattern can only be expressed by a stroke, so the centre line of the
+            // thickness is stroked as before (no mitring).
             content.set_stroke_rgb(
                 color.red as f32 / 255.0,
                 color.green as f32 / 255.0,
@@ -2973,8 +2968,8 @@ fn render_border_side(
     }
 }
 
-/// 単純な実線を太さ・色を指定してストロークする(text-decorationの下線・
-/// 取り消し線用)。
+/// Stroke a plain solid line at a given thickness and colour (for text-decoration underlines
+/// and strikethroughs).
 fn stroke_line(
     content: &mut RenderTarget<'_>,
     thickness: f32,
@@ -3002,7 +2997,7 @@ fn lerp(a: (f32, f32), b: (f32, f32), t: f32) -> (f32, f32) {
     (a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t)
 }
 
-/// 4頂点(a→b→c→d→閉じる)の四角形パスを構築して塗りつぶす。
+/// Build and fill the quadrilateral path of four vertices (a to b to c to d, then closed).
 fn fill_quad(
     content: &mut RenderTarget<'_>,
     a: (f32, f32),
@@ -3018,11 +3013,11 @@ fn fill_quad(
     content.fill_nonzero();
 }
 
-/// `border-style`に応じたダッシュパターン/線キャップを設定する。
-/// `Double`は2本ストロークする専用処理(呼び出し側)で扱うためここには来ない。
-/// `Groove`/`Ridge`/`Inset`/`Outset`は角丸パスのストロークでは表現できず
-/// 常に直線4辺へフォールバックするためここには来ないが、`match`を網羅するため
-/// `Solid`と同じ扱いにしておく。
+/// Set the dash pattern and line cap for a `border-style`.
+/// `Double` never reaches here, being handled by the caller's dedicated two-stroke path.
+/// `Groove`/`Ridge`/`Inset`/`Outset` never reach here either, a stroke of a rounded path
+/// being unable to express them and always falling back to four straight edges, but they are
+/// treated like `Solid` so the `match` stays exhaustive.
 fn apply_border_style_dash(
     content: &mut RenderTarget<'_>,
     border_style: BorderStyle,
@@ -3043,7 +3038,7 @@ fn apply_border_style_dash(
             content.set_dash_pattern([thickness * 3.0], 0.0);
         }
         BorderStyle::Dotted => {
-            // 長さ0の破線+丸キャップで点線を表現する(PDFの定石)。
+            // A dotted line is expressed as a zero-length dash with round caps (the standard PDF idiom).
             content.set_line_cap(LineCapStyle::RoundCap);
             content.set_dash_pattern([0.01, thickness * 2.0], 0.0);
         }
@@ -3051,47 +3046,47 @@ fn apply_border_style_dash(
     }
 }
 
-/// 疑似イタリック(シアー変形)の傾斜角(12度)。埋め込みフォントに本物の
-/// イタリック字形がない前提で、テキスト行列をせん断することで代用する。
+/// The slant angle for faux italic (a shear transform), 12 degrees. Assuming the embedded
+/// font has no real italic glyph shapes, the text matrix is sheared instead.
 const ITALIC_SHEAR: f32 = 0.2126; // tan(12°)
-/// 疑似ボールド(塗り+縁取り)の線幅を、フォントサイズに対する比率で表す。
+/// The stroke width for faux bold (fill plus outline), as a ratio of the font size.
 const BOLD_STROKE_RATIO: f32 = 0.03;
 
-/// グリフの送り幅の食い違いを補正する下限(px)。これ未満はTJ配列を膨らませる
-/// だけで見た目に効かないため無視する。
+/// The lower bound (px) for correcting a glyph advance mismatch. Anything below it only
+/// inflates the TJ array without any visible effect, so it is ignored.
 const ADVANCE_EPSILON: f32 = 0.01;
 
-/// ランのグリフ列を書き出す。送り幅が`/W`と食い違うグリフの後ろにはTJ補正を挟む。
+/// Write out a run's glyphs. Where an advance disagrees with `/W`, a TJ correction is inserted after the glyph.
 ///
-/// PDFがグリフを進める幅はCIDFontの`/W`で決まり、これはグリフIDごとに1つしか
-/// 持てない。一方レイアウトはシェイパーが返す`x_advance`を使う。この2つは
-/// 一致するとは限らない。
+/// The width by which a PDF advances a glyph comes from the CIDFont's `/W`, which can hold
+/// only one value per glyph ID. Layout, meanwhile, uses the `x_advance` the shaper returns.
+/// The two need not agree.
 ///
-/// * 単語間の空白は`merge_adjacent_runs`が「隙間ぶんのアドバンスを持つ空白
-///   グリフ」として復元する。`text-align: justify`が広げた隙間はspaceの字幅と
-///   一致しないため、補正が無いと両端揃えの行が伸ばした分だけ右端に届かない。
-/// * フォントが持たない固定幅スペース(`&thinsp;`等)は、シェイパーがspaceの
-///   グリフで代替しつつアドバンスだけ規定値(em/5等)へ差し替える。同じグリフを
-///   普通のspaceも使うため、`/W`はどちらか一方の幅しか表せない。
+/// * `merge_adjacent_runs` restores inter-word whitespace as "a space glyph whose advance is
+///   the gap". A gap widened by `text-align: justify` does not match the space's own width,
+///   so without a correction a justified line falls short of the right edge by the amount it was stretched.
+/// * For a fixed-width space the font lacks (`&thinsp;` and the like), the shaper substitutes
+///   the space glyph while replacing only the advance with the prescribed value (em/5 and so
+///   on). An ordinary space uses the same glyph, so `/W` can express only one of the widths.
 ///
-/// 差はTJ配列の補正値で埋める。TJの数値はテキスト空間の1/1000単位で、送り量から
-/// 減算される(正の値で詰まる)ので、広げたいときは負の値を入れる。
-/// `letter-spacing`は`Tc`で別に加算されるため、ここの差分計算には含めない。
+/// The difference is made up by TJ array corrections. A TJ number is in 1/1000ths of text
+/// space and is *subtracted* from the advance (a positive value tightens), so a negative
+/// value is used to widen. `letter-spacing` is added separately by `Tc` and is not part of this difference.
 fn show_run_glyphs(
     content: &mut RenderTarget<'_>,
     run: &TextRun,
     font: &Font,
     remap: Option<&HashMap<u16, u16>>,
 ) {
-    // `remaps`が`Some`(一括処理)ならサブセット後のグリフIDへ、`None`
-    // (ストリーミング処理)なら元のグリフIDのまま。
+    // With `remaps` as `Some` (batch processing) the subsetted glyph IDs are used; with `None`
+    // (streaming) the original glyph IDs stay.
     let cid_of = |glyph_id: u16| match remap {
         Some(remap) => remap.get(&glyph_id).copied().unwrap_or(0),
         None => glyph_id,
     };
 
     let units_per_em = font.units_per_em() as f32;
-    // フォントサイズ0のランは補正のしようがない(1/1000単位への換算ができない)。
+    // A run with a font size of 0 cannot be corrected (there is no conversion to 1/1000ths).
     if run.font_size <= 0.0 || units_per_em <= 0.0 {
         let mut glyph_bytes = Vec::with_capacity(run.glyphs.len() * 2);
         for glyph in &run.glyphs {
@@ -3103,8 +3098,8 @@ fn show_run_glyphs(
 
     let mut positioned = content.show_positioned();
     let mut items = positioned.items();
-    // 補正の要らないグリフはまとめて1つの文字列として出す(補正が1つも無ければ
-    // 要素1つのTJ配列になり、`Tj`と同じ大きさに収まる)。
+    // Glyphs needing no correction are emitted together as one string (with no corrections at
+    // all it becomes a one-element TJ array, no bigger than a `Tj`).
     let mut pending = Vec::with_capacity(run.glyphs.len() * 2);
     for glyph in &run.glyphs {
         pending.extend_from_slice(&cid_of(glyph.glyph_id).to_be_bytes());
@@ -3117,9 +3112,9 @@ fn show_run_glyphs(
         }
         items.show(pdf_writer::Str(&pending));
         pending.clear();
-        // 小数第2位までに丸める。両端揃えの文書では単語間のすべての隙間に補正が
-        // 入るため、`f32`をそのまま書くとコンテンツストリームがおよそ1割膨らむ。
-        // 1/1000単位の0.01は12ptで0.00012pxなので、見た目には効かない。
+        // Rounded to two decimal places. In a justified document every inter-word gap carries
+        // a correction, so writing the `f32` verbatim inflates the content stream by around a
+        // tenth. 0.01 of a 1/1000th is 0.00012px at 12pt, which is invisible.
         let adjustment = (-delta * 1000.0 / run.font_size * 100.0).round() / 100.0;
         items.adjust(adjustment);
     }
@@ -3141,13 +3136,13 @@ fn render_line(
         return;
     }
 
-    // 行のベースライン位置はレイアウト時に確定済み。各ランは`vertical-align`
-    // 由来の`baseline_shift`(正=上)だけそこからずれる。
+    // The line's baseline position is settled at layout time. Each run is offset from it only
+    // by the `baseline_shift` from `vertical-align` (positive being up).
     let baseline_y = to_pdf_y(settings, line.rect.y + line.baseline);
 
-    // インライン要素の背景(`<mark>`等)は、ランのascent〜descentの矩形として
-    // テキストより先に塗る。ブロックの背景([`render_decoration`])と違い
-    // ボーダーボックスを持たないため、フォントメトリクスで代用する。
+    // An inline element's background (`<mark>` and so on) is painted before the text, as the
+    // rectangle from the run's ascent to its descent. Unlike a block's background
+    // ([`render_decoration`]) it has no border box, so the font metrics stand in.
     for run in &line.runs {
         if run.background_color.alpha <= 0.0 || run.width <= 0.0 {
             continue;
@@ -3175,7 +3170,7 @@ fn render_line(
         }
     }
 
-    // `text-shadow`はテキスト本体より先に描く。
+    // `text-shadow` is drawn before the text itself.
     render_text_shadows(
         content,
         line,
@@ -3189,9 +3184,9 @@ fn render_line(
 
     content.begin_text();
 
-    // ランどうしの間に、実際のグリフ幅の合計を超える隙間があれば単語境界
-    // (=空白1文字分)とみなす。単語内でスタイル/フォントが切り替わる場合の
-    // ラン境界は隙間0で連続しているため、ここでは誤って空白扱いにならない。
+    // Where the gap between two runs exceeds the sum of the actual glyph widths, it counts as
+    // a word boundary (that is, one space). A run boundary from a style or font change within
+    // a word continues with a gap of 0, so it is not mistaken for whitespace here.
     const WORD_GAP_EPSILON: f32 = 0.01;
     let mut previous_run_end: Option<f32> = None;
 
@@ -3199,8 +3194,8 @@ fn render_line(
         if run.glyphs.is_empty() {
             continue;
         }
-        // `remaps`が`Some`(一括処理)ならサブセット後のグリフIDへの変換表を
-        // 引く。`None`(ストリーミング処理)ならCIDは常に元のグリフIDのまま使う。
+        // With `remaps` as `Some` (batch processing) the translation table to subsetted glyph
+        // IDs is consulted; with `None` (streaming) a CID is always the original glyph ID.
         let remap = match remaps {
             Some(remaps) => match remaps.get(run.font_index) {
                 Some(remap) => Some(remap),
@@ -3212,12 +3207,12 @@ fn render_line(
             continue;
         };
 
-        // 単語間の空白は、レイアウト上は隙間(x_offsetの加算)としてのみ表現され、
-        // どの`TextRun.text`にも実際の空白文字を含めていない(フォント混在時の
-        // グリフ幅計測を単純にするため)。そのままではPDFからのテキスト抽出時、
-        // 特にフォント(リソース名)が切り替わるラン境界で空白が失われることが
-        // あるため、見た目に影響しない`ActualText`付きの空マーク付きコンテンツ
-        // 区間を挿入し、抽出用にスペースの存在を明示する。
+        // Inter-word whitespace is expressed in layout only as a gap (an addition to
+        // x_offset), and no `TextRun.text` contains an actual whitespace character (to keep
+        // glyph width measurement simple with mixed fonts). Left at that, extracting text from
+        // the PDF can lose the space, especially at a run boundary where the font (resource
+        // name) changes, so a marked-content section with an `ActualText` (which has no visual
+        // effect) is inserted to state the space explicitly for extraction.
         if let Some(prev_end) = previous_run_end {
             if run.x_offset > prev_end + WORD_GAP_EPSILON {
                 let mut marked = content.begin_marked_content_with_properties(Name(b"Span"));
@@ -3244,8 +3239,8 @@ fn render_line(
                 run.color.blue as f32 / 255.0,
             );
             content.set_line_width(run.font_size * BOLD_STROKE_RATIO);
-            // 枠線描画がダッシュパターン/丸キャップを残している場合があるため、
-            // テキストの縁取りには影響しないよう明示的に実線・矩形キャップへ戻す。
+            // Border drawing may have left a dash pattern or round caps set, so solid lines
+            // and butt caps are restored explicitly so the text outline is unaffected.
             content.set_line_cap(LineCapStyle::ButtCap);
             content.set_dash_pattern([], 0.0);
             content.set_text_rendering_mode(TextRenderingMode::FillStroke);
@@ -3257,11 +3252,11 @@ fn render_line(
         let shear = if run.italic { ITALIC_SHEAR } else { 0.0 };
         content.set_font(Name(resource_name.as_bytes()), run.font_size);
         content.set_text_matrix([1.0, 0.0, shear, 1.0, x, baseline_y + run.baseline_shift]);
-        // `letter-spacing`はグリフ幅そのもの(フォントの`/Widths`)には反映
-        // できないため、PDFの`Tc`(character spacing)を使う。`Tw`(word
-        // spacing)と異なり複合フォント(2バイトCID)にも適用される。0でも
-        // 明示的に設定し、前のランの値が
-        // グラフィックステートに残らないようにする。
+        // `letter-spacing` cannot be reflected in the glyph widths themselves (the font's
+        // `/Widths`), so PDF's `Tc` (character spacing) is used. Unlike `Tw` (word spacing) it
+        // applies to composite fonts (two-byte CIDs) too. It is set explicitly even at 0, so
+        // the previous run's value cannot linger in the graphics state.
+
         content.set_char_spacing(run.letter_spacing);
         show_run_glyphs(content, run, font, remap);
     }
@@ -3276,8 +3271,8 @@ fn render_line(
             continue;
         };
         let x = settings.margin.left + line.rect.x + run.x_offset;
-        // 装飾線もそのランのベースライン(=行のベースライン+`vertical-align`の
-        // ずれ)を基準に引く。
+        // A decoration line is also drawn against that run's baseline (the line's baseline
+        // plus the `vertical-align` shift).
         let run_baseline_y = baseline_y + run.baseline_shift;
         if run.underline {
             let (y, thickness) =
@@ -3303,7 +3298,7 @@ fn render_line(
         }
     }
 
-    // `text-emphasis`のマークは装飾線と同じくテキスト本体の後に描く。
+    // Like the decoration lines, `text-emphasis` marks are drawn after the text itself.
     render_emphasis_marks(
         content,
         line,
@@ -3315,10 +3310,10 @@ fn render_line(
     );
 }
 
-/// `text-emphasis`のマークを描く。
-/// `dot`/`circle`/`double-circle`/`triangle`/`sesame`はフォントの字形に
-/// 依存しないようパスで描き、`<string>`指定だけはグリフとして描く。マークは
-/// 空白でない文字1つごとに1個置く(`text-emphasis-skip`は非対応)。
+/// Draw the `text-emphasis` marks.
+/// `dot`/`circle`/`double-circle`/`triangle`/`sesame` are drawn as paths so they do not
+/// depend on the font's glyph shapes; only a `<string>` value is drawn as a glyph. One mark
+/// is placed per non-whitespace character (`text-emphasis-skip` is not supported).
 #[allow(clippy::too_many_arguments)]
 fn render_emphasis_marks(
     content: &mut RenderTarget<'_>,
@@ -3334,8 +3329,8 @@ fn render_emphasis_marks(
             continue;
         };
         let run_baseline_y = baseline_y + run.baseline_shift;
-        // マーク分の高さは`ascent`/`descent`に
-        // 加算済み。その帯の中央にマークを置く。
+        // The marks' height is already added to `ascent`/`descent`. The mark goes in the
+        // centre of that band.
         let center_y = match mark.position {
             EmphasisPosition::Over => run_baseline_y + run.ascent - mark.size / 2.0,
             EmphasisPosition::Under => run_baseline_y - run.descent + mark.size / 2.0,
@@ -3344,9 +3339,9 @@ fn render_emphasis_marks(
         let mut x = settings.margin.left + line.rect.x + run.x_offset;
         for glyph in &run.glyphs {
             let advance = glyph.x_advance + run.letter_spacing;
-            // 空白文字にはマークを付けない(仕様の"skip: spaces"相当)。
-            // `cluster`はランのテキスト内バイトオフセットだが、範囲外でも
-            // panicしないよう`get`で引く。
+            // No mark is placed on a whitespace character (the equivalent of the spec's
+            // "skip: spaces"). `cluster` is a byte offset within the run's text, but it is
+            // looked up with `get` so an out-of-range value cannot panic.
             let ch = run
                 .text
                 .get(glyph.cluster as usize..)
@@ -3368,7 +3363,7 @@ fn render_emphasis_marks(
     }
 }
 
-/// マーク1つ分を`(center_x, center_y)`を中心に描く。
+/// Draw one mark centred on `(center_x, center_y)`.
 #[allow(clippy::too_many_arguments)]
 fn render_emphasis_mark(
     content: &mut RenderTarget<'_>,
@@ -3407,15 +3402,15 @@ fn render_emphasis_mark(
 
     content.set_fill_rgb(r, g, b);
     content.set_stroke_rgb(r, g, b);
-    // 輪郭のみ(`open`)の線幅はマークサイズに比例させる。
+    // The stroke width of an outline-only (`open`) mark is proportional to the mark size.
     let stroke_width = (mark.size * 0.08).max(0.3);
     content.set_line_width(stroke_width);
     content.set_line_cap(LineCapStyle::ButtCap);
     content.set_dash_pattern([], 0.0);
 
     match shape {
-        // `dot`は小さめ、`circle`は大きめ(仕様に厳密な寸法規定は無いため、
-        // 一般的なブラウザの見た目に近い比率を採用する)。
+        // `dot` is on the small side and `circle` on the large side (the spec prescribes no
+        // exact dimensions, so ratios close to what browsers commonly show are used).
         EmphasisShape::Dot => {
             circle_path(content, center_x, center_y, mark.size * 0.16);
             finish_mark_path(content, filled);
@@ -3425,8 +3420,8 @@ fn render_emphasis_mark(
             finish_mark_path(content, filled);
         }
         EmphasisShape::DoubleCircle => {
-            // 二重丸(◉/◎)は外側を常に輪郭で描く。外側を塗ってしまうと
-            // 内側が潰れて単なる丸に見える。
+            // A double circle always draws its outer ring as an outline. Filling the outer
+            // ring would crush the inner one and it would look like a plain circle.
             circle_path(content, center_x, center_y, mark.size * 0.34);
             finish_mark_path(content, false);
             circle_path(content, center_x, center_y, mark.size * 0.15);
@@ -3440,7 +3435,7 @@ fn render_emphasis_mark(
             content.close_path();
             finish_mark_path(content, filled);
         }
-        // `sesame`(ゴマ点)は縦長の楕円で近似する。
+        // `sesame` (a sesame dot) is approximated with a vertically elongated ellipse.
         EmphasisShape::Sesame => {
             ellipse_path(
                 content,
@@ -3454,8 +3449,8 @@ fn render_emphasis_mark(
     }
 }
 
-/// `text-emphasis-style: <string>`のマークを、そのランのフォントのグリフとして描く。
-/// 字形を持たないフォントでは何も描かれない。
+/// Draw a `text-emphasis-style: <string>` mark as a glyph of that run's font.
+/// Nothing is drawn in a font lacking that glyph shape.
 #[allow(clippy::too_many_arguments)]
 fn render_emphasis_glyph(
     content: &mut RenderTarget<'_>,
@@ -3494,7 +3489,7 @@ fn render_emphasis_glyph(
     content.set_text_rendering_mode(TextRenderingMode::Fill);
     content.set_font(Name(resource_name.as_bytes()), mark.size);
     content.set_char_spacing(0.0);
-    // マークサイズを1emとみなし、中心に来るよう左下へずらす。
+    // Treating the mark size as 1em, shift it down and left so it ends up centred.
     content.set_text_matrix([
         1.0,
         0.0,
@@ -3507,7 +3502,7 @@ fn render_emphasis_glyph(
     content.end_text();
 }
 
-/// マークのパスを塗る(`filled`)か輪郭を描く(`open`)。
+/// Fill the mark's path (`filled`) or stroke its outline (`open`).
 fn finish_mark_path(content: &mut RenderTarget<'_>, filled: bool) {
     if filled {
         content.fill_nonzero();
@@ -3516,12 +3511,12 @@ fn finish_mark_path(content: &mut RenderTarget<'_>, filled: bool) {
     }
 }
 
-/// 中心と半径から真円のパスを引く(4本のベジェ曲線で近似)。
+/// Build the path of a true circle from a centre and a radius (approximated with four Bezier curves).
 fn circle_path(content: &mut RenderTarget<'_>, cx: f32, cy: f32, r: f32) {
     ellipse_path(content, cx, cy, r, r);
 }
 
-/// 中心と水平/垂直半径から楕円のパスを引く。
+/// Build the path of an ellipse from a centre and horizontal/vertical radii.
 fn ellipse_path(content: &mut RenderTarget<'_>, cx: f32, cy: f32, rx: f32, ry: f32) {
     let (kx, ky) = (rx * BEZIER_KAPPA, ry * BEZIER_KAPPA);
     content.move_to(cx + rx, cy);
@@ -3532,12 +3527,12 @@ fn ellipse_path(content: &mut RenderTarget<'_>, cx: f32, cy: f32, rx: f32, ry: f
     content.close_path();
 }
 
-/// `text-shadow`のぼかし近似の段階数。中心+この段階数×4方向を重ね描きする。
+/// The number of steps in the `text-shadow` blur approximation. The centre plus this many steps in each of four directions are overpainted.
 const TEXT_SHADOW_BLUR_STEPS: usize = 2;
 
-/// `text-shadow`を描く(テキスト本体より先に呼ぶこと)。PDFにはぼかしフィルタが
-/// 無いため、アルファを下げた同じグリフ列を微小オフセットで重ね描きして
-/// 近似する。カンマ区切りの複数指定は後ろに書いたものほど奥に描く。
+/// Draw the `text-shadow`s (call before the text itself). PDF has no blur filter, so it is
+/// approximated by overpainting the same glyph run at reduced alpha with tiny offsets.
+/// With comma-separated multiples, the later one is drawn further back.
 #[allow(clippy::too_many_arguments)]
 fn render_text_shadows(
     content: &mut RenderTarget<'_>,
@@ -3566,7 +3561,7 @@ fn render_text_shadows(
         let Some(resource_name) = font_resource_names.get(run.font_index) else {
             continue;
         };
-        // 影は本体と同じグリフ列なので、送り幅の補正も同じでなければずれる。
+        // A shadow is the same glyph run as the text itself, so its advance corrections have to match or it will shift.
         let Some(font) = fonts.get(run.font_index) else {
             continue;
         };
@@ -3575,7 +3570,7 @@ fn render_text_shadows(
         let run_baseline_y = baseline_y + run.baseline_shift;
         let shear = if run.italic { ITALIC_SHEAR } else { 0.0 };
 
-        // 先頭が最前面 = 後ろに書いたものほど奥。奥から順に描く。
+        // The first is frontmost, so the later one is further back. They are drawn back to front.
         for shadow in shadows.iter().rev() {
             for (dx, dy, alpha_scale) in shadow_blur_offsets(shadow.blur_radius) {
                 let alpha = shadow.color.alpha * alpha_scale;
@@ -3592,7 +3587,7 @@ fn render_text_shadows(
                 );
                 content.set_text_rendering_mode(TextRenderingMode::Fill);
                 content.set_font(Name(resource_name.as_bytes()), run.font_size);
-                // CSSのoffset-yは下向き正、PDFのYは上向き正。
+                // CSS's offset-y is positive downwards; PDF's Y is positive upwards.
                 content.set_text_matrix([
                     1.0,
                     0.0,
@@ -3610,9 +3605,9 @@ fn render_text_shadows(
     }
 }
 
-/// ぼかし近似のオフセット列(`(dx, dy, アルファ倍率)`)。`blur_radius`が0なら
-/// 中心1回だけ。それ以外は中心+各段階の4方向を、
-/// 合計のアルファが概ね1になるよう分配する。
+/// The offsets used to approximate the blur (`(dx, dy, alpha multiplier)`). With a
+/// `blur_radius` of 0 it is just the centre, once. Otherwise the centre plus four directions
+/// per step, distributed so the alphas add up to roughly 1.
 fn shadow_blur_offsets(blur_radius: f32) -> Vec<(f32, f32, f32)> {
     if blur_radius <= 0.0 {
         return vec![(0.0, 0.0, 1.0)];
@@ -3622,7 +3617,7 @@ fn shadow_blur_offsets(blur_radius: f32) -> Vec<(f32, f32, f32)> {
     let alpha_scale = 1.0 / count as f32;
     offsets.push((0.0, 0.0, alpha_scale));
     for step in 1..=TEXT_SHADOW_BLUR_STEPS {
-        // ぼかし半径の内側から外側へ均等に配置する。
+        // Spread evenly from the inside of the blur radius to the outside.
         let r = blur_radius * step as f32 / TEXT_SHADOW_BLUR_STEPS as f32;
         offsets.push((r, 0.0, alpha_scale));
         offsets.push((-r, 0.0, alpha_scale));
@@ -3632,14 +3627,14 @@ fn shadow_blur_offsets(blur_radius: f32) -> Vec<(f32, f32, f32)> {
     offsets
 }
 
-/// 量子化後に完全透明になる(=描いても見えない)アルファかどうか。
+/// Whether an alpha becomes fully transparent after quantisation (that is, drawing it would be invisible).
 fn quantize_alpha_step_is_transparent(alpha: f32) -> bool {
     quantize_alpha_step(alpha) == 0
 }
 
-/// フォントの`post`(下線)/`OS2`(取り消し線)テーブルから、ベースラインからの
-/// 符号付きオフセットと線の太さをpx単位で求める。テーブルを持たないフォントでは
-/// `fallback_ratio`(フォントサイズに対する比率)をアセント基準の位置として使う。
+/// From the font's `post` (underline) and `OS2` (strikethrough) tables, find the signed
+/// offset from the baseline and the line thickness in px. In a font without those tables,
+/// `fallback_ratio` (a ratio of the font size) is used as a position relative to the ascent.
 fn decoration_metrics(
     font: &crate::fonts::Font,
     font_size: f32,
@@ -3656,13 +3651,13 @@ fn decoration_metrics(
     }
 }
 
-/// ページコンテンツ領域上端からの距離(CSSのY、下向き正)を、PDFのユーザー空間の
-/// Y座標(ページ物理下端からの距離、上向き正)に変換する。
+/// Convert a distance from the top of the page's content area (CSS Y, positive downwards)
+/// into a PDF user-space Y coordinate (a distance from the physical bottom of the page, positive upwards).
 fn to_pdf_y(settings: &PageSettings, y_from_content_top: f32) -> f32 {
     settings.size.height - settings.margin.top - y_from_content_top
 }
 
-/// `@page`のmargin box(`@top-left`等、16個)の水平/垂直方向の内容配置。
+/// The horizontal and vertical placement of the content in an `@page` margin box (`@top-left` and the other 15).
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum HAlign {
     Left,
@@ -3677,16 +3672,16 @@ enum VAlign {
     Bottom,
 }
 
-/// margin box 1つ分の矩形と、内容の配置規則を返す。
+/// Return the rectangle of one margin box plus the placement rules for its content.
 ///
-/// 座標系は`render_line`/`render_image`と同じ「content area(padding/borderの
-/// 内側ではなく、ページの余白の内側=`settings.margin`の内側)基準の相対座標」
-/// (`render_line`が`settings.margin.left + line.rect.x`・`to_pdf_y`が
-/// `settings.size.height - settings.margin.top - y`という式でPDF座標へ変換する
-/// 前提に合わせる必要がある)。margin boxはこのcontent areaの外側にあるため、
-/// x/yが負の値やcontent_width/content_heightを超える値になるのが正しい。
+/// The coordinate system is the same as `render_line`/`render_image`: relative to the
+/// content area (not the inside of the padding/border, but the inside of the page's margins,
+/// that is inside `settings.margin`). It has to match the assumption that `render_line`
+/// converts to PDF coordinates as `settings.margin.left + line.rect.x` and `to_pdf_y` as
+/// `settings.size.height - settings.margin.top - y`. A margin box lies outside that content
+/// area, so it is correct for its x/y to go negative or exceed content_width/content_height.
 ///
-/// 角の4boxは固定サイズ、残り12boxは辺のマージン幅を3等分する簡易配分
+/// The four corner boxes are a fixed size; the other twelve share an edge's margin width in thirds
 fn margin_box_area_rect(area: MarginBoxArea, settings: &PageSettings) -> (Rect, HAlign, VAlign) {
     let m = settings.margin;
     let content_width = settings.content_width();
@@ -3791,9 +3786,9 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
     }
 }
 
-/// margin boxの宣言リストから、シェイピングに必要な最小限のスタイルを
-/// 組み立てる(`font-*`/`color`のみ、`ComputedStyle::default`を基点に
-/// 上書きする)。margin boxはDOM要素を持たないためカスケード・継承は行わない。
+/// Build, from a margin box's declaration list, the minimum style shaping needs (`font-*`
+/// and `color` only, overriding onto `ComputedStyle::default`). A margin box has no DOM
+/// element, so there is no cascade or inheritance.
 fn margin_box_style(decls: &[PropertyDeclaration]) -> ComputedStyle {
     let mut style = ComputedStyle::default();
     for decl in decls {
@@ -3830,23 +3825,23 @@ struct ShapedMarginBox {
     line: LineBox,
 }
 
-/// ページの余白領域へ重ねて描くサブドキュメント(`--header-html`/
-/// `--footer-html`)。
+/// A subdocument drawn over the page's margin area
+/// (`--header-html`/`--footer-html`).
 ///
-/// レイアウト済みのボックス列と、その描画基準となる`PageSettings`を持つ。
-/// 基準を余白領域に合わせた専用の`PageSettings`にすることで、既存の
-/// `render_box`(y座標を`settings`から換算する)をそのまま使える。
+/// It holds a laid-out list of boxes plus the `PageSettings` its drawing is relative to.
+/// Making that a dedicated `PageSettings` aligned to the margin area lets the existing
+/// `render_box` (which derives y coordinates from `settings`) be reused unchanged.
 #[derive(Clone)]
 pub struct PageOverlay {
     pub boxes: Vec<LaidOutBox>,
     pub styles: HashMap<NodeId, Rc<ComputedStyle>>,
-    /// 余白領域を基準にした描画用の設定。
+    /// The drawing settings relative to the margin area.
     pub settings: PageSettings,
-    /// はみ出しを切るクリップ矩形(CSS px・ページ左上原点)。
+    /// The clip rectangle trimming any overflow (CSS px, origin at the page's top left).
     pub clip: Rect,
 }
 
-/// [`PageOverlay`]をページのcontent streamへ描く。
+/// Draw a [`PageOverlay`] into the page's content stream.
 pub(super) fn render_page_overlay(
     content: &mut RenderTarget<'_>,
     overlay: &PageOverlay,
@@ -3863,7 +3858,7 @@ pub(super) fn render_page_overlay(
     let mut pending_forms: Vec<(Ref, Vec<u8>)> = Vec::new();
 
     content.save_state();
-    // 余白からはみ出した分は切る(マージンの自動拡張はしない)。
+    // Anything spilling out of the margin is trimmed (the margin is never grown automatically).
     let y = overlay.settings.size.height - overlay.clip.y - overlay.clip.height;
     content.rect(overlay.clip.x, y, overlay.clip.width, overlay.clip.height);
     content.clip_nonzero();
@@ -3888,10 +3883,10 @@ pub(super) fn render_page_overlay(
     content.restore_state();
 }
 
-/// `--header-line`/`--footer-line`の罫線を引く。
+/// Draw the rule for `--header-line`/`--footer-line`.
 ///
-/// margin boxは装飾(枠線)非対応のため、ページ描画時に水平線として直接引く。
-/// 位置はコンテンツ領域の上端(ヘッダー)と下端(フッター)。
+/// A margin box supports no decoration (no borders), so it is drawn directly as a horizontal
+/// line when the page is drawn. The positions are the top (header) and bottom (footer) of the content area.
 pub(super) fn render_header_footer_rules(
     content: &mut RenderTarget<'_>,
     settings: &PageSettings,
@@ -3922,9 +3917,9 @@ pub(super) fn render_header_footer_rules(
     content.restore_state();
 }
 
-/// このページで実際に描画すべきmargin boxを、`content`が空でないものだけ
-/// シェイピング済みの状態で返す。描画(`render_margin_boxes`)・使用グリフ
-/// 収集(`collect_margin_box_usage`)の両方から呼ばれる共通処理。
+/// Return the margin boxes that should really be drawn on this page - only those whose
+/// `content` is non-empty - already shaped. Shared by both drawing (`render_margin_boxes`)
+/// and glyph usage collection (`collect_margin_box_usage`).
 fn shape_margin_boxes_for_page(
     settings: &PageSettings,
     fonts: &FontCollection,
@@ -3965,9 +3960,8 @@ fn shape_margin_boxes_for_page(
         .collect()
 }
 
-/// 確定した`shape_margin_boxes_for_page`の結果を、実際にコンテンツ
-/// ストリームへ描画する(alignmentに応じて原点を配置してから`render_line`を
-/// 再利用する)。
+/// Draw the settled result of `shape_margin_boxes_for_page` into the content stream for real
+/// (placing the origin according to the alignment and then reusing `render_line`).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_margin_boxes(
     content: &mut RenderTarget<'_>,
@@ -4004,8 +3998,8 @@ pub(super) fn render_margin_boxes(
     }
 }
 
-/// margin boxが使うグリフをフォントサブセット化のために集める
-/// (`render_margin_boxes`と同じ`shape_margin_boxes_for_page`を再利用)。
+/// Collect the glyphs the margin boxes use, for font subsetting
+/// (reusing the same `shape_margin_boxes_for_page` as `render_margin_boxes`).
 pub(super) fn collect_margin_box_usage(
     settings: &PageSettings,
     fonts: &FontCollection,
@@ -4044,9 +4038,9 @@ mod tests {
 
     #[test]
     fn margin_box_area_rect_places_corners_and_strips_relative_to_the_content_area() {
-        // A4相当、margin 80/60(上下/左右)を想定。座標系は`render_line`と同じ
-        // content area相対(margin boxはこの外側にあるため負・content超過が
-        // 正しい)。
+        // Assumes an A4 equivalent with margins of 80 (top/bottom) and 60 (left/right). The
+        // coordinate system is relative to the content area, as in `render_line` (a margin box
+        // lies outside it, so negative values and values past content are correct).
         let settings = PageSettings {
             size: PageSize {
                 width: 800.0,
@@ -4114,8 +4108,8 @@ mod tests {
         };
         let style = ComputedStyle::default();
         let rects = background_tile_rects(border_box, &style, (40.0, 30.0));
-        // 既定値(position: 0% 0%, size: auto auto, repeat: repeat)なので、
-        // intrinsicサイズ(40x30)のタイルが左上起点で敷き詰められる。
+        // With the defaults (position: 0% 0%, size: auto auto, repeat: repeat), tiles of the
+        // intrinsic size (40x30) are laid from the top left.
         assert!(rects.iter().all(|r| r.width == 40.0 && r.height == 30.0));
         assert!(rects.contains(&Rect {
             x: 0.0,
@@ -4123,7 +4117,7 @@ mod tests {
             width: 40.0,
             height: 30.0
         }));
-        // 幅100を40刻みで覆うには3列(0,40,80)、高さ60を30刻みで覆うには2行(0,30)必要。
+        // Covering a width of 100 in steps of 40 needs 3 columns (0,40,80); a height of 60 in steps of 30 needs 2 rows (0,30).
         assert_eq!(rects.len(), 3 * 2);
     }
 
@@ -4131,9 +4125,9 @@ mod tests {
     fn quantize_alpha_step_rounds_to_the_nearest_of_21_levels() {
         assert_eq!(quantize_alpha_step(1.0), ALPHA_STEPS);
         assert_eq!(quantize_alpha_step(0.0), 0);
-        // 0.3 * 20 = 6.0 ちょうど。
+        // 0.3 * 20 = exactly 6.0.
         assert_eq!(quantize_alpha_step(0.3), 6);
-        // 範囲外はクランプする。
+        // Anything out of range is clamped.
         assert_eq!(quantize_alpha_step(-0.5), 0);
         assert_eq!(quantize_alpha_step(1.5), ALPHA_STEPS);
     }
@@ -4150,7 +4144,7 @@ mod tests {
     #[test]
     fn object_fit_rect_fill_stretches_to_the_content_box_non_uniformly() {
         let content_box = content_box_150x80();
-        let style = ComputedStyle::default(); // object-fit初期値はFill
+        let style = ComputedStyle::default(); // the initial object-fit is Fill
         let rect = object_fit_rect(content_box, &style, (32.0, 24.0));
         assert_eq!(rect, content_box);
     }
@@ -4162,13 +4156,13 @@ mod tests {
             object_fit: ObjectFit::Cover,
             ..Default::default()
         };
-        // intrinsic 32x24(アスペクト比4:3) を 150x80(アスペクト比15:8) へcover。
-        // scale = max(150/32, 80/24) = max(4.6875, 3.333..) = 4.6875。
+        // Covering an intrinsic 32x24 (a 4:3 ratio) into 150x80 (a 15:8 ratio).
+        // scale = max(150/32, 80/24) = max(4.6875, 3.333..) = 4.6875.
         let rect = object_fit_rect(content_box, &style, (32.0, 24.0));
         assert!((rect.width - 150.0).abs() < 0.01);
         assert!((rect.height - 112.5).abs() < 0.01);
-        // 初期object-position(50% 50%)で中央寄せなので、はみ出し分の半分だけ
-        // content-box原点より上に描画開始する。
+        // The initial object-position (50% 50%) centres it, so drawing starts half the
+        // overflow above the content box's origin.
         assert!((rect.y - (content_box.y - (112.5 - 80.0) / 2.0)).abs() < 0.01);
     }
 
@@ -4204,7 +4198,7 @@ mod tests {
             object_fit: ObjectFit::ScaleDown,
             ..Default::default()
         };
-        // intrinsic(32x24)は既にcontent-box(150x80)より小さいので、noneと同じ。
+        // The intrinsic 32x24 is already smaller than the content box (150x80), so it is the same as none.
         let rect = object_fit_rect(content_box, &style, (32.0, 24.0));
         assert_eq!(rect.width, 32.0);
         assert_eq!(rect.height, 24.0);
@@ -4217,7 +4211,7 @@ mod tests {
             object_fit: ObjectFit::ScaleDown,
             ..Default::default()
         };
-        // intrinsic(320x240)はcontent-box(150x80)よりずっと大きいので、containと同じ。
+        // The intrinsic 320x240 is far larger than the content box (150x80), so it is the same as contain.
         let rect = object_fit_rect(content_box, &style, (320.0, 240.0));
         assert!((rect.height - 80.0).abs() < 0.01);
         assert!(rect.width < content_box.width);
@@ -4235,7 +4229,7 @@ mod tests {
             ..Default::default()
         };
         let rect = object_fit_rect(content_box, &style, (32.0, 24.0));
-        // 高さが既にcontent-boxちょうどなので、右寄せ(x軸)のみ観測できる。
+        // The height already matches the content box exactly, so only the horizontal (right) alignment is observable.
         assert!((rect.x - (content_box.x + content_box.width - rect.width)).abs() < 0.01);
     }
 
@@ -4272,7 +4266,7 @@ mod tests {
             width: 200.0,
             height: 100.0,
         };
-        // `background-position: center`。
+        // `background-position: center`.
         let style = ComputedStyle {
             background_size: BackgroundSize::Contain,
             background_repeat: BackgroundRepeat::NoRepeat,
@@ -4283,7 +4277,7 @@ mod tests {
             ..ComputedStyle::default()
         };
         let rects = background_tile_rects(border_box, &style, (100.0, 100.0));
-        // scale = min(200/100, 100/100) = 1 → 100x100のまま、中央寄せ。
+        // scale = min(200/100, 100/100) = 1, so it stays 100x100 and is centred.
         assert_eq!(
             rects,
             vec![Rect {
@@ -4311,8 +4305,8 @@ mod tests {
             ..ComputedStyle::default()
         };
         let rects = background_tile_rects(border_box, &style, (1.0, 10.0));
-        // 1px幅のタイルで100,000pxを覆おうとすると本来10万枚必要だが、
-        // 1軸あたり200枚で打ち切られる。
+        // Covering 100,000px with a 1px-wide tile would really need 100,000 of them, but it
+        // stops at 200 per axis.
         assert_eq!(rects.len(), 200);
     }
 
@@ -4356,10 +4350,10 @@ mod tests {
         let bytes = encode_pdf(&pages, &styles, &background_images, &fonts, &settings);
         let decompressed = decompressed_stream_bytes(&bytes);
 
-        // タイルがborder-boxとちょうど一致する(background-size:200px 100px、
-        // box自身も200x100)ので、クリップ矩形は出力されない。
+        // The tile coincides exactly with the border box (background-size: 200px 100px, and
+        // the box itself 200x100), so no clip rectangle is emitted.
         assert_eq!(count_occurrences(&decompressed, b"re\nW\nn\n"), 0);
-        // XObject(画像)は1回だけ描画される。
+        // The XObject (the image) is drawn only once.
         assert_eq!(count_occurrences(&decompressed, b" Do\n"), 1);
     }
 
@@ -4380,8 +4374,8 @@ mod tests {
         let styles = compute_styles(&dom, &ua, &author);
         let div = find_tag(&dom, dom.document(), "div").expect("div not found");
         let mut background_images = HashMap::new();
-        // intrinsic 40x30なので、100x60のborder-boxを覆うには3列(0,40,80)x
-        // 2行(0,30)=6タイル必要。
+        // With an intrinsic 40x30, covering a 100x60 border box needs 3 columns (0,40,80) x
+        // 2 rows (0,30) = 6 tiles.
         background_images.insert(div, fake_prepared_image(40.0, 30.0));
 
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
@@ -4428,12 +4422,11 @@ mod tests {
             .count()
     }
 
-    /// PDFバイト列中の全`stream`〜`endstream`区間を取り出し、
-    /// zlib(`/FlateDecode`)で圧縮されていれば展開して連結したものを返す。
-    /// コンテンツストリームは圧縮済みなので、オペレータ列を文字列として
-    /// 検証したいテストはこちらを使う(構造レベルの辞書キー、例えば
-    /// `/Subtype /Type0`のような、ストリーム本体の外にある文字列は
-    /// 元の`bytes`のままで検証してよい)。
+    /// Extract every `stream` to `endstream` region from the PDF bytes, inflating anything
+    /// zlib (`/FlateDecode`) compressed, and return them concatenated.
+    /// Content streams are compressed, so tests wanting to check the operator sequence as a
+    /// string use this (structural dictionary keys such as `/Subtype /Type0`, which live
+    /// outside the stream body, can be checked against the original `bytes`).
     fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
         fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
             haystack.windows(needle.len()).position(|w| w == needle)
@@ -4505,8 +4498,8 @@ mod tests {
 
     #[test]
     fn to_unicode_maps_a_ligature_glyph_to_every_character_it_stands_for() {
-        // DejaVu Sansは"fl"を1グリフの合字にする。ToUnicodeに1文字しか
-        // 載せないと、PDFのテキスト抽出・検索で"float"が"foat"になる。
+        // DejaVu Sans makes "fl" a single ligature glyph. Putting only one character in
+        // ToUnicode would make "float" extract and search as "foat".
         let dom = html::parse(b"<p>float</p>");
         let ua = user_agent_stylesheet();
         let styles = compute_styles(&dom, &ua, &Stylesheet::default());
@@ -4517,7 +4510,7 @@ mod tests {
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
         let decompressed = decompressed_stream_bytes(&bytes);
 
-        // UTF-16BEで'f'=0066、'l'=006C。
+        // In UTF-16BE, 'f' = 0066 and 'l' = 006C.
         assert!(
             count_occurrences(&decompressed, b"<0066006C>") > 0,
             "the fl ligature glyph should map to both characters"
@@ -4526,8 +4519,8 @@ mod tests {
 
     #[test]
     fn subsetting_keeps_embedded_font_small() {
-        // CJKフォント(元は約19MB)を、短いテキストだけ使ってPDFに埋め込む。
-        // サブセット化が効いていれば、出力PDF全体が元フォントよりずっと小さいはず。
+        // Embed a CJK font (about 19MB originally) in a PDF using only a short piece of text.
+        // With subsetting working, the whole output PDF should be far smaller than the original font.
         let dom = html::parse("<p>日本語のテスト</p>".as_bytes());
         let ua = user_agent_stylesheet();
         let author = Stylesheet::default();
@@ -4636,8 +4629,8 @@ mod tests {
             &settings,
         );
 
-        // 4辺分の塗りつぶし(`f`オペレータ)が追加されているはず(各辺は
-        // 外形/内形の頂点を結ぶミトー結合済みの四角形として塗る)。
+        // Four edges' worth of fills (the `f` operator) should have been added (each edge is
+        // filled as a mitred quadrilateral joining the outer and inner vertices).
         let fill_count_with = count_occurrences(&decompressed_stream_bytes(&bytes_with), b"\nf\n");
         let fill_count_without =
             count_occurrences(&decompressed_stream_bytes(&bytes_without), b"\nf\n");
@@ -4713,7 +4706,7 @@ mod tests {
             &settings,
         );
 
-        // 4辺 x 2帯(外側/内側) = 8回以上の塗りつぶしが追加されているはず。
+        // 4 edges x 2 bands (outer/inner) = at least 8 fills should have been added.
         let fill_count_with = count_occurrences(&decompressed_stream_bytes(&bytes_with), b"\nf\n");
         let fill_count_without =
             count_occurrences(&decompressed_stream_bytes(&bytes_without), b"\nf\n");
@@ -4736,8 +4729,8 @@ mod tests {
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
 
-        // 角丸パス(4角ぶんのベジェ曲線)を2周分ストロークするはず(背景色は
-        // 未指定なので塗りつぶしはなし)。
+        // The rounded path (four corners of Bezier curves) should be stroked twice round (with
+        // no background colour set, there is no fill).
         let decompressed = decompressed_stream_bytes(&bytes);
         assert!(
             count_occurrences(&decompressed, b" c\n") >= 8,
@@ -4785,12 +4778,12 @@ mod tests {
         let decompressed = decompressed_stream_bytes(&bytes);
         let text = String::from_utf8_lossy(&decompressed);
 
-        // 角丸パスはベジェ曲線オペレータ`c`を使う。
+        // A rounded path uses the Bezier curve operator `c`.
         assert!(
             count_occurrences(&decompressed, b" c\n") >= 8,
             "rounded corners should use cubic bezier curve operators (4 corners x fill+stroke)"
         );
-        // 直線矩形の`re`は(角丸なので)使われないはず。
+        // The straight rectangle `re` should not be used (the corners being rounded).
         assert!(
             !text.contains(" re\n"),
             "rounded box should not use a plain rectangle"
@@ -4811,9 +4804,9 @@ mod tests {
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
 
-        // 4辺が不揃いなので角丸は諦め、直線4辺のフォールバックになるはず。
-        // `border-style: solid dotted`は上下がsolid(塗り)、左右がdotted
-        // (ストローク)に展開されるので、両方が現れるはず。
+        // The four edges differ, so the rounding is given up and it falls back to four straight
+        // edges. `border-style: solid dotted` expands to solid (filled) top and bottom and
+        // dotted (stroked) left and right, so both should appear.
         let decompressed = decompressed_stream_bytes(&bytes);
         assert!(
             count_occurrences(&decompressed, b"\nf\n") >= 2,
@@ -4829,10 +4822,10 @@ mod tests {
     fn non_uniform_solid_border_corners_share_exact_miter_vertices() {
         use crate::layout::{EdgeSizes, PageSize};
 
-        // ページ余白0・丸い数値のPageSettingsを使い、座標を手計算で予測できる
-        // ようにする。4辺の太さ・色をすべて不揃いにし、隣接する2辺が
-        // 「内側の角の頂点」を正確に共有する(=斜めにミトー結合される)ことを、
-        // 生成された実際のコンテンツストリームの座標列で確認する。
+        // Use PageSettings with zero page margins and round numbers so the coordinates can be
+        // predicted by hand. Every edge is given a different width and colour, and the actual
+        // coordinate sequence in the generated content stream is checked to confirm that two
+        // adjacent edges share the inner corner vertex exactly (that is, mitre diagonally).
         let settings = PageSettings {
             size: PageSize {
                 width: 800.0,
@@ -4859,10 +4852,10 @@ mod tests {
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
         let text = String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned();
 
-        // border-box: x∈[0,360](border-left 40 + width 300 + border-right 20)、
-        // PDF空間でy_top=1000(border-top 10)、y_bottom=760(border-bottom 30)。
-        // 右上の外側の角(360,1000)と内側の角(340,990)は、top/rightの両方の
-        // パスに現れるはず(top側は終端、right側は始端として)。
+        // border box: x in [0,360] (border-left 40 + width 300 + border-right 20);
+        // in PDF space y_top=1000 (border-top 10) and y_bottom=760 (border-bottom 30).
+        // The top right outer corner (360,1000) and inner corner (340,990) should appear in
+        // both the top and right paths (as the top's end and the right's start).
         assert_eq!(
             count_occurrences(text.as_bytes(), b"360 1000"),
             2,
@@ -4923,7 +4916,7 @@ mod tests {
         let pages = paginate_document(&dom, &styles, &fonts, &settings);
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
 
-        // 2つのフォント(DejaVu Sans, Noto Sans CJK JP)がそれぞれ埋め込まれているはず。
+        // The two fonts (DejaVu Sans and Noto Sans CJK JP) should each be embedded.
         assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 2);
         assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 2);
     }
@@ -4947,32 +4940,32 @@ mod tests {
         let decompressed = decompressed_stream_bytes(&bytes);
         let text = String::from_utf8_lossy(&decompressed);
 
-        // 各セルのテキストがコンテンツストリームに(グリフとして)出力されている
-        // ことを、フォント使用状況(グリフ数)経由で間接的に確認する。
-        // "Header"/"Apple"/"100"のテキストが1つのフォントに集約されているはず
-        // なので、埋め込みフォントは1つだけ。
+        // Confirm indirectly, through the font usage (the glyph count), that each cell's text
+        // is emitted into the content stream (as glyphs).
+        // The text "Header"/"Apple"/"100" should all fall to one font, so only one font is embedded.
+
         assert_eq!(
             count_occurrences(&bytes, b"/FontFile2"),
             1,
             "all table cell text should use the single loaded font"
         );
 
-        // colspanで結合されたヘッダーセルの背景・枠線と、通常セルの背景・枠線を
-        // 合わせて複数の塗りつぶし(`f`)が出力されているはず(テーブル自身には
-        // 背景/枠線を指定していないので、セル由来のみ)。
+        // The background and borders of the colspan-merged header cell plus those of the
+        // ordinary cells should produce several fills (`f`) between them (the table itself has
+        // no background or borders set, so they all come from the cells).
         assert!(
             count_occurrences(&decompressed, b"\nf\n") >= 2,
             "cell borders/backgrounds should produce fill operators"
         );
-        // 明示的に指定したセル背景色がfillの色として現れるはず。
+        // The explicitly set cell background colour should appear as a fill colour.
         assert!(
             text.contains("0.78431374 0.78431374 0.78431374 rg"),
             "the explicit cell background-color should be painted"
         );
     }
 
-    /// 与えたHTML/CSSをPDF化し、展開したコンテンツストリーム中の塗りつぶし
-    /// (`f`)演算子の出現数を返す(背景・枠線描画の合計を数える簡易プロキシ)。
+    /// Convert the given HTML/CSS to PDF and return the number of fill (`f`) operators in the
+    /// inflated content stream (a simple proxy counting the total of background and border drawing).
     fn fill_operator_count(html_src: &str, css: &str) -> usize {
         let dom = html::parse(html_src.as_bytes());
         let ua = user_agent_stylesheet();
@@ -5006,9 +4999,9 @@ mod tests {
 
     #[test]
     fn a_cell_holding_only_a_no_break_space_does_not_count_as_empty() {
-        // `<td>&nbsp;</td>`は枠を出すための定番の書き方。`&nbsp;`は畳み込まれない
-        // 内容を持つので、`empty-cells: hide`で消してはいけない
-        // (`str::trim`で空判定していた頃は空セル扱いになっていた)。
+        // `<td>&nbsp;</td>` is the classic way to force a frame. `&nbsp;` is non-collapsing
+        // content, so `empty-cells: hide` must not remove it
+        // (back when emptiness was decided with `str::trim` it counted as an empty cell).
         let css = "td { border: 1px solid black; background-color: rgb(200,200,200); } \
                    table { empty-cells: hide; }";
 
@@ -5044,10 +5037,10 @@ mod tests {
 
     #[test]
     fn empty_cells_hide_can_be_set_on_an_individual_cell() {
-        // テーブル自身はデフォルト(show)のまま、空セルにだけ`empty-cells: hide`
-        // を指定した場合でもそのセルの装飾が抑制されることを確認する
-        // (このプロパティは`table-cell`要素に適用されるため、テーブル単位では
-        // なくセル単位で見る必要がある)。
+        // Check that leaving the table itself at the default (show) and setting
+        // `empty-cells: hide` on the empty cell alone still suppresses that cell's decoration
+        // (the property applies to `table-cell` elements, so it has to be read per cell rather
+        // than per table).
         let html_src = r#"<table><tr><td>Apple</td><td class="empty"></td></tr></table>"#;
         let base_css = "td { border: 1px solid black; background-color: rgb(200,200,200); }";
 
@@ -5066,10 +5059,10 @@ mod tests {
 
     #[test]
     fn border_collapse_avoids_drawing_a_double_thick_border_at_a_shared_edge() {
-        // 隣接する2セルが同じ枠線を指定している場合、separateモデルでは
-        // 各セルが独立に4辺とも描画する(2+2セル分=8回)。collapseモデルでは
-        // 内部で接する1辺の描画が抑制されて1回に統合されるため、合計は1回
-        // 減った7回になるはず。
+        // Where two adjacent cells set the same border, the separate model has each cell draw
+        // all four edges independently (2+2 cells' worth = 8 times). The collapse model
+        // suppresses one of the two drawings of the shared internal edge and merges it into
+        // one, so the total should be 7, one fewer.
         let html_src = r#"<table><tr><td>a</td><td>b</td></tr></table>"#;
         let base_css = "body { margin: 0; } td { border: 1px solid black; }";
 
@@ -5091,10 +5084,10 @@ mod tests {
 
     #[test]
     fn border_collapse_uses_the_neighbors_border_when_own_side_declares_none() {
-        // 左セルは枠線を指定していない(none)が、右セルの左辺(実際には隣接
-        // する境界の統合先である左セルの右辺として解決される)に実際の枠線が
-        // あるため、境界に枠線が現れなくなってはいけない
-        // (「own=none」を無条件に採用してはいけないことの回帰テスト)。
+        // The left cell sets no border (none), but the right cell's left edge (which really
+        // resolves as the left cell's right edge, that being where the shared boundary is
+        // merged) does have one, so a border must not vanish from the boundary
+        // (a regression test that "own = none" must not be taken unconditionally).
         let html_src = r#"<table><tr><td class="a">a</td><td class="b">b</td></tr></table>"#;
         let css = "body { margin: 0; } \
                    table { border-collapse: collapse; } \
@@ -5102,8 +5095,8 @@ mod tests {
                    .b { border: 2px solid black; }";
 
         let fills = fill_operator_count(html_src, css);
-        // 右セルの上/右/下辺(3, 左辺は隣接があるため抑制)+左セルの右辺
-        // (隣接セルの枠線を継承して1)=合計4のはず。
+        // The right cell's top, right and bottom edges (3; its left is suppressed by the
+        // neighbour) plus the left cell's right edge (1, inheriting the neighbour's border) = 4 in total.
         assert_eq!(
             fills, 4,
             "the shared edge should still be drawn using the neighbor's border spec: {fills}"
@@ -5174,8 +5167,8 @@ mod tests {
 
     #[test]
     fn resolve_border_conflict_ignores_a_declared_width_when_style_is_none() {
-        // `style: none`の辺は幅の指定に関わらず実効幅0として扱われるため、
-        // 幅の数値だけを見れば「勝って」しまいそうな場合でも負けるはず。
+        // An edge with `style: none` counts as an effective width of 0 regardless of the width
+        // set, so it should lose even where the width alone would seem to "win".
         let none_but_wide = (
             10.0,
             BorderStyle::None,
@@ -5203,11 +5196,11 @@ mod tests {
 
     #[test]
     fn word_boundary_across_a_font_switch_gets_an_actual_text_space_marker() {
-        // "Invoice"(DejaVu)と"請求書"(CJK)はフォントが切り替わるラン境界に
-        // またがる単語境界で、どちらのTextRun.textにも実際の空白文字を含まない
-        // (単語間の空白はx_offsetの隙間としてのみ表現される)。座標ギャップに
-        // 頼るテキスト抽出はフォント切り替えを伴う境界で崩れることがあるため、
-        // 視覚描画に影響しない`ActualText`付きマーク区間で明示しているはず。
+        // "Invoice" (DejaVu) and the Japanese (CJK) sit either side of a word boundary that
+        // crosses a run boundary where the font changes, and neither TextRun.text contains an
+        // actual whitespace character (inter-word space being expressed only as an x_offset
+        // gap). Text extraction relying on coordinate gaps can break at a boundary with a font
+        // change, so it should be stated explicitly by a marked section with an `ActualText`, which has no visual effect.
         let dom = html::parse("<p>Invoice 請求書</p>".as_bytes());
         let ua = user_agent_stylesheet();
         let styles = compute_styles(&dom, &ua, &Stylesheet::default());
@@ -5243,8 +5236,8 @@ mod tests {
 
     #[test]
     fn letter_spacing_emits_a_tc_operator_with_the_resolved_value() {
-        // `letter-spacing`はグリフ幅そのものには反映できないため、PDFの`Tc`
-        // (character spacing)演算子として出力される必要がある。
+        // `letter-spacing` cannot be reflected in the glyph widths themselves, so it has to be
+        // emitted as PDF's `Tc` (character spacing) operator.
         let ua = user_agent_stylesheet();
         let fonts = test_fonts();
         let settings = PageSettings::default();
@@ -5290,8 +5283,8 @@ mod tests {
 
     #[test]
     fn list_item_marker_glyphs_are_embedded_in_the_font_subset() {
-        // 本文中に一切数字が登場しない文書でも、マーカーの
-        // '1'(U+0031)が`/ToUnicode`CMapに実際に埋め込まれることを確認する。
+        // Confirm that even in a document where no digit appears in the body at all, the
+        // marker's '1' (U+0031) really is embedded in the `/ToUnicode` CMap.
         let dom = html::parse(br#"<ol><li>apple</li></ol>"#);
         let ua = user_agent_stylesheet();
         let author = Stylesheet::default();
@@ -5312,11 +5305,11 @@ mod tests {
 
     #[test]
     fn generated_content_glyphs_are_embedded_in_the_font_subset() {
-        // ::before/::afterのcontent(attr/counter)が生成する文字も、通常の
-        // テキストスパンと同じ`BoxContent::Inline`経路(collect_line_usage)を
-        // 通るため、マーカーの時とは異なり専用の収集漏れは生じないはずだが、
-        // 本文中に一切登場しない数字(counter由来の'1')が実際に埋め
-        // 込まれることを確認する。
+        // The characters generated by ::before/::after content (attr/counter) go through the
+        // same `BoxContent::Inline` path (collect_line_usage) as an ordinary text span, so
+        // unlike the marker case there should be no dedicated collection gap. Even so, this
+        // confirms that a digit never appearing in the body (the counter-derived '1') really
+        // is embedded.
         let dom = html::parse(br#"<div><h2>intro</h2></div>"#);
         let ua = user_agent_stylesheet();
         let author = parse_stylesheet(
@@ -5361,7 +5354,7 @@ mod tests {
             assert_eq!(colors.outer, expected, "inset outer for {side:?}");
             assert_eq!(colors.inner, expected, "inset inner for {side:?}");
 
-            // outsetはinsetの明暗を反転しただけ(同じ辺で逆の色)。
+            // outset is inset with the light and dark reversed (the opposite colour on the same edge).
             let outset_colors = border_side_colors(BorderStyle::Outset, side, color);
             let outset_expected = if expect_dark { light } else { dark };
             assert_eq!(
@@ -5382,7 +5375,7 @@ mod tests {
         let light = lighten(color, SHADE_AMOUNT);
         let dark = darken(color, SHADE_AMOUNT);
 
-        // groove: top/leftは外側が暗く内側が明るい(みぞの奥行き)、right/bottomは逆。
+        // groove: top/left are dark outside and light inside (the depth of the groove); right/bottom are the reverse.
         let top_groove = border_side_colors(BorderStyle::Groove, BorderSideKind::Top, color);
         assert_eq!(top_groove.outer, dark);
         assert_eq!(top_groove.inner, light);
@@ -5390,7 +5383,7 @@ mod tests {
         assert_eq!(right_groove.outer, light);
         assert_eq!(right_groove.inner, dark);
 
-        // ridgeはgrooveの外側/内側を反転しただけ。
+        // ridge is groove with the outside and inside swapped.
         let top_ridge = border_side_colors(BorderStyle::Ridge, BorderSideKind::Top, color);
         assert_eq!(top_ridge.outer, light);
         assert_eq!(top_ridge.inner, dark);
@@ -5446,8 +5439,8 @@ mod tests {
             "outline should add 4 filled mitered quads outside the border-box"
         );
 
-        // outlineはレイアウトに影響しないため、`div`のcontent boxの位置・寸法は
-        // outlineの有無で変わらないはず。
+        // An outline does not affect layout, so the `div`'s content box position and size
+        // should not change with or without one.
         let div_without = find_tag(&dom_without, dom_without.document(), "div").unwrap();
         let div_with = find_tag(&dom_with, dom_with.document(), "div").unwrap();
         let box_without = pages_without[0]
@@ -5501,8 +5494,8 @@ mod tests {
         let fonts = test_fonts();
         let settings = PageSettings::default();
 
-        // 親が`visibility: hidden`でも、子が明示的に`visible`を指定していれば
-        // 描画される(仕様通り)。
+        // Even under a `visibility: hidden` parent, a child explicitly setting `visible` is
+        // drawn (as the spec requires).
         let dom = html::parse(br#"<div class="outer"><p class="inner">shown</p></div>"#);
         let author = parse_stylesheet(
             ".outer { visibility: hidden; background-color: rgb(255, 0, 0); } \
@@ -5513,14 +5506,14 @@ mod tests {
         let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
         let decompressed = decompressed_stream_bytes(&bytes);
 
-        // outerの背景(赤)は描画されないはず。
+        // outer's background (red) should not be drawn.
         assert_eq!(
             count_occurrences(&decompressed, b"1 0 0 rg"),
             0,
             "hidden outer's red background should not be painted"
         );
-        // innerのテキストは(何らかのグリフ描画として)出力されるはず。
-        // グリフ列は送り幅の補正を挟めるよう常に`TJ`で出す([`show_run_glyphs`])。
+        // inner's text should be emitted (as some glyph drawing).
+        // A glyph run is always emitted with `TJ` so advance corrections can be interposed (see [`show_run_glyphs`]).
         assert!(
             count_occurrences(&decompressed, b"TJ") > 0,
             "visible descendant's text should still be painted"
@@ -5542,8 +5535,8 @@ mod tests {
         let fonts = test_fonts();
         let tree = crate::layout::build_box_tree(&dom, &styles);
         let laid = crate::layout::layout_document(&tree, &styles, &fonts, 800.0);
-        // html5everが暗黙に`<html>`/`<body>`を補うため、`<div>`のNodeIdを
-        // 辿って探す(木の深さを決め打ちしない)。
+        // html5ever supplies `<html>`/`<body>` implicitly, so the `<div>`'s NodeId is found by
+        // walking (rather than assuming a fixed tree depth).
         let div_node = find_tag(&dom, dom.document(), "div").expect("div not found");
         let div_box = find_laid_out(&laid, div_node).expect("div box not found");
         let LaidOutContent::Blocks(children) = &div_box.content else {
@@ -5558,14 +5551,14 @@ mod tests {
             lines[0].runs[0].text.clone()
         };
         let order: Vec<String> = ordered.iter().map(|b| text_of(b)).collect();
-        // b(z-index:-1) < c/d(static、z-indexが効かずauto=0扱い、文書順でc→d) < a(z-index:2)。
+        // b(z-index:-1) < c/d (static, so z-index has no effect and counts as auto=0, in document order c then d) < a(z-index:2).
         assert_eq!(order, vec!["b", "c", "d", "a"]);
     }
 
     #[test]
     fn paint_order_puts_floats_above_in_flow_blocks() {
-        // floatが先に描かれると、直後のブロックの背景がfloatを塗り潰して
-        // しまう(CSS2.1 Appendix Eではブロックの背景よりfloatが後のレイヤー)。
+        // If a float were drawn first, the background of the block immediately after would
+        // paint over it (in CSS2.1 Appendix E a float is in a layer above a block's background).
         let dom = html::parse(
             br#"<div>
                 <p class="f" style="float: left; width: 100px;">f</p>
@@ -5594,7 +5587,7 @@ mod tests {
         assert_eq!(order, vec!["c", "f"]);
     }
 
-    // ===== `<a href>`のリンク注釈 =====
+    // ===== `<a href>` link annotations =====
 
     fn link_areas_of(html_src: &str, css: &str) -> Vec<LinkArea> {
         let dom = html::parse(html_src.as_bytes());
@@ -5633,7 +5626,7 @@ mod tests {
             "body { margin: 0; }",
         );
         assert_eq!(areas.len(), 1);
-        // リンクは行頭ではないので、矩形は左端から始まらない。
+        // The link is not at the start of the line, so the rectangle does not start at the left edge.
         assert!(areas[0].x0 > 0.0, "{areas:?}");
     }
 
@@ -5648,7 +5641,7 @@ mod tests {
             "expected several line areas, got {areas:?}"
         );
         assert!(areas.iter().all(|a| &*a.href == "https://example.com"));
-        // 行ごとに縦位置が異なる。
+        // The vertical position differs per line.
         assert!(areas[0].y0 > areas[1].y0, "{areas:?}");
     }
 

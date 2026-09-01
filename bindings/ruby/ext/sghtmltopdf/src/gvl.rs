@@ -1,30 +1,30 @@
-//! GVL(Global VM Lock)の解放。
+//! Releasing the GVL (Global VM Lock).
 //!
-//! レンダリングの間はGVLを解放し、Pumaの他スレッドを止めないようにする。
+//! The GVL is released during rendering so Puma's other threads are not blocked.
 
 use std::ffi::c_void;
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 
-/// GVLを解放して`func`を実行する。
+/// Release the GVL and run `func`.
 ///
-/// # なぜ`Send`境界が要るか
+/// # Why the `Send` bound is needed
 ///
-/// magnusは「GVLを解放するAPIは存在しない」前提でGVL状態をスレッド
-/// ローカルにキャッシュしており(`magnus::api`の *assumed not to change
-/// because there's currently no api to unlock*)、ここで解放しても
-/// `Ruby::get()`は`Ok`を返してしまう。返ったハンドルでRubyに触ればUBになる。
+/// magnus caches the GVL state in a thread local on the assumption that "there is no API
+/// that releases the GVL" (*assumed not to change because there's currently no api to
+/// unlock* in `magnus::api`), so `Ruby::get()` returns `Ok` even after we release it here.
+/// Touching Ruby through the handle it returns would be UB.
 ///
-/// `Send`境界を課すと、magnusの値(`NonNull<RBasic>`)も`Ruby`ハンドル
-/// (`*mut ()`)も`!Send`なのでキャプチャがコンパイルエラーになる。
-/// クロージャの中で改めて`Ruby::get()`を呼ぶことまでは型では防げないが、
-/// 解放区間で呼ぶのは`sghtmltopdf_core`の関数だけであり、コアはRubyを
-/// 一切知らないため到達しない。
+/// Imposing a `Send` bound makes capturing a magnus value (`NonNull<RBasic>`) or a `Ruby`
+/// handle (`*mut ()`) a compile error, both being `!Send`.
+/// Calling `Ruby::get()` again inside the closure is not something the types can prevent,
+/// but the only things called in the released region are `sghtmltopdf_core` functions, and
+/// the core knows nothing about Ruby, so it is unreachable.
 ///
-/// # 割り込み
+/// # Interruption
 ///
-/// UBF(unblock function)は`None`＝割り込み不可。`Kernel#trap`やCtrl-Cでの
-/// 中断は初期スコープ外とする。
-#[allow(dead_code)] // 将来のGVL解放実装で使う
+/// The UBF (unblock function) is `None`, meaning uninterruptible. Interruption through
+/// `Kernel#trap` or Ctrl-C is outside the initial scope.
+#[allow(dead_code)] // used by the future GVL-releasing implementation
 pub fn without_gvl<F, R>(func: F) -> R
 where
     F: FnOnce() -> R + Send,
@@ -41,9 +41,9 @@ where
         R: Send,
     {
         let state = unsafe { &mut *(arg as *mut State<F, R>) };
-        let func = state.func.take().expect("コールバックが2度呼ばれました");
-        // パニックがFFI境界を越えるとプロセスがabortするため、ここで捕まえて
-        // GVLを取り戻してからRust側でresumeする。
+        let func = state.func.take().expect("the callback was called twice");
+        // A panic crossing the FFI boundary aborts the process, so it is caught here and
+        // resumed on the Rust side after the GVL is reacquired.
         state.result = Some(catch_unwind(AssertUnwindSafe(func)));
         std::ptr::null_mut()
     }
@@ -60,26 +60,26 @@ where
             std::ptr::null_mut(),
         );
     }
-    match state.result.expect("コールバックが実行されませんでした") {
+    match state.result.expect("the callback was never run") {
         Ok(value) => value,
         Err(panic) => resume_unwind(panic),
     }
 }
 
-/// GVLを取り戻して`func`を実行する。[`without_gvl`]の内側からだけ呼ぶ。
+/// Reacquire the GVL and run `func`. Call only from inside [`without_gvl`].
 ///
-/// `without_gvl`と違い`Send`境界は課さない。ここはGVLを保持している＝Rubyに
-/// 触ってよい区間だから。
+/// Unlike `without_gvl` it imposes no `Send` bound, this being a region where the GVL is
+/// held and Ruby may be touched.
 ///
-/// # 呼び出し側が守ること(libruby側の制約)
+/// # What the caller must observe (libruby's constraints)
 ///
-/// * `func`からRubyのオブジェクトを返さない。返すとGVLを再び手放した
-///   あとGCのスコープから外れ、マークされない。値を持ち帰るときは
-///   `rb_gc_register_address`で登録したスロットへ入れること
+/// * Do not return a Ruby object from `func`. Returning one puts it outside the GC's scope
+///   once the GVL is released again, and it will not be marked. To carry a value back, put
+///   it in a slot registered with `rb_gc_register_address`
 ///   (`callback_sink::ValueSlot`)
-/// * `func`から例外を投げさせない。longjmpがこの関数を飛び越えると
-///   未定義動作になる。Rubyの呼び出しは必ず`rb_protect`相当で包む
-///   (magnusの`Proc::call`は内部で`protect`しているのでそのまま使える)
+/// * Do not let `func` throw an exception. A longjmp jumping over this function is undefined
+///   behaviour. Every Ruby call must be wrapped in the equivalent of `rb_protect`
+///   (magnus's `Proc::call` uses `protect` internally, so it can be used directly)
 pub fn with_gvl<F, R>(func: F) -> R
 where
     F: FnOnce() -> R,
@@ -94,8 +94,8 @@ where
         F: FnOnce() -> R,
     {
         let state = unsafe { &mut *(arg as *mut State<F, R>) };
-        let func = state.func.take().expect("コールバックが2度呼ばれました");
-        // パニックがlibrubyのフレームを越えるとプロセスがabortする。
+        let func = state.func.take().expect("the callback was called twice");
+        // A panic crossing a libruby frame aborts the process.
         state.result = Some(catch_unwind(AssertUnwindSafe(func)));
         std::ptr::null_mut()
     }
@@ -107,7 +107,7 @@ where
     unsafe {
         rb_sys::rb_thread_call_with_gvl(Some(call::<F, R>), &mut state as *mut _ as *mut c_void);
     }
-    match state.result.expect("コールバックが実行されませんでした") {
+    match state.result.expect("the callback was never run") {
         Ok(value) => value,
         Err(panic) => resume_unwind(panic),
     }

@@ -1,8 +1,8 @@
-//! `selectors`クレート向けの`SelectorImpl`実装。
+//! The `SelectorImpl` implementation for the `selectors` crate.
 //!
-//! `selectors`は各種の型([`cssparser::ToCss`]・[`PrecomputedHash`]など)への
-//! 実装を要求するが、`html5ever`のアトム型(`LocalName`/`Namespace`)には
-//! それらが備わっていないため、`scraper`クレートの実装を参考に薄いラッパー型で包む。
+//! `selectors` requires implementations of various traits ([`cssparser::ToCss`],
+//! [`PrecomputedHash`] and so on), which `html5ever`'s atom types (`LocalName`/`Namespace`)
+//! do not provide, so they are wrapped in thin newtypes modelled on the `scraper` crate.
 
 use std::fmt;
 
@@ -27,7 +27,7 @@ impl SelectorImpl for SgSelectorImpl {
     type PseudoElement = PseudoElement;
 }
 
-/// セレクタパーサ本体。
+/// The selector parser itself.
 #[derive(Clone, Copy, Debug)]
 pub struct SelectorParser;
 
@@ -35,41 +35,41 @@ impl<'i> parser::Parser<'i> for SelectorParser {
     type Impl = SgSelectorImpl;
     type Error = parser::SelectorParseErrorKind<'i>;
 
-    /// `:is()`/`:where()`を有効にする。
+    /// Enable `:is()`/`:where()`.
     ///
-    /// どちらも寛容なセレクタリスト(中に未対応のセレクタが混ざっていても、
-    /// その項だけを捨ててリスト自体は生かす)として扱われる。詳細度は
-    /// `:is()`が引数のうち最も高いもの、`:where()`は常に0。
+    /// Both are treated as forgiving selector lists (an unsupported selector mixed in drops
+    /// only that item and keeps the list alive). For specificity, `:is()` takes the highest
+    /// of its arguments and `:where()` is always 0.
     fn parse_is_and_where(&self) -> bool {
         true
     }
 
-    /// `:has()`を有効にする。
+    /// Enable `:has()`.
     ///
-    /// マッチングは`selectors`クレートが持つ関係セレクタの実装
-    /// (主体の部分木・後続兄弟を走査する)をそのまま使う。
+    /// Matching uses the `selectors` crate's relational selector implementation as-is
+    /// (it walks the subject's subtree and later siblings).
     fn parse_has(&self) -> bool {
         true
     }
 
-    /// ネストしたルールの`&`(親セレクタ)を有効にする(CSS Nesting)。
+    /// Enable `&` (the parent selector) in nested rules (CSS Nesting).
     ///
-    /// `&`は[`super::stylesheet`]がネストしたルールのセレクタをパースした
-    /// 直後に親のセレクタリストへ置き換えるため、マッチングまで残らない。
-    /// トップレベルのルールに書かれた`&`だけは置き換える親が無く、仕様
-    /// どおり`:scope`(=ルート要素)として扱われる。
+    /// [`super::stylesheet`] replaces `&` with the parent's selector list immediately after
+    /// parsing a nested rule's selector, so it never survives to matching. Only an `&`
+    /// written in a top-level rule has no parent to substitute, and is treated as `:scope`
+    /// (the root element), as the spec requires.
     fn parse_parent_selector(&self) -> bool {
         true
     }
 
-    /// `:hover`等の非構造的擬似クラスはパース自体には対応する(常に非マッチとして
-    /// 扱うのは[`super::element_ref::ElementRef::match_non_ts_pseudo_class`]の役割)。
+    /// Non-structural pseudo-classes such as `:hover` are supported at parse time (treating
+    /// them as never matching is [`super::element_ref::ElementRef::match_non_ts_pseudo_class`]'s job).
     ///
-    /// これらを未対応のまま(空enumの`NonTSPseudoClass`のまま)にしておくと、
-    /// `selectors`クレートの`SelectorList::parse`は非寛容(1つでも無効なセレクタが
-    /// あるとリスト全体を`Err`にする)なため、`.foo, .bar:hover { ... }`のように
-    /// カンマ区切りの一部だけが`:hover`を含む場合でも、無関係な`.foo`の宣言まで
-    /// ルールごと消えてしまう。パースを成功させることでこの巻き添えを防ぐ。
+    /// Leaving them unsupported (with `NonTSPseudoClass` an empty enum) would be worse:
+    /// the `selectors` crate's `SelectorList::parse` is unforgiving (one invalid selector
+    /// makes the whole list an `Err`), so in `.foo, .bar:hover { ... }`, where only part of
+    /// the comma-separated list contains `:hover`, the declarations for the unrelated `.foo`
+    /// would vanish along with the rule. Parsing successfully avoids that collateral damage.
     fn parse_non_ts_pseudo_class(
         &self,
         location: SourceLocation,
@@ -96,7 +96,7 @@ impl<'i> parser::Parser<'i> for SelectorParser {
         })
     }
 
-    /// `::before`/`::after`/`::first-letter`に対応する。`::first-line`は非対応
+    /// Supports `::before`/`::after`/`::first-letter`. `::first-line` is not supported
     fn parse_pseudo_element(
         &self,
         location: SourceLocation,
@@ -157,9 +157,9 @@ impl ToCss for CssLocalName {
     }
 }
 
-/// 非構造的(状態依存)擬似クラス。PDFは非対話的な出力なので、これらはいずれも
-/// パースには対応しつつ、実際のマッチングでは常に非マッチとして扱う
-/// ([`super::element_ref::ElementRef::match_non_ts_pseudo_class`]参照)。
+/// Non-structural (state-dependent) pseudo-classes. A PDF is non-interactive output, so all
+/// of these are supported at parse time but treated as never matching during actual matching
+/// (see [`super::element_ref::ElementRef::match_non_ts_pseudo_class`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NonTSPseudoClass {
     Hover,
@@ -210,9 +210,9 @@ impl ToCss for NonTSPseudoClass {
     }
 }
 
-/// 擬似要素。`::before`/`::after`(`content`宣言と組み合わせた生成コンテンツ)・
-/// `::first-letter`(限定的なプロパティのみの上書きスタイル)に対応する。
-/// `::first-line`は非対応。
+/// Pseudo-elements. Supports `::before`/`::after` (generated content, combined with a
+/// `content` declaration) and `::first-letter` (an override style for a limited set of
+/// properties). `::first-line` is not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PseudoElement {
     Before,

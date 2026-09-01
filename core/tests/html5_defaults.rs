@@ -1,8 +1,7 @@
-//! HTML5要素のUAデフォルトスタイルのE2Eテスト。
+//! E2E tests for the UA default styles of the HTML5 elements.
 //!
-//! `generated_content.rs`/`box_sizing.rs`と同じ方針: 実際のパイプライン
-//! (HTMLパース→スタイルカスケード→レイアウト→PDFエンコード)を通して回帰を
-//! 検知する。
+//! The same approach as `generated_content.rs`/`box_sizing.rs`: catch regressions by going
+//! through the real pipeline (HTML parse, style cascade, layout, PDF encode).
 
 use std::collections::HashMap;
 
@@ -30,7 +29,7 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
         .count()
 }
 
-/// レイアウト済みツリーを走査し、行に含まれるテキストを出現順に連結して返す。
+/// Walk the laid-out tree and return the text in the lines concatenated in order of appearance.
 fn extract_text(b: &LaidOutBox) -> String {
     fn walk(b: &LaidOutBox, out: &mut String) {
         match &b.content {
@@ -131,12 +130,12 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     }
 }
 
-// ===== 非表示にすべき要素 =====
+// ===== Elements that should be hidden =====
 
 #[test]
 fn option_text_does_not_leak_into_the_document() {
-    // 回帰テスト: UA規則が無いとフォームコントロールはインライン扱いになり、
-    // <option>のテキストが本文に流れ込んでいた。
+    // Regression test: without the UA rules a form control counts as inline and the
+    // <option>'s text flowed into the body.
     assert_eq!(
         text_of(
             r#"<p>before</p><select><option>A</option><option>B</option></select><p>after</p>"#
@@ -147,10 +146,10 @@ fn option_text_does_not_leak_into_the_document() {
 
 #[test]
 fn a_form_control_inside_a_paragraph_does_not_leak_text_into_the_flow() {
-    // 元は「`collect_spans`が`display: none`を見ていなかったためコントロールの
-    // 中身が本文に漏れる」回帰テスト。フォーム要素は
-    // `display: inline-block`の箱になったため、選択肢のテキストは箱の中に
-    // 入り、本文の行(runs)には現れない。
+    // Originally a regression test for "`collect_spans` did not check `display: none`, so a
+    // control's contents leaked into the body". Form elements are now
+    // `display: inline-block` boxes, so the option text goes inside the box and does not
+    // appear in the body's lines (runs).
     let text = text_of(r#"<p>a <select><option>INSIDE</option></select> b</p>"#);
     assert!(
         !text.contains("INSIDE"),
@@ -161,7 +160,7 @@ fn a_form_control_inside_a_paragraph_does_not_leak_text_into_the_flow() {
 
 #[test]
 fn svg_subtree_is_not_rendered() {
-    // <svg>を1つ非表示にすればサブツリー全体が消えることの確認。
+    // Confirms that hiding one <svg> removes the whole subtree.
     assert_eq!(
         text_of(r#"<p>x</p><svg width="10" height="10"><text>LEAK</text></svg><p>y</p>"#),
         "xy"
@@ -189,7 +188,7 @@ fn hidden_attribute_hides_an_element() {
 
 #[test]
 fn author_css_can_override_the_hidden_attribute() {
-    // UA originはAuthor originに必ず負ける。
+    // The UA origin always loses to the Author origin.
     let (_, laid) = layout(
         r#"<p>a</p><p hidden>shown</p>"#,
         "[hidden] { display: block; }",
@@ -213,7 +212,7 @@ fn open_details_shows_its_content() {
     );
 }
 
-// ===== 見出し・フォントサイズ =====
+// ===== Headings and font sizes =====
 
 #[test]
 fn heading_levels_have_decreasing_font_sizes_and_are_all_bold() {
@@ -237,7 +236,7 @@ fn heading_levels_have_decreasing_font_sizes_and_are_all_bold() {
             "each heading level should be smaller than the previous one, got {widths:?}"
         );
     }
-    // h4は1em = body相当。h5/h6はそれより小さい。
+    // h4 is 1em, the same as body. h5 and h6 are smaller than that.
     assert!(widths[3] > widths[4] && widths[4] > widths[5]);
 }
 
@@ -263,7 +262,7 @@ fn small_and_big_scale_the_font_relative_to_the_parent() {
     assert!(big > normal, "big should grow: {big} vs {normal}");
 }
 
-// ===== 文字装飾・生成コンテンツ =====
+// ===== Text decoration and generated content =====
 
 #[test]
 fn q_gets_automatic_quotation_marks() {
@@ -272,8 +271,8 @@ fn q_gets_automatic_quotation_marks() {
 
 #[test]
 fn ruby_annotation_stays_readable_as_parenthesised_fallback() {
-    // ルビのレイアウトは非対応。rt/rpをインラインのまま出すことで、
-    // 「漢字(かんじ)」というフォールバック表記になる。
+    // Ruby layout is not supported. Emitting rt/rp inline gives the fallback notation
+    // "kanji(reading)".
     assert_eq!(
         text_of(r#"<p><ruby>A<rp>(</rp><rt>B</rt><rp>)</rp></ruby></p>"#),
         "A(B)"
@@ -284,9 +283,9 @@ fn ruby_annotation_stays_readable_as_parenthesised_fallback() {
 
 #[test]
 fn hr_lays_out_as_a_full_width_one_pixel_rule() {
-    // PDFのコンテンツストリームはFlate圧縮されるため、描画命令をバイト列で
-    // 直接検証することはできない。線が引かれる条件(borderの太さ・幅・
-    // 上下マージン)をレイアウト結果で押さえ、PDF化まで通ることは別途確認する。
+    // A PDF's content stream is Flate compressed, so the drawing operators cannot be checked
+    // directly in the bytes. The conditions under which the line is drawn (the border's
+    // thickness and width, the top and bottom margins) are pinned down in the layout result.
     let (dom, laid) = layout("<p>above</p><hr><p>below</p>", "");
     let mut hrs = Vec::new();
     find_all_tags(&dom, dom.document(), "hr", &mut hrs);
@@ -317,7 +316,7 @@ fn a_document_with_an_hr_encodes_to_a_valid_pdf() {
     assert!(count_occurrences(&bytes, b"%%EOF") > 0);
 }
 
-// ===== 全部乗せ =====
+// ===== Everything at once =====
 
 #[test]
 fn a_document_using_many_html5_elements_renders_end_to_end() {
@@ -357,9 +356,9 @@ fn a_document_using_many_html5_elements_renders_end_to_end() {
     assert!(!text.contains("Hidden body"), "got: {text}");
 }
 
-// ===== <br>(強制改行) =====
+// ===== `<br>` (a forced line break) =====
 
-/// レイアウト済みツリーから最初のインライン内容の行数を返す。
+/// Return the number of lines of the first inline content in the laid-out tree.
 fn line_count(b: &LaidOutBox) -> usize {
     fn walk(b: &LaidOutBox) -> Option<usize> {
         match &b.content {

@@ -1,24 +1,24 @@
 # frozen_string_literal: true
 
 module Sghtmltopdf
-  # グローバルな既定オプション。
+  # The global default options.
   #
   #   Sghtmltopdf.configure do |c|
   #     c.page_size   = "A4"
   #     c.gothic_font = "/path/to/NotoSansJP-Regular.ttf"
   #   end
   #
-  # ここで設定した値は`render`/`render_to_file`の引数で上書きできる
-  # (マージ順はグローバル → 呼び出し時)。
+  # A value set here can be overridden by an argument to `render`/`render_to_file`
+  # (merged in the order global, then call-time).
   #
-  # キー名の妥当性は検査しない。オプション定義はRust側(`cli/options.rs`)の
-  # 1箇所に集約する方針のため、未知のキーはレンダリング時にclapが`UsageError`をraiseする。
+  # Key names are not validated. The option definitions live in one place on the Rust side
+  # (`cli/options.rs`), so an unknown key makes clap raise a `UsageError` at render time.
   class Configuration
     def initialize(options = {})
       @options = {}
-      # 明示的に設定した値(@options)と、Railtieなどが流し込んだ既定値
-      # (@defaults)は分けて持つ。読み出しは常に@optionsが勝つので、
-      # イニシャライザの実行順に依存しない。
+      # Values set explicitly (@options) are kept separately from the defaults injected by
+      # the Railtie and others (@defaults). Reads always prefer @options, so nothing depends
+      # on the order the initialisers run in.
       @defaults = {}
       options.each { |key, value| self[key] = value }
     end
@@ -32,30 +32,30 @@ module Sghtmltopdf
       @options[key.to_sym] = value
     end
 
-    # @param with_defaults [Boolean] 流し込まれた既定値を含めるか。
-    #   HTTPサーバへ委譲するときは`false`にする。Rails向けの既定値
-    #   (`base_url`・`allow`)はローカルのファイル解決のためのもので、
-    #   サーバモードではリクエストから指定できないキーだから
+    # @param with_defaults [Boolean] whether to include the injected defaults.
+    #   Set it to `false` when delegating to the HTTP server: the Rails-oriented defaults
+    #   (`base_url` and `allow`) exist for local file resolution and are keys server mode
+    #   cannot take from a request
     def to_h(with_defaults: true)
       with_defaults ? @defaults.merge(@options) : @options.dup
     end
 
-    # 既定値を流し込む。Railtieが Rails向けの既定値を入れるのに使う。
-    # 明示的に設定された値より弱い(順序に関係なく`[]=`が勝つ)。
+    # Inject the defaults. Used by the Railtie to set the Rails-oriented defaults.
+    # They are weaker than explicitly set values (`[]=` wins regardless of order).
     def apply_defaults(defaults)
       defaults.each { |key, value| @defaults[key.to_sym] = value }
       self
     end
 
-    # `c.page_size = "A4"`と`c.page_size`を受ける。
+    # Accepts both `c.page_size = "A4"` and `c.page_size`.
     def method_missing(name, *args)
       key = name.to_s
       if key.end_with?("=")
-        raise ArgumentError, "#{name}は引数1つを取ります" unless args.size == 1
+        raise ArgumentError, "#{name} takes one argument" unless args.size == 1
 
         self[key.chomp("=")] = args.first
       else
-        raise ArgumentError, "#{name}は引数を取りません" unless args.empty?
+        raise ArgumentError, "#{name} takes no arguments" unless args.empty?
 
         self[key]
       end

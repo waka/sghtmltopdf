@@ -1,28 +1,28 @@
-//! 確定したPDFのバイト列を、Rubyのブロックへチャンクごとに渡す仕組み。
+//! Handing the settled PDF bytes to a Ruby block, chunk by chunk.
 //!
-//! # スレッドの分け方
+//! # How the threads are split
 //!
-//! レンダリングはDOMの深さぶん再帰する(スタイル計算・レイアウト・描画)。
-//! Rubyのスレッドのマシンスタックは既定1MiB(`RubyVM::DEFAULT_PARAMS`の
-//! `thread_machine_stack_size`)しかなく、Pumaのワーカースレッド上でそのまま
-//! 走らせると深さ200弱でスタックを溢れさせる。しかもGVLを解放した状態で
-//! ガードページに触れるため、プロセスが落ちるのではなくスレッドが固まる。
+//! Rendering recurses as deep as the DOM (style computation, layout, drawing).
+//! A Ruby thread's machine stack is 1MiB by default (`thread_machine_stack_size` in
+//! `RubyVM::DEFAULT_PARAMS`), so running it directly on a Puma worker thread overflows the
+//! stack at a depth just under 200. Worse, it touches the guard page with the GVL released,
+//! so rather than the process dying the thread hangs.
 //!
-//! そこでレンダリングは[`sghtmltopdf_core::render_stack::STACK_SIZE`]のスタックを
-//! 明示的に確保した専用スレッドで走らせ、確定したチャンクはチャネル越しに
-//! 元のスレッドへ渡す。Rubyへ触れるのは元のスレッドだけに限る。
+//! So rendering runs on a dedicated thread with a
+//! [`sghtmltopdf_core::render_stack::STACK_SIZE`] stack allocated explicitly, and the settled
+//! chunks are passed back to the original thread over a channel. Only the original thread ever touches Ruby.
 //!
 //! ```text
-//! 元のスレッド(Rubyが作った / GVL解放中)     レンダリングスレッド(16MiB)
+//! original thread (Ruby's, GVL released)      rendering thread (16MiB)
 //!   recv(chunk)  <---------- chunk ----------  Sink::write
 //!   with_gvl { block.call(chunk) }
-//!   send(ack)    ------------ ack ---------->  (次のチャンクへ)
+//!   send(ack)    ------------ ack ---------->  (on to the next chunk)
 //! ```
 //!
-//! この向きでないと成立しない: [`crate::gvl::with_gvl`]の
-//! `rb_thread_call_with_gvl`は「そのスレッドが`rb_thread_call_without_gvl`で
-//! GVLを手放している」ことが前提で、Rubyの知らないスレッドから呼ぶことは
-//! できない。だからレンダリングスレッドはRubyに一切触れない。
+//! It only works this way round: [`crate::gvl::with_gvl`]'s `rb_thread_call_with_gvl`
+//! assumes "this thread released the GVL through `rb_thread_call_without_gvl`" and cannot
+//! be called from a thread Ruby does not know about. So the rendering thread never touches
+//! Ruby at all.
 
 use std::io;
 use std::sync::mpsc::{Receiver, SyncSender};
@@ -34,25 +34,24 @@ use sghtmltopdf_core::sink::Sink;
 
 use crate::gvl;
 
-/// ブロックが中断したときに`Sink::write`が返すエラー。
+/// The error `Sink::write` returns when the block was interrupted.
 ///
-/// `convert::render`が`Sink<Output = (), Error = io::Error>`を要求するため、
-/// Ruby由来の情報をエラーの型に載せられない。本当の理由は
-/// [`PendingUnwind`]へ置き、こちらは「巻き戻すための合図」として使う。
+/// `convert::render` requires `Sink<Output = (), Error = io::Error>`, so no Ruby-derived
+/// information can ride on the error type. The real reason is put in [`PendingUnwind`] and
+/// this is used purely as "the signal to unwind".
 fn interrupted() -> io::Error {
-    io::Error::other("Rubyのブロックが中断しました")
+    io::Error::other("the Ruby block was interrupted")
 }
 
-/// `rb_gc_register_address`でGCから守った`VALUE`の置き場。
+/// Somewhere to keep a `VALUE` protected from the GC with `rb_gc_register_address`.
 ///
-/// Rubyの保守的GCはマシンスタックを走査してVALUEを見つけるが、
-/// GVLを解放した時点のスタック位置までしか走査しない
-/// (解放時にマシンコンテキストが保存されるため)。`without_gvl`の内側で
-/// スタックに積んだ値はその先にあるので走査されない。解放区間をまたいで
-/// 生かしたいVALUEは、必ずここへ登録する。
+/// Ruby's conservative GC scans the machine stack to find VALUEs, but only as far as the
+/// stack position at the moment the GVL was released (the machine context being saved then).
+/// A value pushed onto the stack inside `without_gvl` lies beyond that and is not scanned.
+/// Any VALUE that must survive across the released region has to be registered here.
 ///
-/// 登録アドレスは`Box`で固定する。GCのコンパクションでオブジェクトが移動
-/// しても、登録したアドレスの中身は更新されるため、古い参照を掴まない。
+/// The registered address is pinned with a `Box`. Even when GC compaction moves the object,
+/// the contents at the registered address are updated, so no stale reference is held.
 pub struct ValueSlot {
     slot: Box<VALUE>,
 }
@@ -64,12 +63,12 @@ impl ValueSlot {
         Self { slot }
     }
 
-    /// GC登録済みスロットのアドレス。
+    /// The address of the GC-registered slot.
     pub fn addr(&self) -> *mut VALUE {
         &*self.slot as *const VALUE as *mut VALUE
     }
 
-    /// 現在の`VALUE`。GVLを保持している間だけ呼ぶこと。
+    /// The current `VALUE`. Call only while holding the GVL.
     pub fn get(&self) -> VALUE {
         *self.slot
     }
@@ -81,13 +80,13 @@ impl Drop for ValueSlot {
     }
 }
 
-/// GVL解放区間へ運ぶための、[`ValueSlot`]のアドレス。
+/// The address of a [`ValueSlot`], for carrying into a GVL-released region.
 #[derive(Clone, Copy)]
 pub struct BlockSlot(*mut VALUE);
 
-// SAFETY: 解放区間ではアドレスを数値として持ち回るだけで、`VALUE`として
-// 読むのは`with_gvl`の内側(＝GVLを保持している間)に限る。指す先は
-// `ValueSlot`がGCに登録済みで、`without_gvl`が返るまで生きている。
+// SAFETY: in the released region the address is only carried around as a number; it is read
+// as a `VALUE` only inside `with_gvl` (that is, while holding the GVL). What it points at is
+// a `ValueSlot` registered with the GC and alive until `without_gvl` returns.
 unsafe impl Send for BlockSlot {}
 
 impl BlockSlot {
@@ -95,36 +94,36 @@ impl BlockSlot {
         Self(slot.addr())
     }
 
-    /// GVLを保持している前提で`Proc`へ戻す。
+    /// Convert back to a `Proc`, assuming the GVL is held.
     fn proc(self) -> Option<Proc> {
         let value = unsafe { Value::from_raw(*self.0) };
         Proc::from_value(value)
     }
 }
 
-/// ブロックが投げた例外・脱出を、GVL解放区間の外へ運ぶための受け皿。
+/// The receptacle for carrying an exception or non-local exit thrown by the block out of the GVL-released region.
 #[derive(Default)]
 pub struct PendingUnwind {
     unwind: Option<Unwind>,
 }
 
 enum Unwind {
-    /// Rubyの例外オブジェクト。
+    /// A Ruby exception object.
     Exception(ValueSlot),
-    /// Rust側(magnus)が組み立てたエラー。クラスとメッセージを別々に運ぶ。
+    /// An error the Rust side (magnus) built. The class and the message are carried separately.
     Raise { class: ValueSlot, message: String },
-    /// `break`・`return`・`throw`など。値は`rb_jump_tag`へ渡すタグ。
+    /// A `break`, `return`, `throw` and so on. The value is the tag passed to `rb_jump_tag`.
     Jump(i32),
 }
 
 impl PendingUnwind {
-    /// ブロックが中断していれば`true`。
+    /// Whether the block was interrupted.
     pub fn is_pending(&self) -> bool {
         self.unwind.is_some()
     }
 
-    /// magnusの`Error`を、解放区間をまたげる形に変換して保存する。
-    /// GVLを保持している間に呼ぶこと(GCへの登録を行うため)。
+    /// Convert a magnus `Error` into a form that can cross the released region and store it.
+    /// Call it while holding the GVL (it registers with the GC).
     fn store(&mut self, error: Error) {
         use magnus::error::ErrorType;
 
@@ -141,26 +140,26 @@ impl PendingUnwind {
         self.unwind = Some(unwind);
     }
 
-    /// 保存した中断をRubyへ返す。GVLを保持している間に呼ぶこと。
+    /// Return the stored interruption to Ruby. Call it while holding the GVL.
     ///
-    /// `break`などの脱出は`rb_jump_tag`で忠実に伝播させる。この関数は
-    /// そこから戻らないため、Rust側の後始末が済んでから呼ぶこと
-    /// (`ValueSlot`のGC登録解除もこの関数の中で済ませてある)。
+    /// A non-local exit such as `break` is propagated faithfully with `rb_jump_tag`. This
+    /// function does not return, so call it once the Rust-side cleanup is done
+    /// (deregistering the `ValueSlot` from the GC is already handled inside it).
     pub fn into_error(self) -> Option<Error> {
         match self.unwind? {
             Unwind::Exception(slot) => {
                 let value = unsafe { Value::from_raw(slot.get()) };
-                // 登録を外すのは`Error`を組み立てたあと。ここから先は
-                // 呼び出し元がGVLを保持したままRubyへ戻るので、
-                // 保守的GCの走査範囲に入る。
+                // Deregistration happens after the `Error` is built. From here on the caller
+                // returns to Ruby still holding the GVL, so it is within the conservative
+                // GC's scanning range.
                 let error = magnus::Exception::from_value(value).map(Error::from);
                 drop(slot);
                 Some(error.unwrap_or_else(|| {
                     Error::new(
                         Ruby::get()
-                            .expect("GVLを保持したまま呼ばれるはず")
+                            .expect("it should be called while holding the GVL")
                             .exception_runtime_error(),
-                        "ブロックが投げた例外を復元できませんでした",
+                        "could not restore the exception the block threw",
                     )
                 }))
             }
@@ -171,24 +170,24 @@ impl PendingUnwind {
                 Some(error.unwrap_or_else(|| {
                     Error::new(
                         Ruby::get()
-                            .expect("GVLを保持したまま呼ばれるはず")
+                            .expect("it should be called while holding the GVL")
                             .exception_runtime_error(),
-                        "ブロックの中断を復元できませんでした",
+                        "could not restore the block's interruption",
                     )
                 }))
             }
-            // `rb_jump_tag`は戻らない(`-> !`)。`self`の他のフィールドは
-            // ここまでで全部落ちている。
+            // `rb_jump_tag` does not return (`-> !`). Every other field of `self` has already
+            // been dropped by this point.
             Unwind::Jump(tag) => unsafe { rb_sys::rb_jump_tag(tag) },
         }
     }
 }
 
-/// 確定したバイト列を`chunk_size`ごとにチャネルへ流すSink。
+/// A Sink streaming the settled bytes to a channel in `chunk_size` pieces.
 ///
-/// レンダリングスレッド側で使う。Rubyには一切触れないので、`Send`であり
-/// GVLの制約とも無縁。1チャンク送るごとに受け取り側の応答を待つ
-/// (rendezvous)ことで、ブロックの処理より先に走ってメモリを溜め込まない。
+/// Used on the rendering thread. It never touches Ruby, so it is `Send` and free of the
+/// GVL's constraints. It waits for the receiving side's acknowledgement after every chunk
+/// (a rendezvous), so it cannot run ahead of the block's processing and pile up memory.
 pub struct ChannelSink {
     chunks: SyncSender<Vec<u8>>,
     ack: Receiver<bool>,
@@ -202,16 +201,16 @@ impl ChannelSink {
             chunks,
             ack,
             buf: Vec::new(),
-            // 0だと1バイトごとにGVLを取り直すことになるため下限を設ける。
+            // At 0 the GVL would be reacquired for every byte, hence the lower bound.
             chunk_size: chunk_size.max(1),
         }
     }
 
-    /// 1チャンク渡して、ブロックが受け取り終えるまで待つ。
+    /// Hand over one chunk and wait until the block has finished receiving it.
     ///
-    /// 送れない(受け取り側が降りた)場合と、ブロックが中断を返した場合は
-    /// どちらも[`interrupted`]で巻き戻す。中断の本当の理由は受け取り側の
-    /// [`PendingUnwind`]に入っている。
+    /// Both being unable to send (the receiver went away) and the block returning an
+    /// interruption unwind through [`interrupted`]. The real reason for the interruption is
+    /// in the receiver's [`PendingUnwind`].
     fn hand_off(&mut self, chunk: Vec<u8>) -> Result<(), io::Error> {
         if self.chunks.send(chunk).is_err() {
             return Err(interrupted());
@@ -245,18 +244,18 @@ impl Sink for ChannelSink {
     }
 }
 
-/// 1チャンクをRubyのブロックへ渡す。中断したら`false`を返す。
+/// Hand one chunk to the Ruby block. Returns `false` on an interruption.
 ///
-/// GVLを取り戻すのはこの中だけ。ブロックの呼び出しはmagnusの`Proc::call`が
-/// 内部で`rb_protect`しているので、例外が出てもlongjmpがRustのフレームを
-/// 飛び越えない。
+/// This is the only place the GVL is reacquired. The block call goes through magnus's
+/// `Proc::call`, which wraps it in `rb_protect` internally, so an exception's longjmp cannot
+/// jump over a Rust frame.
 ///
-/// エラーの保存もこの区間の中で済ませる。`with_gvl`からRubyのオブジェクト
-/// (例外)を持ち出すと、GVLを手放した瞬間にGCのスコープから外れてしまう
-/// ため(`gvl::with_gvl`のドキュメント)。持ち出すのは真偽値だけ。
+/// Storing the error also happens inside this region. Carrying a Ruby object (an exception)
+/// out of `with_gvl` would put it outside the GC's scope the moment the GVL is released
+/// (see the documentation of `gvl::with_gvl`). Only a boolean is carried out.
 fn call_block(block: BlockSlot, pending: &mut PendingUnwind, bytes: Vec<u8>) -> bool {
     gvl::with_gvl(move || {
-        let ruby = Ruby::get().expect("with_gvlの内側なのでGVLを持っている");
+        let ruby = Ruby::get().expect("inside with_gvl, so the GVL is held");
         let result = match block.proc() {
             Some(proc) => {
                 let chunk: RString = ruby.str_from_slice(&bytes);
@@ -264,13 +263,13 @@ fn call_block(block: BlockSlot, pending: &mut PendingUnwind, bytes: Vec<u8>) -> 
             }
             None => Err(Error::new(
                 ruby.exception_runtime_error(),
-                "ブロックが失われました",
+                "the block was lost",
             )),
         };
         match result {
             Ok(()) => true,
             Err(error) => {
-                // GCへの登録もGVLを持っているこの場で行う。
+                // Registering with the GC also happens here, while the GVL is held.
                 pending.store(error);
                 false
             }
@@ -278,11 +277,11 @@ fn call_block(block: BlockSlot, pending: &mut PendingUnwind, bytes: Vec<u8>) -> 
     })
 }
 
-/// `render`をレンダリング専用スレッドで走らせ、出てきたチャンクをこのスレッド
-/// からRubyのブロックへ渡し続ける。
+/// Run `render` on a dedicated rendering thread and keep handing the chunks it produces to
+/// the Ruby block from this thread.
 ///
-/// GVLを解放している区間(`without_gvl`の内側)から、その解放したスレッド上で
-/// 呼ぶこと。モジュールdocの図のうち左側がこの関数にあたる。
+/// Call it from inside a GVL-released region (inside `without_gvl`), on the thread that
+/// released it. It is the left-hand side of the diagram in the module docs.
 pub fn pump_to_block<F>(
     block: BlockSlot,
     pending: &mut PendingUnwind,
@@ -295,8 +294,8 @@ where
     use sghtmltopdf_core::cli::CliError;
     use sghtmltopdf_core::render_stack::STACK_SIZE;
 
-    // どちらも容量0のrendezvous。レンダリング側は1チャンクごとに
-    // ブロックの完了を待つ。
+    // Both are zero-capacity rendezvous channels. The rendering side waits for the block to
+    // finish after every chunk.
     let (chunk_tx, chunk_rx) = std::sync::mpsc::sync_channel::<Vec<u8>>(0);
     let (ack_tx, ack_rx) = std::sync::mpsc::sync_channel::<bool>(0);
 
@@ -304,17 +303,17 @@ where
         .name("sghtmltopdf-render".to_string())
         .stack_size(STACK_SIZE)
         .spawn(move || render(ChannelSink::new(chunk_tx, ack_rx, chunk_size)))
-        .map_err(|e| CliError::Input(format!("レンダリングスレッドを作れません: {e}")))?;
+        .map_err(|e| CliError::Input(format!("cannot create the rendering thread: {e}")))?;
 
     while let Ok(chunk) = chunk_rx.recv() {
         let ok = call_block(block, pending, chunk);
-        // 応答を返せない(レンダリング側が既に降りた)場合も抜ける。
+        // Also break out when the acknowledgement cannot be sent (the rendering side already went away).
         if ack_tx.send(ok).is_err() || !ok {
             break;
         }
     }
-    // 中断で抜けた場合、レンダリング側が次のsendでエラーになって巻き戻れる
-    // よう、受け口を先に落とす。
+    // On an interruption, drop the receiving end first so the rendering side errors on its
+    // next send and can unwind.
     drop(chunk_rx);
     drop(ack_tx);
 

@@ -1,4 +1,4 @@
-//! CSSパース・セレクタマッチング・カスケード(cssparser/selectors)。
+//! CSS parsing, selector matching and the cascade (cssparser/selectors).
 
 mod cascade;
 mod color_mix;

@@ -1,19 +1,19 @@
-//! ストリーミングモードでのセレクタ挙動を、バッチモードと突き合わせて確かめる。
+//! Check the selector behaviour in streaming mode against batch mode.
 //!
-//! `Mode::Streaming`は`<body>`直下のトップレベル要素を、次の兄弟が現れた時点で
-//! 確定として処理する。そのため「その要素より後ろ」を見るセレクタは、確定した
-//! 時点での部分的なDOMに対して判定されることになり、結果がバッチと変わりうる。
+//! `Mode::Streaming` treats a top-level element directly under `<body>` as final and
+//! processes it as soon as the next sibling appears. So a selector looking "after" that
+//! element is decided against a partial DOM as of that moment, and the result can differ from batch.
 //!
-//! どのセレクタが実際にずれるのかを固定するのがこのファイルの役割。
-//! 入力は1要素ずつ`feed`する(CLIは64KiB単位で読むが、それはチャンクの切れ目が
-//! たまたま合ったかどうかの問題でしかなく、エンジンの契約は「どう刻まれても
-//! 同じ結果」であるべきなので、最も細かい刻み方で確かめる)。
+//! This file's job is to pin down which selectors really do diverge.
+//! The input is `feed` one element at a time (the CLI reads in 64KiB units, but that is
+//! merely a question of where the chunk boundaries happen to fall; the engine's contract is
+//! "the same result however it is chopped up", so the finest chopping is used).
 
 use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
 use sghtmltopdf_core::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
-/// マッチした要素に付ける色。PDFの塗り色オペレータとして数える。
+/// The colour applied to a matched element. Counted as a PDF fill colour operator.
 const MARK_CSS: &str = "color: #cc0000";
 const MARK_OP: &[u8] = b"0.8 0 0 rg";
 
@@ -25,7 +25,7 @@ fn options(mode: Mode) -> EngineOptions {
             index: 0,
         }],
         output: sghtmltopdf_core::pdf::PdfOutputOptions {
-            // 塗り色オペレータを数えるため圧縮しない。
+            // Left uncompressed so the fill colour operators can be counted.
             compress: false,
             ..Default::default()
         },
@@ -33,12 +33,12 @@ fn options(mode: Mode) -> EngineOptions {
     }
 }
 
-/// `selector`にマッチした要素の数を返す。`body`は`<body>`の中身。
+/// Return the number of elements matched by `selector`. `body` is the contents of `<body>`.
 fn matched_count(selector: &str, body: &str, mode: Mode) -> usize {
     let head = format!("<html><head><style>{selector} {{ {MARK_CSS} }}</style></head><body>");
     let mut engine = Engine::new(options(mode), MemorySink::new());
     engine.feed(head.as_bytes()).unwrap();
-    // トップレベル要素を1つずつ食わせ、チャンクの切れ目に依存させない。
+    // Feed the top-level elements one at a time, so nothing depends on the chunk boundaries.
     for element in split_top_level(body) {
         engine.feed(element.as_bytes()).unwrap();
     }
@@ -51,8 +51,8 @@ fn matched_count(selector: &str, body: &str, mode: Mode) -> usize {
         .count()
 }
 
-/// `<p>a</p><div>b</div>`のような並びを、トップレベル要素ごとに切る。
-/// ネストは1段だけ想定(このテストが使う入力に限る)。
+/// Split a sequence such as `<p>a</p><div>b</div>` into its top-level elements.
+/// Only one level of nesting is assumed (limited to the input this test uses).
 fn split_top_level(body: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut depth = 0usize;
@@ -79,16 +79,16 @@ fn split_top_level(body: &str) -> Vec<String> {
     out
 }
 
-/// バッチとストリーミングで結果が一致するセレクタ。
+/// Selectors whose result matches between batch and streaming.
 ///
-/// 直前の兄弟を見るもの(`+`/`~`/`:first-child`等)がここに居られるのは、
-/// これらを使う文書ではトップレベル要素の解放を子孫だけに絞り、要素そのものを
-/// 兄弟として残しているため(`style::needs_preceding_siblings`が判断する)。
+/// The ones looking at the preceding sibling (`+`, `~`, `:first-child` and so on) can be
+/// here because in a document using them the freeing of a top-level element is limited to its
+/// descendants and the element itself is kept (`style::needs_preceding_siblings` decides that).
 #[test]
 fn these_selectors_behave_the_same_in_both_modes() {
-    // (セレクタ, body, マッチ数)
+    // (selector, body, match count)
     let cases: &[(&str, &str, usize)] = &[
-        // 直前の兄弟が要るもの。
+        // The ones needing the preceding sibling.
         ("p:first-child", "<div>D</div><p>a</p><p>b</p>", 0),
         ("p:nth-child(2)", "<div>D</div><p>a</p><p>b</p>", 1),
         ("p:first-of-type", "<div>D</div><p>a</p><p>b</p>", 1),
@@ -98,20 +98,20 @@ fn these_selectors_behave_the_same_in_both_modes() {
         ("div + p", "<div>D</div><p>a</p><p>b</p>", 1),
         ("div ~ p", "<div>D</div><p>a</p><p>b</p>", 2),
         ("p + p", "<p>a</p><p>b</p><p>c</p>", 2),
-        // 「自分より後ろに兄弟があるか」だけを見るものは、確定の条件
-        // (次の兄弟が現れた)と一致するので判定がぶれない。
+        // The ones looking only at "is there a sibling after me" coincide with the condition
+        // for being final (the next sibling appeared), so the decision does not waver.
         ("p:last-child", "<p>a</p><div>b</div><p>c</p>", 1),
         ("p:last-child", "<p>a</p><p>b</p><div>c</div>", 0),
-        // 自分の子だけを見るものは、確定した時点で子が揃っている。
+        // The ones looking only at their own children have all of them by the time it is final.
         ("p:empty", "<p></p><p>b</p>", 0),
         (
             "section:has(h1)",
             "<section><h1>x</h1></section><p>b</p>",
             1,
         ),
-        // 直後の兄弟は、確定のきっかけそのものなので必ず見えている。
+        // The next sibling is the very trigger for being final, so it is always visible.
         ("div:has(+ p)", "<div>a</div><p>b</p><p>c</p>", 1),
-        // 位置に依存しないものは当然一致する。
+        // Position-independent ones match by definition.
         (":is(div, h1)", "<p>a</p><div>b</div>", 1),
         (":where(div, h1)", "<p>a</p><div>b</div>", 1),
     ];
@@ -120,27 +120,26 @@ fn these_selectors_behave_the_same_in_both_modes() {
         assert_eq!(
             matched_count(selector, body, Mode::Batch),
             *expected,
-            "バッチの結果が期待とずれている: {selector} / {body}"
+            "the batch result differs from the expectation: {selector} / {body}"
         );
         assert_eq!(
             matched_count(selector, body, Mode::Streaming),
             *expected,
-            "ストリーミングでずれてはいけないセレクタ: {selector} / {body}"
+            "a selector that must not diverge in streaming: {selector} / {body}"
         );
     }
 }
 
-/// バッチとストリーミングで結果がずれるセレクタ(現状の挙動を固定する)。
+/// Selectors whose result differs between batch and streaming (pinning down the current behaviour).
 ///
-/// いずれも「この先に同じ型の要素が続くか」を知る必要があるが、トップレベル
-/// 要素が確定するのは次の兄弟が現れた時点なので、その先は分からない。
-/// 直前の兄弟を残す対処では埋められないぶん。
+/// All of them need to know "whether more elements of the same type follow", but a top-level
+/// element only becomes final when the next sibling appears, so what comes after is unknown.
+/// This is the part keeping the preceding sibling cannot cover.
 ///
-/// ここに挙げたものは`style::streaming_unsafe_selectors`が警告する対象と
-/// 一致していること。
+/// What is listed here must match what `style::streaming_unsafe_selectors` warns about.
 #[test]
 fn these_selectors_diverge_in_streaming_mode() {
-    // (セレクタ, body, バッチ, ストリーミング)
+    // (selector, body, batch, streaming)
     let cases: &[(&str, &str, usize, usize)] = &[
         ("p:last-of-type", "<p>a</p><div>D</div><p>b</p>", 1, 2),
         ("p:only-of-type", "<p>a</p><div>D</div><p>b</p>", 0, 1),
@@ -158,12 +157,12 @@ fn these_selectors_diverge_in_streaming_mode() {
         assert_eq!(
             matched_count(selector, body, Mode::Batch),
             *batch,
-            "バッチの結果が期待とずれている: {selector} / {body}"
+            "the batch result differs from the expectation: {selector} / {body}"
         );
         assert_eq!(
             matched_count(selector, body, Mode::Streaming),
             *streaming,
-            "ストリーミングの結果が期待とずれている: {selector} / {body}"
+            "the streaming result differs from the expectation: {selector} / {body}"
         );
     }
 }

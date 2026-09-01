@@ -1,5 +1,5 @@
-/* 領収書サンプルのスタイルシート。
-   sghtmltopdfが対応しているCSSだけで組んである。 */
+/* Stylesheet for the receipt example.
+   Built using only the CSS that sghtmltopdf supports. */
 
 :root {
   --ink: #1c2530;
@@ -37,7 +37,7 @@ body {
   color: var(--ink);
 }
 
-/* ===== 見出し ===== */
+/* ===== Headings ===== */
 
 .doc-head {
   display: flex;
@@ -74,7 +74,7 @@ body {
   font-weight: bold;
 }
 
-/* ===== 宛名と発行元 ===== */
+/* ===== Recipient and issuer ===== */
 
 .parties {
   display: flex;
@@ -131,7 +131,7 @@ body {
   margin: 0;
 }
 
-/* 角印。4辺の太さ・スタイル・色が揃っているので角丸が有効になる。 */
+/* Company seal. All four borders share width, style and colour, so the rounded corners take effect. */
 .seal {
   box-sizing: border-box;
   width: 58px;
@@ -147,7 +147,7 @@ body {
   transform: rotate(-7deg);
 }
 
-/* ===== 金額 ===== */
+/* ===== Amount ===== */
 
 .amount {
   display: flex;
@@ -199,7 +199,7 @@ body {
   font-size: 13px;
 }
 
-/* ===== 明細 ===== */
+/* ===== Line items ===== */
 
 .section-title {
   margin: 22px 0 8px;
@@ -239,7 +239,7 @@ body {
   counter-increment: item;
 }
 
-/* 行番号はCSSカウンタで振る。 */
+/* Row numbers come from a CSS counter. */
 .col-no {
   width: 34px;
   text-align: center;
@@ -267,7 +267,7 @@ body {
   color: var(--muted);
 }
 
-/* ===== 合計 ===== */
+/* ===== Totals ===== */
 
 .summary {
   display: flex;
@@ -328,7 +328,7 @@ body {
   color: var(--accent);
 }
 
-/* ===== 収入印紙と注記 ===== */
+/* ===== Revenue stamp and notes ===== */
 
 .footnote {
   display: flex;

@@ -1,26 +1,26 @@
-//! OS標準のフォントディレクトリを走査してシステムフォントを解決する(`fontdb`を使用)。
+//! Resolving system fonts by scanning the OS font directories (using `fontdb`).
 //!
-//! CSSの汎用family名(`monospace`/`serif`/`sans-serif`)は、`fontdb`(=Linuxでは
-//! fontconfig)の汎用名解決には任せず、自前の候補リストで解決する。
-//! `fontdb`はfontconfig未設置の最小環境ではOS間で一貫性のないハードコードの
-//! 既定名(`Arial`等)にフォールバックし、インストール環境に実在するとは
-//! 限らないため。候補リストが全て外れた場合、`monospace`のみ`fontdb`の
-//! フェース単位のメタデータ(`FaceInfo::monospaced`。fontconfig非依存)を使って
-//! 等幅フェースを探す。それでも見つからなければ解決を諦め、
-//! [`crate::fonts::FontCollection`]が既に持つグリフカバレッジ・フォールバック
-//! に任せる。`sans-serif`は当初「既定`font-family`と同値なので解決しない」
-//! としていたが、既定`font-family`を空(未指定)に切り離したため、
-//! `sans-serif`を明示した場合のみゴシック体を解決するよう改めた。未指定要素は
-//! 空`font-family`で`select_for_char`のフォールバック(=`--font`のフォント)へ
-//! 行くため、`--font`が既定という挙動は保たれる。`--gothic-font`が渡された
-//! 場合はそちらが`sans-serif`として最優先で使われる。
+//! The CSS generic family names (`monospace`/`serif`/`sans-serif`) are resolved from our
+//! own candidate lists rather than left to `fontdb`'s generic resolution (fontconfig, on
+//! Linux). In a minimal environment with no fontconfig, `fontdb` falls back to hard-coded
+//! defaults (`Arial` and the like) that are inconsistent across OSes and are not
+//! necessarily installed. If every candidate misses, `monospace` alone looks for a
+//! monospaced face using `fontdb`'s per-face metadata (`FaceInfo::monospaced`, which does
+//! not depend on fontconfig). Failing even that, resolution is given up and left to the
+//! glyph-coverage fallback [`crate::fonts::FontCollection`] already has.
+//! `sans-serif` was originally "not resolved, being the same as the default `font-family`",
+//! but since the default `font-family` was separated out to empty (unset), it now resolves
+//! to a gothic face only when written explicitly. An element with nothing specified goes
+//! through an empty `font-family` to `select_for_char`'s fallback (that is, the `--font`
+//! font), so the behaviour of `--font` being the default is preserved. When
+//! `--gothic-font` is given, it takes priority as `sans-serif`.
 //!
-//! family名による解決とは別に、文書中の文字を描画できるフォントが1本も無い
-//! 場合に、その文字を描画できるシステムフォントを探す経路も持つ
-//! ([`SystemFonts::load_covering`]・[`load_fonts_for_uncovered_chars`])。
-//! `font-family`未指定の日本語文書のように、どのfamily名も
-//! 手掛かりにならないケースでは[`FontCollection`]のグリフカバレッジ・フォー
-//! ルバックが選ぶ候補自体が存在しないため、ここで補う必要がある。
+//! Separately from resolution by family name, there is also a path for finding a system
+//! font that can draw a character when no font in the document can
+//! ([`SystemFonts::load_covering`], [`load_fonts_for_uncovered_chars`]).
+//! Where no family name offers any clue - a Japanese document with no `font-family`, say -
+//! [`FontCollection`]'s glyph-coverage fallback has no candidate to choose from at all,
+//! so this is where that gap is filled.
 
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -34,14 +34,14 @@ use crate::style::{ComputedStyle, Display, FontStyle, FontWeight};
 use super::collection::FontCollection;
 use super::font::Font;
 
-/// CSSの汎用family名(大文字小文字を区別せず判定する)。
+/// The CSS generic family names (matched case-insensitively).
 const GENERIC_FAMILIES: &[&str] = &["serif", "sans-serif", "monospace", "cursive", "fantasy"];
 
-/// 汎用family名ごとの、実在しやすい具体フォント名の候補(優先順)。
+/// Candidate concrete font names for each generic family, in priority order (chosen for being likely to exist).
 ///
-/// `cursive`/`fantasy`は環境差が大きく実務上の需要も薄いため候補を持たない(=
-/// 解決しない)。`sans-serif`は既定`font-family`を
-/// 空に切り離したため明示時のみ解決する。
+/// `cursive`/`fantasy` have no candidates (so they are not resolved): they vary too much
+/// between environments and there is little practical demand. `sans-serif` is resolved only
+/// when written explicitly, since the default `font-family` was separated out to empty.
 const GENERIC_FAMILY_CANDIDATES: &[(&str, &[&str])] = &[
     (
         "monospace",
@@ -65,15 +65,15 @@ const GENERIC_FAMILY_CANDIDATES: &[(&str, &[&str])] = &[
             "Times New Roman",
             "Times",
             "Georgia",
-            // 公式Dockerイメージが同梱する明朝体。ラテン系の候補が全て外れる
-            // 最小環境(=そのイメージの中)で拾わせるため末尾に置く。
+            // The mincho face bundled with the official Docker image. Placed last so it is
+            // picked up in a minimal environment (that image) where every latin candidate misses.
             "BIZ UDPMincho",
             "BIZ UDMincho",
         ],
     ),
     (
-        // `sans-serif`は明示指定時のみゴシック体を探す。英字ゴシックの候補
-        // (実運用では`--gothic-font`で決定的に上書きできる)。
+        // `sans-serif` looks for a gothic face only when specified explicitly. Latin
+        // gothic candidates (in practice `--gothic-font` overrides this deterministically).
         "sans-serif",
         &[
             "DejaVu Sans",
@@ -84,26 +84,26 @@ const GENERIC_FAMILY_CANDIDATES: &[(&str, &[&str])] = &[
             "Ubuntu",
             "Verdana",
             "Tahoma",
-            // 公式Dockerイメージが同梱するゴシック体(上の`serif`と同じ理由)。
+            // The gothic face bundled with the official Docker image (same reason as `serif` above).
             "BIZ UDPGothic",
             "BIZ UDGothic",
         ],
     ),
 ];
 
-/// CJK(漢字・かな・ハングル)を描画できるフォントの候補(優先順)。
+/// Candidate fonts that can draw CJK (kanji, kana, hangul), in priority order.
 ///
-/// CJK統合漢字は日本語・韓国語・中国語で共有されるため、言語ごとに分けず
-/// 1つの候補列にまとめ、実際に描画できるか([`Font::has_glyph`])で
-/// 確認しながら順に試す(例えばHiragino Sansはハングルを持たないので、
-/// ハングルを探しているときは自然に次の候補へ進む)。
+/// The unified CJK ideographs are shared between Japanese, Korean and Chinese, so rather
+/// than splitting by language there is one candidate list, tried in order while checking
+/// whether each can actually draw the character ([`Font::has_glyph`]). Hiragino Sans, for
+/// example, has no hangul, so a hangul search naturally moves on to the next candidate.
 ///
-/// 日本語 → 韓国語 → 中国語簡体 → 中国語繁体の順に並べるのは、帳票用途で
-/// 日本語が支配的なため。漢字の字体には国別の差があるが、`lang`属性を見ないと
-/// 決められないので初期スコープでは踏み込まない(外れる場合は`--gothic-font`
-/// 等で決定的に上書きできる)。
+/// The order - Japanese, then Korean, then Simplified Chinese, then Traditional Chinese -
+/// reflects Japanese being dominant in the business-document use case. Glyph shapes differ by
+/// country, but that cannot be decided without the `lang` attribute, so the initial scope
+/// leaves it alone (when it guesses wrong, `--gothic-font` and friends override deterministically).
 const CJK_FAMILY_CANDIDATES: &[&str] = &[
-    // 日本語
+    // Japanese
     "Noto Sans CJK JP",
     "Noto Sans JP",
     "Hiragino Sans",
@@ -114,21 +114,21 @@ const CJK_FAMILY_CANDIDATES: &[&str] = &[
     "IPAGothic",
     "TakaoPGothic",
     "VL PGothic",
-    // 公式Dockerイメージが同梱するゴシック体。
+    // The gothic face bundled with the official Docker image.
     "BIZ UDPGothic",
     "BIZ UDGothic",
-    // 韓国語
+    // Korean
     "Noto Sans CJK KR",
     "Noto Sans KR",
     "Apple SD Gothic Neo",
     "Malgun Gothic",
-    // 中国語簡体
+    // Simplified Chinese
     "Noto Sans CJK SC",
     "Noto Sans SC",
     "PingFang SC",
     "Microsoft YaHei",
     "SimSun",
-    // 中国語繁体
+    // Traditional Chinese
     "Noto Sans CJK TC",
     "Noto Sans TC",
     "PingFang TC",
@@ -136,23 +136,23 @@ const CJK_FAMILY_CANDIDATES: &[&str] = &[
     "PMingLiU",
 ];
 
-/// `c`がCJK系の文字か([`CJK_FAMILY_CANDIDATES`]を引くかどうかの判定に使う)。
+/// Whether `c` is a CJK character (used to decide whether to consult [`CJK_FAMILY_CANDIDATES`]).
 ///
-/// 全走査([`SystemFonts::load_any_covering`])より先に候補リストを試すための
-/// 絞り込みでしかないので、境界の厳密さは求めない(ここで漏れても
-/// 全走査が拾う)。
+/// This is only a narrowing step so the candidate list is tried before the full scan
+/// ([`SystemFonts::load_any_covering`]), so the boundaries need not be exact (anything
+/// missed here is caught by the full scan).
 fn is_cjk(c: char) -> bool {
     matches!(c as u32,
-        0x3000..=0x303F      // CJKの記号と句読点
-        | 0x3040..=0x309F    // ひらがな
-        | 0x30A0..=0x30FF    // カタカナ
-        | 0x3130..=0x318F    // ハングル互換字母
-        | 0x3400..=0x4DBF    // CJK統合漢字 拡張A
-        | 0x4E00..=0x9FFF    // CJK統合漢字
-        | 0xAC00..=0xD7AF    // ハングル音節
-        | 0xF900..=0xFAFF    // CJK互換漢字
-        | 0xFF00..=0xFFEF    // 半角・全角形
-        | 0x20000..=0x2FA1F  // CJK統合漢字 拡張B以降
+        0x3000..=0x303F      // CJK symbols and punctuation
+        | 0x3040..=0x309F    // Hiragana
+        | 0x30A0..=0x30FF    // Katakana
+        | 0x3130..=0x318F    // Hangul compatibility jamo
+        | 0x3400..=0x4DBF    // CJK unified ideographs extension A
+        | 0x4E00..=0x9FFF    // CJK unified ideographs
+        | 0xAC00..=0xD7AF    // Hangul syllables
+        | 0xF900..=0xFAFF    // CJK compatibility ideographs
+        | 0xFF00..=0xFFEF    // Halfwidth and fullwidth forms
+        | 0x20000..=0x2FA1F  // CJK unified ideographs extension B and later
     )
 }
 
@@ -161,8 +161,8 @@ pub struct SystemFonts {
 }
 
 impl SystemFonts {
-    /// OSのフォントディレクトリを走査してデータベースを構築する
-    /// (メタデータのスキャンのみ。フォントファイルの実体はまだ読み込まない)。
+    /// Build the database by scanning the OS font directories
+    /// (metadata only; the font files themselves are not read yet).
     pub fn scan() -> Self {
         let mut db = fontdb::Database::new();
         db.load_system_fonts();
@@ -176,16 +176,16 @@ impl SystemFonts {
         Self { db }
     }
 
-    /// `family`という名前のシステムフォントを読み込む(大文字小文字を区別しない)。
-    /// `weight`/`style`は`fontdb`のCSSライクなマッチングにそのまま渡すため、
-    /// 例えば`weight: Bold`で該当familyに本物のBold面が存在すればそれが選ばれる
-    /// (存在しなければ`fontdb`が代わりに最も近い面を返し、その場合は呼び出し側が
-    /// `FontCollection::is_bold`等で実体を確認した上で疑似太字を補うことになる)。
-    /// 一致するフォントが無ければ`None`。
+    /// Load the system font named `family` (case-insensitively).
+    /// `weight`/`style` are passed straight to `fontdb`'s CSS-like matching, so with
+    /// `weight: Bold`, for example, a real Bold face in that family is chosen if one exists
+    /// (if not, `fontdb` returns the closest face instead, and the caller then confirms the
+    /// reality with `FontCollection::is_bold` and the like before applying faux bold).
+    /// `None` if no font matches.
     pub fn load(&self, family: &str, weight: FontWeight, style: FontStyle) -> Option<Font> {
-        // `fontdb::Database::query`はfamily名の完全一致(大文字小文字を区別する)
-        // でしか照合しないため、まず大文字小文字を無視して実際の登録名を探し、
-        // その名前で改めてクエリする。
+        // `fontdb::Database::query` only matches family names exactly (case-sensitively),
+        // so first find the actual registered name ignoring case, then query again with
+        // that name.
         let exact_name = self
             .db
             .faces()
@@ -205,18 +205,18 @@ impl SystemFonts {
                 Font::from_bytes(data.to_vec(), index).ok()
             })
             .flatten()
-            // 輪郭を持たないフォント(ビットマップのカラー絵文字等)は、名前が
-            // 一致しても何も描けないので採らない。システムフォント探索は全て
-            // ここを通るので、判定はこの1箇所に集約する。
+            // A font with no outlines (a bitmap colour emoji font, say) can draw nothing
+            // even when the name matches, so it is not taken. Every system font lookup
+            // goes through here, so the check lives in this one place.
             .filter(|font| font.has_outlines())
     }
 
-    /// CSSの汎用family名(`monospace`/`serif`)を、自前の候補リスト
-    /// ([`GENERIC_FAMILY_CANDIDATES`])を優先順に試して具体フォントへ
-    /// 解決する。候補が全て外れた場合、`monospace`のみ`fontdb`の
-    /// `FaceInfo::monospaced`フラグで等幅フェースを探す。`sans-serif`(既定
-    /// `font-family`と同値のため意図的に対象外)・`cursive`/`fantasy`・
-    /// 汎用名でない名前を渡した場合、および何も見つからない場合は`None`。
+    /// Resolve a CSS generic family name (`monospace`/`serif`) to a concrete font by trying
+    /// our own candidate list ([`GENERIC_FAMILY_CANDIDATES`]) in priority order. If every
+    /// candidate misses, `monospace` alone looks for a monospaced face using `fontdb`'s
+    /// `FaceInfo::monospaced` flag. Returns `None` for `sans-serif` (deliberately out of
+    /// scope, being the same as the default `font-family`), for `cursive`/`fantasy`, for a
+    /// name that is not generic, and when nothing is found.
     pub fn load_generic(
         &self,
         generic: &str,
@@ -240,19 +240,19 @@ impl SystemFonts {
         None
     }
 
-    /// `c`を描画できるシステムフォントを1つ探し、見つかった実family名と
-    /// ともに返す。
+    /// Find one system font that can draw `c` and return it along with the real family name
+    /// it was found under.
     ///
-    /// 解決は2段階(fontconfigの汎用名解決には任せない):
+    /// Resolution has two stages (fontconfig's generic resolution is not used):
     ///
-    /// 1. CJKなら[`CJK_FAMILY_CANDIDATES`]を順に`load`し、実際に`c`を
-    ///    描画できるものを採る
-    /// 2. 候補が外れたら[`Self::load_any_covering`]で全フェースを走査する
-    ///    (最終手段)
+    /// 1. For CJK, `load` each of [`CJK_FAMILY_CANDIDATES`] in turn and take the first that
+    ///    can actually draw `c`
+    /// 2. If the candidates miss, scan every face with [`Self::load_any_covering`]
+    ///    (the last resort)
     ///
-    /// family名を一緒に返すのは、追加したフォントを
-    /// [`FontCollection::push_font_face`]へ実family名で登録するため。
-    /// 空名や擬似的な名前だと`matches_family`で意図しない一致を起こす。
+    /// The family name comes back too so the added font can be registered with
+    /// [`FontCollection::push_font_face`] under its real family name. An empty or made-up
+    /// name would cause unintended matches in `matches_family`.
     pub fn load_covering(
         &self,
         c: char,
@@ -272,13 +272,13 @@ impl SystemFonts {
         self.load_any_covering(c, weight, style)
     }
 
-    /// DB内の全フェースを走査して`c`を描画できるものを探す(最終手段)。
+    /// Scan every face in the DB looking for one that can draw `c` (the last resort).
     ///
-    /// グリフの有無の判定はcmapをその場で読むだけにして
-    /// [`Font`]への変換(データのコピー)を避け、当たったフェースの
-    /// family名で改めて`load`する(weight/styleの面選択を`load`に任せるため)。
-    /// それでもフェースの実体読み込みは全件に及ぶので、候補リストが全て
-    /// 外れた場合にしか通らない位置に置いている。
+    /// Whether the glyph exists is decided by reading the cmap on the spot, avoiding the
+    /// conversion to a [`Font`] (which copies the data), and the face that hits is then
+    /// `load`ed again by family name (so `load` handles the weight/style face selection).
+    /// Reading every face's contents is still involved, so this sits where it is only
+    /// reached once every candidate in the list has missed.
     fn load_any_covering(
         &self,
         c: char,
@@ -289,9 +289,9 @@ impl SystemFonts {
             let Some((family, _)) = info.families.first() else {
                 continue;
             };
-            // `cmap`にあるだけでは足りず、輪郭を持つことも要る(`Font::has_glyph`と
-            // 同じ判定を、`Font`を作らずにその場で行う)。カラー絵文字フォントは
-            // `cmap`を持つので、これが無いと「描ける」と誤判定して採ってしまう。
+            // Being in the `cmap` is not enough: outlines are required too (the same check
+            // as `Font::has_glyph`, done here without building a `Font`). Colour emoji
+            // fonts have a `cmap`, so without this we would wrongly decide we can draw.
             let covered = self
                 .db
                 .with_face_data(info.id, |data, index| {
@@ -306,9 +306,9 @@ impl SystemFonts {
             if !covered {
                 continue;
             }
-            // 同じfamilyの別フェース(Bold等)が該当する場合もあるので、
-            // family名で引き直してweight/styleに合う面を選ぶ。引き直しに
-            // 失敗した場合だけ、判定に使ったフェースをそのまま採る。
+            // Another face of the same family (Bold, say) may be the right one, so look it
+            // up again by family name and pick the face matching weight/style. Only if that
+            // lookup fails do we take the face we used for the check.
             if let Some(font) = self.load(family, weight, style) {
                 if font.has_glyph(c) {
                     return Some((family.clone(), font));
@@ -327,12 +327,12 @@ impl SystemFonts {
         None
     }
 
-    /// フォント自身のメタデータ上「等幅」とされているフェースを1つ選び、その
-    /// family名で改めて`load`する(weight/styleの面選択を`load`に任せるため)。
+    /// Pick one face the font's own metadata calls "monospaced", then `load` it again by
+    /// family name (so `load` handles the weight/style face selection).
     fn load_any_monospaced(&self, weight: FontWeight, style: FontStyle) -> Option<Font> {
-        // 等幅フラグが立っていても`load`が採らない(輪郭を持たない)ことが
-        // あるので、最初の1件で打ち切らず順に試す。カラー絵文字フォントは
-        // 全グリフが同じ字幅なので等幅として登録されており、実際にここへ来る。
+        // Even with the monospace flag set, `load` may not take it (no outlines), so try
+        // them in turn rather than stopping at the first. Colour emoji fonts are registered
+        // as monospaced (every glyph has the same advance) and really do turn up here.
         self.db
             .faces()
             .filter(|info| info.monospaced)
@@ -340,11 +340,10 @@ impl SystemFonts {
             .find_map(|family| self.load(&family, weight, style))
     }
 
-    /// `@font-face`の`src: local(...)`用。`name`(フルネームまたはPostScript名、
-    /// 大文字小文字を区別しない)に一致する特定の面を1つ直接読み込む。
-    /// `load`(family名+weight/styleによるCSS的なフォールバック検索)とは異なり、
-    /// weight/styleによる曖昧なマッチングは行わない(名前で一意に指定された
-    /// 1つの面を指すのが`local()`の意味のため)。
+    /// For `src: local(...)` in `@font-face`. Directly load the one face matching `name`
+    /// (a full name or PostScript name, case-insensitively).
+    /// Unlike `load` (a CSS-style fallback search by family name plus weight/style), it does
+    /// no fuzzy weight/style matching: `local()` means exactly one face, named uniquely.
     pub fn load_by_full_name(&self, name: &str) -> Option<Font> {
         let info = self.db.faces().find(|info| {
             info.post_script_name.eq_ignore_ascii_case(name)
@@ -375,22 +374,22 @@ fn to_fontdb_style(style: FontStyle) -> fontdb::Style {
     }
 }
 
-/// `styles`中で使われているfont-family/weight/styleの組のうち、`fonts`に
-/// まだ実体が無いものだけを`system`から読み込み、`fonts`へ追加する。
+/// Of the font-family/weight/style combinations used in `styles`, load from `system` only
+/// those `fonts` does not already have, and add them to `fonts`.
 ///
-/// `family`単位ではなく(family, weight, style)単位で判定するため、例えば
-/// `--font`でRegularのみ読み込んだfamilyに対して文書内で太字が使われていれば、
-/// そのfamilyのBold面だけを追加でシステムから探しに行く。
+/// The check is per (family, weight, style) rather than per `family`, so if `--font` loaded
+/// only the Regular of a family and the document uses bold, only that family's Bold face
+/// is looked up from the system.
 ///
-/// CSSの汎用family名(`monospace`等)は[`SystemFonts::load_generic`]で解決し、
-/// 汎用名そのものを宣言family名として`fonts`へ登録する。こうすることで
-/// `font-family: monospace`の照合が[`FontCollection::select_for_char`]の
-/// 通常のfamily一致でそのまま機能する。
+/// A CSS generic family name (`monospace` and friends) is resolved by
+/// [`SystemFonts::load_generic`] and registered in `fonts` with the generic name itself as
+/// the declared family name. That way `font-family: monospace` matches through
+/// [`FontCollection::select_for_char`]'s ordinary family matching.
 ///
-/// 走査順は[`document_chars`]と同じく文書順([`NodeId`]順)に固定する。
-/// `styles`は`HashMap`なので反復順が実行ごとに変わり、そのまま回すと
-/// ここで追加されるフォントの順序=PDFのフォント番号がぶれて、同じHTMLから
-/// 別のバイト列が出てしまう。
+/// Scan order is fixed to document order ([`NodeId`] order), as in [`document_chars`].
+/// `styles` is a `HashMap`, so its iteration order changes from run to run; iterating it
+/// directly would make the order of the fonts added here (and so the PDF font numbers)
+/// vary, emitting different bytes from the same HTML.
 pub fn load_missing_system_fonts(
     fonts: &mut FontCollection,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -424,22 +423,22 @@ pub fn load_missing_system_fonts(
     }
 }
 
-/// 文書中の文字のうち`fonts`のどのフォントでも描画できないものについて、
-/// 描画できるシステムフォントを探して`fonts`へ追加する。
+/// For characters in the document that no font in `fonts` can draw, look for a system font
+/// that can and add it to `fonts`.
 ///
-/// [`load_missing_system_fonts`]がfamily名を手掛かりにするのに対し、
-/// こちらは実際に使われている文字を手掛かりにする。`font-family`未指定の
-/// 日本語文書のようにfamily名が何の手掛かりにもならないケースを救うための
-/// 経路で、`load_missing_system_fonts`の直後に呼ぶ。
+/// Where [`load_missing_system_fonts`] works from family names, this works from the
+/// characters actually used. It is the path that rescues cases where the family name is no
+/// clue at all, such as a Japanese document with no `font-family`, and it is called
+/// immediately after `load_missing_system_fonts`.
 ///
-/// 対象はテキストノードの文字と、`::before`/`::after`の生成文字列(counter()や
-/// quotesを解決済みの[`ComputedStyle::pseudo_before_content`]等)。リスト
-/// マーカーの記号までは追わない(初期スコープ)。
+/// It covers the characters of text nodes plus the strings generated by `::before`/`::after`
+/// ([`ComputedStyle::pseudo_before_content`] and friends, with counter() and quotes already
+/// resolved). List marker symbols are not followed (initial scope).
 ///
-/// フォントを1本追加するたびに残りの文字を再判定するため、日本語文書なら
-/// CJKフォント1本の追加で以降の文字は全てカバー済みになる。走査順は
-/// 文書順([`NodeId`]順)に固定して、追加されるフォントの順序=PDFの
-/// フォント番号が実行ごとにぶれないようにする。
+/// The remaining characters are re-checked each time a font is added, so for a Japanese
+/// document one CJK font covers everything that follows. Scan order is fixed to document
+/// order ([`NodeId`] order) so the order of the fonts added (and so the PDF font numbers)
+/// does not vary between runs.
 pub fn load_fonts_for_uncovered_chars(
     fonts: &mut FontCollection,
     dom: &Dom,
@@ -447,8 +446,8 @@ pub fn load_fonts_for_uncovered_chars(
     system: &SystemFonts,
 ) {
     let mut seen = HashSet::new();
-    // 借用の都合で一旦集める(`fonts`を可変で触るため、走査中に`styles`と
-    // `fonts`を同時に借りられない)。
+    // Collected up front because of borrowing (`fonts` is touched mutably, so `styles` and
+    // `fonts` cannot both be borrowed during the walk).
     let chars: Vec<(char, FontWeight, FontStyle, Vec<String>)> = document_chars(dom, styles)
         .map(|(c, style)| {
             (
@@ -464,16 +463,16 @@ pub fn load_fonts_for_uncovered_chars(
     }
 }
 
-/// 文書中で実際に描画される文字を、文書順([`NodeId`]順)に列挙する。
+/// Enumerate the characters actually drawn in the document, in document order ([`NodeId`] order).
 ///
-/// 対象はテキストノードの文字と、`::before`/`::after`の生成文字列
-/// (`counter()`やquotesを解決済みの[`ComputedStyle::pseudo_before_content`]等)。
-/// リストマーカーの記号までは追わない(初期スコープ)。空白・制御文字は
-/// グリフを引く前にレイアウト側で処理されるので除く。
+/// This covers the characters of text nodes plus the strings generated by `::before`/`::after`
+/// ([`ComputedStyle::pseudo_before_content`] and friends, with `counter()` and quotes resolved).
+/// List marker symbols are not followed (initial scope). Whitespace and control characters
+/// are excluded, being handled by layout before any glyph lookup.
 ///
-/// 順序を文書順に固定するのは、ここで追加されるフォントの順序=PDFのフォント
-/// 番号が実行ごとにぶれないようにするため(`styles`は`HashMap`なので
-/// キーの反復順は不定)。
+/// The order is fixed to document order so that the order of the fonts added here (and so
+/// the PDF font numbers) does not vary between runs (`styles` is a `HashMap`, so its key
+/// iteration order is unspecified).
 fn document_chars<'a>(
     dom: &'a Dom,
     styles: &'a HashMap<NodeId, Rc<ComputedStyle>>,
@@ -483,20 +482,20 @@ fn document_chars<'a>(
     out.into_iter()
 }
 
-/// `node`以下のテキストと生成内容を文書順に集める。
+/// Collect the text and generated content under `node` in document order.
 ///
-/// `display: none`の要素はサブツリーごと飛ばす([`crate::layout::box_tree`]が
-/// 同じ位置で再帰を止めるのに合わせる)。描かれない文字までフォント選択の
-/// 対象にすると、`<script>`や`<style>`に日本語が1文字あるだけで使われない
-/// CJKフォントが埋め込まれ、さらに本文に使うフォントの選択まで変わってしまう。
+/// Elements with `display: none` are skipped along with their subtree (matching where
+/// [`crate::layout::box_tree`] stops recursing). Including characters that are never drawn
+/// would embed an unused CJK font because of one Japanese character in a `<script>` or
+/// `<style>`, and would even change which font the body text uses.
 ///
-/// テキストノードは親の計算スタイルをそのまま引き継ぐため`display`も見えるが、
-/// `display: none`の要素と対象のテキストの間に要素が挟まると(`<div
-/// style="display:none"><span>…`)そちらは`inline`に計算されるので、
-/// ノード単位のフィルタでは足りず木を辿る必要がある。
+/// A text node inherits its parent's computed style, so `display` is visible there too, but
+/// when an element sits between the `display: none` element and the text
+/// (`<div style="display:none"><span>...`) that element computes to `inline`, so a
+/// per-node filter is not enough and the tree has to be walked.
 ///
-/// `visibility: hidden`は対象外。描画されないだけで領域は占めるため、
-/// 行の高さを決めるのにフォントが要る。
+/// `visibility: hidden` is not covered. It is only invisible, still occupying space, so a
+/// font is needed to decide the line height.
 fn collect_rendered_chars<'a>(
     dom: &'a Dom,
     node: NodeId,
@@ -531,11 +530,11 @@ fn collect_rendered_chars<'a>(
     }
 }
 
-/// `c`を`weight`/`style`で描画できるフォントが`fonts`に無ければ、システムから
-/// 探して追加する。判定済みの組は`seen`で覚えて再探索を避ける。
+/// If no font in `fonts` can draw `c` at `weight`/`style`, look one up from the system and
+/// add it. Combinations already checked are remembered in `seen` to avoid searching twice.
 ///
-/// 「描画できる」の判定にウェイト/スタイルの一致まで含める理由は
-/// [`FontCollection::can_render_with_matching_face`]を参照。
+/// See [`FontCollection::can_render_with_matching_face`] for why "can draw" includes
+/// matching the weight and style.
 fn cover_char(
     fonts: &mut FontCollection,
     system: &SystemFonts,
@@ -556,22 +555,22 @@ fn cover_char(
     }
 }
 
-/// ストリーミングモードのように文書全体の文字を事前に集められない場合に、
-/// CJKの代表文字を描画できるフォントを先回りで足す。
+/// Add a font covering representative CJK characters up front, for cases such as streaming
+/// mode where the document's characters cannot be collected in advance.
 ///
-/// [`crate::pdf::StreamingPdfWriter`]は`new`の時点でフォント数を固定するので、
-/// 読み進めながら[`load_fonts_for_uncovered_chars`]で補うことができない。
-/// 代わりに、既定フォント(ラテン)だけでは確実に豆腐になるCJKを先回りで
-/// カバーしておく。CJK以外のスクリプトは依然カバーできないため、呼び出し側は
-/// 描画できない文字が残った場合の警告と併用する。
+/// [`crate::pdf::StreamingPdfWriter`] fixes the font count at `new`, so it cannot top up
+/// with [`load_fonts_for_uncovered_chars`] as it reads. Instead we cover CJK up front,
+/// which the default (latin) font would certainly render as tofu. Scripts other than CJK
+/// are still uncovered, so the caller pairs this with a warning for any character that
+/// remains undrawable.
 ///
-/// 代表文字を2つ試すのは、かな(`あ`)と漢字(`漢`)の両方を確認するため。
-/// 通常は1本目のフォントが両方を持つので、2文字目は既にカバー済みとして
-/// 何も追加されない。
+/// Two representative characters are tried so that both kana and kanji are checked.
+/// Normally the first font has both, so the second character is already covered and nothing
+/// more is added.
 pub fn ensure_cjk_fallback_font(fonts: &mut FontCollection, system: &SystemFonts) {
     const REPRESENTATIVE_CHARS: &[char] = &['漢', 'あ'];
 
-    // 既定の`ComputedStyle`と同じ「family未指定・Regular・Normal」で探す。
+    // Search as "family unset, Regular, Normal", the same as the default `ComputedStyle`.
     let mut seen = HashSet::new();
     for &c in REPRESENTATIVE_CHARS {
         cover_char(
@@ -586,12 +585,11 @@ pub fn ensure_cjk_fallback_font(fonts: &mut FontCollection, system: &SystemFonts
     }
 }
 
-/// 文書中にどのフォントでも描画できない文字が残っていれば、文字ごとに
-/// 一度だけ警告する。
+/// If any character in the document is left that no font can draw, warn once per character.
 ///
-/// 黙って豆腐を出力しないための最後の網。`warned`は既に警告した文字の集合で、
-/// ストリーミングモードのようにこの関数が何度も呼ばれる場合に、同じ文字を
-/// 繰り返し警告しないために呼び出し側が持ち回る。
+/// The last net against silently emitting tofu. `warned` is the set of characters already
+/// warned about, carried by the caller so that repeated calls (as in streaming mode) do not
+/// warn about the same character over and over.
 pub fn warn_uncovered_chars(
     fonts: &FontCollection,
     dom: &Dom,
@@ -606,8 +604,8 @@ pub fn warn_uncovered_chars(
             continue;
         }
         eprintln!(
-            "警告: 文字 \"{c}\" を描画できるフォントがありません(豆腐になります)。\n  \
-             --font/--gothic-font か @font-face でフォントを明示してください"
+            "warning: no font can draw the character \"{c}\" (it will render as tofu).\n  \
+             Specify a font with --font/--gothic-font or @font-face"
         );
     }
 }
@@ -668,14 +666,14 @@ mod tests {
 
     #[test]
     fn load_missing_system_fonts_adds_fonts_in_document_order() {
-        // `styles`は`HashMap`なので反復順が実行ごとに変わる。文書順に
-        // 固定していないと、追加されるフォントの順序=PDFのフォント
-        // 番号がぶれて、同じHTMLから別のバイト列が出てしまう(「同じ
-        // HTMLなら同じ出力」が成り立たなくなる)。
+        // `styles` is a `HashMap`, so its iteration order changes from run to run. Without
+        // fixing the order to document order, the order of the fonts added (and so the PDF
+        // font numbers) would vary and the same HTML would emit different bytes (breaking
+        // "same HTML, same output").
         //
-        // `HashMap`のハッシュキーはインスタンスごとに変わるため、順序が
-        // 崩れているかどうかは1回の実行では見えないことがある。毎回
-        // `styles`を作り直して繰り返す。
+        // A `HashMap`'s hash keys differ per instance, so a broken order may not show up in
+        // a single run. Rebuild `styles` and repeat every time.
+
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let html = br#"<p style="font-family: 'DejaVu Sans Mono';">a</p>
                        <p style="font-family: 'Noto Sans CJK JP';">b</p>
@@ -723,9 +721,9 @@ mod tests {
 
     #[test]
     fn load_missing_system_fonts_still_searches_for_a_missing_weight_of_a_known_family() {
-        // `--font`でRegularのDejaVu Sansのみ読み込み済みの状態で、文書は同じ
-        // familyのBold(<b>)も使う。family自体は既に存在するが、Bold面は
-        // まだ無いので、そのweightだけを追加でシステムから探しに行くはず。
+        // With only the Regular DejaVu Sans loaded via `--font`, the document also uses the
+        // Bold (<b>) of the same family. The family already exists but the Bold face does
+        // not, so only that weight should be looked up from the system.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let dom = html::parse(br#"<p style="font-family: 'DejaVu Sans';">a <b>b</b></p>"#);
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
@@ -750,10 +748,10 @@ mod tests {
 
     #[test]
     fn explicit_sans_serif_resolves_to_a_system_gothic_face() {
-        // `sans-serif`を明示した場合はゴシック体を候補リストで解決する。
-        // fixtureの"DejaVu Sans"が候補にあるので拾える。既定`font-family`は空
-        // (未指定)に切り離したため、この解決が
-        // `--font`の既定挙動を壊すことはない。
+        // Written explicitly, `sans-serif` resolves to a gothic face from the candidate list.
+        // The fixture's "DejaVu Sans" is a candidate, so it is picked up. The default
+        // `font-family` is separated out to empty (unset), so this resolution does not break
+        // the default `--font` behaviour.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let author = parse_stylesheet("p { font-family: sans-serif; }");
         let dom = html::parse(b"<p>text</p>");
@@ -771,8 +769,8 @@ mod tests {
 
     #[test]
     fn an_element_without_an_explicit_font_family_does_not_trigger_a_lookup() {
-        // 既定`font-family`は空(未指定)なので、`--font`のフォントへ
-        // フォールバックする。システムフォント探索は起きない。
+        // The default `font-family` is empty (unset), so it falls back to the `--font` font,
+        // and no system font lookup happens.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let dom = html::parse(b"<p>text</p>");
         let styles = compute_styles(&dom, &Stylesheet::default(), &Stylesheet::default());
@@ -805,8 +803,8 @@ mod tests {
 
     #[test]
     fn load_generic_returns_none_for_families_we_deliberately_skip() {
-        // `cursive`/`fantasy`は候補を持たない。`Helvetica`は汎用名でない。
-        // (`sans-serif`は解決対象になったのでここには含めない。)
+        // `cursive`/`fantasy` have no candidates. `Helvetica` is not a generic name.
+        // (`sans-serif` is now resolved, so it is not included here.)
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         for generic in ["cursive", "fantasy", "Helvetica"] {
             assert!(
@@ -829,8 +827,8 @@ mod tests {
 
     #[test]
     fn load_generic_returns_none_when_no_candidate_exists() {
-        // serifの候補("DejaVu Serif"等)はfixtureに存在しない。monospaceと
-        // 違い、フラグによるフォールバック探索も行わないのでNoneになる。
+        // The serif candidates ("DejaVu Serif" and friends) are not in the fixture. Unlike
+        // monospace, there is no flag-based fallback search, so this returns None.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         assert!(system
             .load_generic("serif", FontWeight::Normal, FontStyle::Normal)
@@ -839,9 +837,9 @@ mod tests {
 
     #[test]
     fn load_any_monospaced_finds_a_monospaced_face_by_its_metadata_flag() {
-        // 候補リストが全て外れた場合のフォールバック経路(fontdbの
-        // `FaceInfo::monospaced`フラグ)。fixtureのDejaVu Sans Monoが
-        // 等幅フラグを持つことを利用して、経路そのものを直接検証する。
+        // The fallback path for when every candidate misses (fontdb's `FaceInfo::monospaced`
+        // flag). The fixture's DejaVu Sans Mono carries the monospace flag, which lets us
+        // exercise the path itself directly.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
             .load_any_monospaced(FontWeight::Normal, FontStyle::Normal)
@@ -882,8 +880,8 @@ mod tests {
 
     #[test]
     fn load_covering_falls_back_to_a_full_scan_for_non_cjk_scripts() {
-        // キリル文字は候補リストを持たないので、全フェース走査の経路
-        // (`load_any_covering`)でしか見つからない。
+        // Cyrillic has no candidate list, so it can only be found through the full face
+        // scan (`load_any_covering`).
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let (_, font) = system
             .load_covering('Д', FontWeight::Normal, FontStyle::Normal)
@@ -894,7 +892,7 @@ mod tests {
     #[test]
     fn load_covering_gives_up_on_a_character_no_font_can_render() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
-        // 私用領域の文字はどのfixtureフォントも持たない。
+        // No fixture font has a private-use-area character.
         assert!(system
             .load_covering('\u{E000}', FontWeight::Normal, FontStyle::Normal)
             .is_none());
@@ -902,9 +900,9 @@ mod tests {
 
     #[test]
     fn load_fonts_for_uncovered_chars_ignores_text_that_is_not_rendered() {
-        // 描かれない文字までカバレッジの対象にすると、`<script>`に日本語が
-        // 1文字あるだけで使われないCJKフォントが埋め込まれ、さらに本文に
-        // 使うフォントの選択まで変わってしまう。
+        // Including characters that are never drawn would embed an unused CJK font because
+        // of one Japanese character in a `<script>`, and would even change which font the
+        // body text uses.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
 
         let count_for = |body: &str| {
@@ -924,26 +922,26 @@ mod tests {
             "<style>/* 領収書 */</style>",
             "<title>領収書</title>",
             r#"<div style="display: none">領収書</div>"#,
-            // `display: none`とテキストの間に要素を挟むと、その要素自身の
-            // `display`は`inline`に計算される。ノード単位のフィルタでは
-            // 漏れるので、木を辿って落とせているかをここで見る。
+            // With an element between `display: none` and the text, that element's own
+            // `display` computes to `inline`. A per-node filter would miss it, so this
+            // checks that walking the tree drops it.
             r#"<div style="display: none"><span>領収書</span></div>"#,
         ] {
             assert_eq!(
                 count_for(hidden),
                 baseline,
-                "描画されない日本語でフォントが増えた: {hidden}"
+                "a font was added for Japanese that is never drawn: {hidden}"
             );
         }
 
-        // 実際に描画される日本語なら、従来どおりカバレッジから補完する。
+        // Japanese that really is drawn is still topped up from coverage as before.
         assert_eq!(count_for("<p>領収書</p>"), baseline + 1);
     }
 
     #[test]
     fn load_fonts_for_uncovered_chars_adds_a_cjk_face_for_japanese_text() {
-        // `font-family`未指定の日本語文書。family名は何の手掛かりにもならないので、
-        // 文字カバレッジからCJKフォントを引き当てる必要がある。
+        // A Japanese document with no `font-family`. The family name is no clue at all, so
+        // the CJK font has to be found from character coverage.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let dom = html::parse("<p>本文です。</p>".as_bytes());
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
@@ -969,7 +967,7 @@ mod tests {
 
     #[test]
     fn load_fonts_for_uncovered_chars_covers_generated_content_too() {
-        // `::before`の生成文字列も描画されるので対象にする。
+        // The string generated by `::before` is drawn too, so it is covered.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let author = parse_stylesheet(r#"p::before { content: "第"; }"#);
         let dom = html::parse(b"<p>text</p>");
@@ -1001,8 +999,8 @@ mod tests {
 
     #[test]
     fn ensure_cjk_fallback_font_adds_a_single_face_covering_kana_and_kanji() {
-        // ストリーミング用の先回り。代表文字2つを試すが、1本のCJKフォントが
-        // 両方を持つので追加は1本で済む。
+        // The up-front pass for streaming. Two representative characters are tried, but one
+        // CJK font has both, so only one is added.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let latin = system
             .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
@@ -1029,16 +1027,16 @@ mod tests {
         assert_eq!(fonts.len(), 1);
     }
 
-    /// カラー絵文字フォントの回帰テスト。
+    /// Regression test for colour emoji fonts.
     ///
-    /// `cmap`は持つが輪郭を持たないフォントは、文字カバレッジによる自動探索の
-    /// 対象から外れなければならない。ここを通してしまうと、何も描けないフォントが
-    /// 「その文字を描画できるフォント」として採用され、無言で不可視のテキストと
-    /// 巨大なPDFになる(実際にNoto Color Emojiで起きていた)。
+    /// A font with a `cmap` but no outlines must be kept out of the automatic search by
+    /// character coverage. Letting one through would adopt a font that can draw nothing as
+    /// "the font that can draw this character", silently producing invisible text and a huge
+    /// PDF (which really happened with Noto Color Emoji).
     #[test]
     fn a_colour_font_is_not_picked_up_by_the_coverage_search() {
-        // 探索対象をカラーフォント1本だけにしたディレクトリを作る
-        // (`FONTS_DIR`をそのまま渡すと輪郭を持つフォントが混ざる)。
+        // Build a directory holding only the colour font, so it is the only search candidate
+        // (passing `FONTS_DIR` directly would mix in fonts that have outlines).
         let dir = std::env::temp_dir().join(format!(
             "sghtmltopdf-fonts-colour-only-{}",
             std::process::id()
@@ -1055,7 +1053,7 @@ mod tests {
             system
                 .load_covering('\u{1F389}', FontWeight::Normal, FontStyle::Normal)
                 .is_none(),
-            "輪郭を持たないフォントを「絵文字を描画できる」と判定してはならない"
+            "a font without outlines must not be judged able to draw the emoji"
         );
 
         std::fs::remove_dir_all(&dir).ok();

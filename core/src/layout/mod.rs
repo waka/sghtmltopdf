@@ -1,4 +1,4 @@
-//! ブロック/インラインレイアウトとページ化(taffy + 自前実装)。
+//! Block/inline layout and pagination (taffy plus our own implementation).
 
 mod block;
 mod box_tree;

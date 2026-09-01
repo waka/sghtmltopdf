@@ -1,13 +1,13 @@
-//! `&nbsp;`をはじめとするUnicodeの空白文字のE2Eテスト。
+//! E2E tests for Unicode whitespace characters, starting with `&nbsp;`.
 //!
-//! `typography.rs`と同じ方針で、実際のパイプライン(HTMLパース→スタイル
-//! カスケード→レイアウト)を通して検証する。判定の基準は
-//! `layout::white_space`と同じ2軸:
+//! The same approach as `typography.rs`: checked through the real pipeline (HTML parse,
+//! style cascade, layout). The criteria are the same two axes as `layout::white_space`:
 //!
-//! - 畳み込まれるのはCSS Text 3の対象(space/tab/改行)だけで、それ以外の
-//!   空白は普通の文字としてフォント本来の字幅で描かれる。
-//! - 改行してよい位置はUAX #14の行分割クラスに従う(`&nbsp;`は不可、
-//!   thin space・ZWSPは直後で可)。
+//!
+//! - Only what CSS Text 3 covers (space, tab, newline) collapses; every other whitespace is
+//!   an ordinary character drawn at the font's own advance.
+//! - Where a break is allowed follows the UAX #14 line breaking classes (not at `&nbsp;`;
+//!   allowed right after a thin space or a ZWSP).
 
 use std::collections::HashMap;
 
@@ -40,7 +40,7 @@ fn find_laid_out(b: &LaidOutBox, target: NodeId) -> Option<&LaidOutBox> {
     None
 }
 
-/// 最初の`<p>`が組んだ行を`(幅, テキスト)`の並びで返す。
+/// Return the lines the first `<p>` laid out, as a list of `(width, text)`.
 fn p_lines(html_src: &str, css: &str) -> Vec<(f32, String)> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
@@ -70,14 +70,14 @@ fn p_lines(html_src: &str, css: &str) -> Vec<(f32, String)> {
         .collect()
 }
 
-/// 折り返さない幅で1行に組んだときの幅。
+/// The width when laid out on one line at a width that does not wrap.
 fn width_of(html_src: &str) -> f32 {
     let lines = p_lines(html_src, "body { margin: 0; } p { margin: 0; }");
     assert_eq!(lines.len(), 1, "expected a single line, got {lines:?}");
     lines[0].0
 }
 
-/// 40px幅の`<p>`に組んだときの行数(改行機会の有無を見るため)。
+/// The number of lines when laid out in a 40px-wide `<p>` (to see whether a break opportunity exists).
 fn narrow_lines(html_src: &str) -> Vec<(f32, String)> {
     p_lines(
         html_src,
@@ -85,7 +85,7 @@ fn narrow_lines(html_src: &str) -> Vec<(f32, String)> {
     )
 }
 
-// ===== 畳み込み =====
+// ===== Collapsing =====
 
 #[test]
 fn runs_of_ordinary_spaces_still_collapse_into_one() {
@@ -99,8 +99,8 @@ fn runs_of_ordinary_spaces_still_collapse_into_one() {
 
 #[test]
 fn a_run_of_no_break_spaces_does_not_collapse() {
-    // `&nbsp;&nbsp;&nbsp;`は空白3個分の幅を占める(桁揃えに使われる)。
-    // 畳み込んでいた頃は普通の空白1個と同じ幅になっていた。
+    // `&nbsp;&nbsp;&nbsp;` occupies the width of three spaces (used for aligning columns).
+    // Back when it collapsed, it came out the same width as a single ordinary space.
     let one_space = width_of("<p>a b</p>");
     let three_nbsp = width_of("<p>a\u{a0}\u{a0}\u{a0}b</p>");
 
@@ -112,14 +112,14 @@ fn a_run_of_no_break_spaces_does_not_collapse() {
 
 #[test]
 fn a_no_break_space_is_as_wide_as_a_space() {
-    // DejaVu Sansでは`&nbsp;`とspaceのアドバンスが等しい。フォントがグリフを
-    // 持たない場合もシェイパーのspace fallbackが同じ幅を割り当てる。
+    // In DejaVu Sans the advances of `&nbsp;` and a space are equal. Even in a font lacking
+    // the glyph, the shaper's space fallback assigns the same width.
     assert_eq!(width_of("<p>a\u{a0}b</p>"), width_of("<p>a b</p>"));
 }
 
 #[test]
 fn fixed_width_spaces_keep_their_own_advance() {
-    // 整形用スペースは「空白1個」に均されず、それぞれの字幅で描かれる。
+    // A typographic space is not levelled to "one space" and is drawn at its own width.
     let none = width_of("<p>ab</p>");
     let hair = width_of("<p>a\u{200a}b</p>");
     let thin = width_of("<p>a\u{2009}b</p>");
@@ -142,12 +142,12 @@ fn a_zero_width_space_takes_no_room() {
     );
 }
 
-// ===== 改行機会(UAX #14) =====
+// ===== Break opportunities (UAX #14) =====
 
 #[test]
 fn a_no_break_space_does_not_offer_a_wrap_opportunity() {
-    // 「10 kg」は折り返せるが、「10&nbsp;kg」は1行に留まる(はみ出してでも
-    // 分断しない)。`&nbsp;`はまさにこれのために置かれる文字。
+    // "10 kg" can wrap, but "10&nbsp;kg" stays on one line (overflowing rather than being
+    // split). `&nbsp;` is placed for exactly this.
     assert_eq!(narrow_lines("<p>10 kg</p>").len(), 2);
 
     let glued = narrow_lines("<p>10\u{a0}kg</p>");
@@ -169,7 +169,7 @@ fn the_other_non_breaking_spaces_do_not_wrap_either() {
 
 #[test]
 fn a_thin_space_offers_a_wrap_opportunity() {
-    // UAX #14でBAクラスの空白は直後で改行してよい。
+    // A break is allowed right after a whitespace of UAX #14 class BA.
     let lines = narrow_lines("<p>10\u{2009}kg</p>");
     assert_eq!(lines.len(), 2, "thin space should break, got {lines:?}");
     assert_eq!(lines[1].1, "kg", "the break belongs after the space");
@@ -177,7 +177,7 @@ fn a_thin_space_offers_a_wrap_opportunity() {
 
 #[test]
 fn a_zero_width_space_offers_a_wrap_opportunity_inside_a_word() {
-    // ZWSPは幅を持たないまま改行機会だけを足す(`<wbr>`相当の使い方)。
+    // A ZWSP adds only a break opportunity, with no width (the `<wbr>` use).
     let broken = narrow_lines("<p>aaaaaa\u{200b}bbbbbb</p>");
     let unbroken = narrow_lines("<p>aaaaaabbbbbb</p>");
 
@@ -191,8 +191,8 @@ fn a_zero_width_space_offers_a_wrap_opportunity_inside_a_word() {
 
 #[test]
 fn a_no_break_space_stays_glued_even_under_word_break_break_all() {
-    // `word-break: break-all`はどこでも改行してよいが、`&nbsp;`のために置かれた
-    // 結合はそれより優先する(ブラウザも同じ扱い)。
+    // `word-break: break-all` allows a break anywhere, but the binding `&nbsp;` was placed
+    // for wins over it (browsers do the same).
     let lines = p_lines(
         "<p>10\u{a0}kg</p>",
         "body { margin: 0; } p { margin: 0; width: 40px; word-break: break-all; }",
@@ -208,8 +208,8 @@ fn a_no_break_space_stays_glued_even_under_word_break_break_all() {
 
 #[test]
 fn wbr_offers_a_wrap_opportunity_inside_a_long_word() {
-    // HTML仕様の"line break opportunity"。長い識別子やURLを狙った位置で
-    // 折り返すために使われる。
+    // The HTML spec's "line break opportunity". Used to wrap a long identifier or URL at a
+    // chosen position.
     let broken = narrow_lines("<p>aaaaaa<wbr>bbbbbb</p>");
     let unbroken = narrow_lines("<p>aaaaaabbbbbb</p>");
 
@@ -234,16 +234,16 @@ fn wbr_adds_no_width_when_the_line_does_not_wrap() {
 
 #[test]
 fn wbr_only_offers_a_break_it_does_not_force_one() {
-    // `<br>`との違い。収まるうちは1行のまま。
+    // The difference from `<br>`: while it fits it stays on one line.
     let lines = p_lines("<p>aaa<wbr>bbb</p>", "body { margin: 0; } p { margin: 0; }");
     assert_eq!(lines.len(), 1, "<wbr> is not a forced break, got {lines:?}");
 }
 
 #[test]
 fn wbr_survives_word_break_keep_all() {
-    // `word-break: keep-all`は「単語内で改行しない」指定だが、`<wbr>`は
-    // 明示的に置かれた改行機会なので効き続ける(ZWクラスはUAX #14でも
-    // 単語の切れ目とは独立に扱われる)。
+    // `word-break: keep-all` means "do not break within a word", but a `<wbr>` is an
+    // explicitly placed break opportunity and still takes effect (UAX #14 also treats the ZW
+    // class independently of word boundaries).
     let lines = p_lines(
         "<p>aaaaaa<wbr>bbbbbb</p>",
         "body { margin: 0; } p { margin: 0; width: 40px; word-break: keep-all; }",
@@ -252,8 +252,8 @@ fn wbr_survives_word_break_keep_all() {
     assert_eq!(lines.len(), 2, "<wbr> should still break, got {lines:?}");
 }
 
-/// PDFのストリームをすべて展開して連結する(`/ToUnicode`
-/// CMapを覗くため。`typography.rs`と同じ手順)。
+/// Inflate and concatenate every PDF stream (to look inside the `/ToUnicode` CMap; the same
+/// procedure as `typography.rs`).
 fn decompressed_streams(html_src: &str) -> Vec<u8> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(
@@ -291,9 +291,9 @@ fn decompressed_streams(html_src: &str) -> Vec<u8> {
 
 #[test]
 fn wbr_leaves_no_character_in_the_laid_out_text() {
-    // `<wbr>`は改行機会であって文字ではない。ZWSPを文字として流すと、
-    // フォントがZWSPのグリフを持たない場合にspaceのグリフで代替されるため、
-    // PDFのテキスト層に幽霊の空白が入る(抽出すると`inline word`になる)。
+    // A `<wbr>` is a break opportunity, not a character. Passing a ZWSP through as a
+    // character makes a font lacking the ZWSP glyph substitute the space glyph, putting a
+    // ghost space in the PDF's text layer (extracting gives `inline word`).
     for html_src in [
         "<p>inline<wbr>word</p>",
         "<p>a<wbr>b<wbr>c</p>",
@@ -314,10 +314,10 @@ fn wbr_leaves_no_character_in_the_laid_out_text() {
 
 #[test]
 fn wbr_leaves_nothing_behind_in_the_pdf_text_layer() {
-    // 回帰テスト: `<wbr>`をZWSPの「文字」として流していた頃は、フォントが
-    // ZWSPのグリフを持たないためspaceのグリフで代替され、`/ToUnicode`が
-    // そのグリフをU+200Bに割り当てていた。結果、文書中のすべての空白が
-    // U+200Bとして抽出され、コピー&ペーストとテキスト検索が壊れていた。
+    // Regression test: back when a `<wbr>` was passed through as a ZWSP "character", a font
+    // lacking the ZWSP glyph substituted the space glyph and `/ToUnicode` mapped that glyph
+    // to U+200B. As a result every space in the document extracted as U+200B, breaking copy
+    // and paste and text search.
     let pdf = decompressed_streams("<p>inline<wbr>word stays</p>");
     let text = String::from_utf8_lossy(&pdf);
 
@@ -331,11 +331,11 @@ fn wbr_leaves_nothing_behind_in_the_pdf_text_layer() {
     );
 }
 
-// ===== ボックス生成 =====
+// ===== Box generation =====
 
 #[test]
 fn a_paragraph_holding_only_a_no_break_space_still_produces_a_line() {
-    // 空白のみのテキストならボックスを作らないが、`&nbsp;`は内容なので行になる。
+    // Whitespace-only text creates no box, but `&nbsp;` is content and becomes a line.
     let blank = p_lines("<p> \n </p>", "body { margin: 0; }");
     let nbsp = p_lines("<p>\u{a0}</p>", "body { margin: 0; }");
 

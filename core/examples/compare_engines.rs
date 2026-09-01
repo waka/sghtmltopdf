@@ -1,43 +1,43 @@
-//! sghtmltopdf・wkhtmltopdf・ヘッドレスChromeのピークメモリと処理時間を
-//! 同条件で比較する。ドキュメントサイトのパフォーマンス比較の表はこれで取っている。
+//! Compare the peak memory and running time of sghtmltopdf, wkhtmltopdf and headless
+//! Chrome under the same conditions. The performance comparison table on the documentation site comes from this.
 //!
-//! 実行:
+//! Run with:
 //!
 //! ```text
-//! cargo build --release                      # 比較対象のCLIを先に作る
+//! cargo build --release                      # build the CLI under comparison first
 //! cargo run --release --example compare_engines
 //! ```
 //!
-//! 見つからないエンジンは飛ばす。場所は環境変数でも指定できる。
+//! An engine that cannot be found is skipped. Its location can also be given by an environment variable.
 //!
-//! * `WKHTMLTOPDF` — 公式配布はパッケージのみで単体バイナリが無いため、
-//!   インストールせずに使うならdebを展開するのが手軽:
+//! * `WKHTMLTOPDF` - the official distribution is packages only, with no standalone binary,
+//!   so unpacking the deb is the easy way to use it without installing:
 //!   `dpkg-deb -x wkhtmltox_0.12.6.1-3.jammy_amd64.deb /tmp/wk`
-//!   (実行には`xfonts-base`/`xfonts-75dpi`が要る)
-//! * `CHROME` — 未指定なら`google-chrome`を`PATH`から探す
+//!   (running it needs `xfonts-base` and `xfonts-75dpi`)
+//! * `CHROME` - with none given, `google-chrome` is looked up on `PATH`
 //!
-//! # 比較を成立させるために揃えていること
+//! # What is held equal to make the comparison meaningful
 //!
-//! * 用紙と余白は`@page`で指定する。3者とも同じCSSで同じ幾何になる
-//!   (wkhtmltopdfだけは`@page`の`size`を見ないので、同じ値をCLIでも渡す)
-//! * 同じフォントファイルを`@font-face`で参照させる
-//! * wkhtmltopdfはCSSのpxを1/72インチとして扱うので、[`ZOOM`]で1px = 1/96
-//!   インチへ寄せる。sghtmltopdfとChromeは1/96インチなので補正は要らない
-//! * JavaScriptは実行しない
+//! * The paper size and margins are set with `@page`, so all three get the same geometry
+//!   from the same CSS (wkhtmltopdf alone ignores `@page`'s `size`, so the same values are
+//!   passed on its CLI too)
+//! * All three reference the same font file through `@font-face`
+//! * wkhtmltopdf treats a CSS px as 1/72 inch, so [`ZOOM`] brings it to 1px = 1/96 inch.
+//!   sghtmltopdf and Chrome use 1/96 inch already and need no correction
 //!
-//! それでもページ数は完全一致しない。表にページ数も出しているので、比較が
-//! 成立している範囲かは都度確認すること。
+//! The page counts still do not match exactly. The table shows the page counts too, so check
+//! each time whether the comparison is within a meaningful range.
 //!
-//! # メモリの測り方
+//! # How the memory is measured
 //!
-//! Chromeはブラウザ・レンダラ・GPUと複数プロセスに分かれるため、起動した
-//! プロセスだけを見ると実態の半分以下になる(実測で246MB対567MB)。
-//! そこで[`tree_pss_kib`]がプロセスツリー全体の`Pss`合計をサンプリングし、
-//! その最大値を採る。3者とも同じ方法で測っている。
+//! Chrome splits into several processes (browser, renderer, GPU), so looking only at the
+//! process we started shows less than half the reality (246MB against 567MB, measured).
+//! So [`tree_pss_kib`] samples the total `Pss` of the whole process tree and takes the
+//! maximum. All three are measured the same way.
 //!
-//! サンプリングなので[`SAMPLE_INTERVAL`]より短いスパイクは取り逃す可能性が
-//! ある。また測るのはブラウザの起動を含めた1回の変換で、常駐させて使い回す
-//! 運用(CDP経由でプールする等)の数値ではない。
+//! Being sampled, a spike shorter than [`SAMPLE_INTERVAL`] can be missed. What is measured
+//! is also one conversion including browser startup, not the numbers for keeping a browser
+//! resident and reusing it (pooling over CDP, say).
 
 use std::collections::{HashMap, HashSet};
 use std::env;
@@ -46,20 +46,20 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// 測る文書の規模。
+/// The size of the documents measured.
 const PARAGRAPH_COUNTS: &[usize] = &[5_000, 20_000, 60_000];
 const TABLE_COUNTS: &[usize] = &[5_000, 20_000];
 
-/// 条件ごとの試行回数。良いほうの値を採る。
+/// The number of trials per condition. The better value is taken.
 const RUNS: usize = 2;
 
-/// メモリのサンプリング間隔。
+/// The memory sampling interval.
 const SAMPLE_INTERVAL: Duration = Duration::from_millis(10);
 
-/// wkhtmltopdfのpx解釈(1px = 1/72インチ)を1px = 1/96インチへ寄せる倍率。
+/// The factor bringing wkhtmltopdf's px interpretation (1px = 1/72 inch) to 1px = 1/96 inch.
 const ZOOM: &str = "1.3333333";
 
-/// 用紙と余白。`@page`とwkhtmltopdfのCLIの両方へ同じ値を書く。
+/// The paper size and margins. The same values are written both in `@page` and on wkhtmltopdf's CLI.
 const PAGE_SIZE: &str = "A4";
 const MARGIN: &str = "10mm";
 
@@ -67,7 +67,7 @@ fn main() {
     let sghtmltopdf = release_binary();
     if !sghtmltopdf.exists() {
         eprintln!(
-            "{} がありません。先に cargo build --release を実行してください",
+            "{} does not exist. Run cargo build --release first",
             sghtmltopdf.display()
         );
         std::process::exit(1);
@@ -76,38 +76,48 @@ fn main() {
     let chrome = find_binary("CHROME", "google-chrome");
     for (name, found) in [("wkhtmltopdf", &wkhtmltopdf), ("chrome", &chrome)] {
         if found.is_none() {
-            eprintln!("{name} が見つからないため、その列は飛ばします");
+            eprintln!("{name} was not found, so its column is skipped");
         }
     }
 
     let work = env::temp_dir().join("sghtmltopdf-compare");
-    std::fs::create_dir_all(&work).expect("作業ディレクトリを作れません");
-    std::fs::copy(font_path(), work.join("font.ttf")).expect("フォントを複製できません");
+    std::fs::create_dir_all(&work).expect("cannot create the working directory");
+    std::fs::copy(font_path(), work.join("font.ttf")).expect("cannot copy the font");
 
     for (title, header, counts, table_mode) in [
-        ("### 段落が主体の文書", "要素数", PARAGRAPH_COUNTS, false),
-        ("### 表が主体の帳票", "行数", TABLE_COUNTS, true),
+        (
+            "### A document that is mostly paragraphs",
+            "elements",
+            PARAGRAPH_COUNTS,
+            false,
+        ),
+        (
+            "### A business form that is mostly tables",
+            "rows",
+            TABLE_COUNTS,
+            true,
+        ),
     ] {
-        let mut columns = vec!["sghtmltopdf", "sghtmltopdf（ストリーミング）"];
+        let mut columns = vec!["sghtmltopdf", "sghtmltopdf (streaming)"];
         if wkhtmltopdf.is_some() {
             columns.push("wkhtmltopdf");
         }
         if chrome.is_some() {
-            columns.push("ヘッドレスChrome");
+            columns.push("headless Chrome");
         }
         println!("\n{title}\n");
-        println!("| {header} | {} | ページ数 |", columns.join(" | "));
+        println!("| {header} | {} | pages |", columns.join(" | "));
         println!("|{}|", "---|".repeat(columns.len() + 2));
 
         for &count in counts {
             let name = if table_mode { "table" } else { "para" };
             let html = work.join(format!("{name}{count}.html"));
-            std::fs::write(&html, build_html(count, table_mode)).expect("HTMLを書けません");
+            std::fs::write(&html, build_html(count, table_mode)).expect("cannot write the HTML");
 
             let mut cells = Vec::new();
             let mut pages = Vec::new();
-            // 変換できなかったエンジンは、そこだけセルを`-`にして続ける
-            // (ストリーミングで使えないCSSを含む文書など)。
+            // An engine that could not convert just gets a `-` in its cell and we carry on
+            // (a document using CSS unavailable in streaming, say).
             let mut measure =
                 |label: &str, command: &dyn Fn(&Path) -> Command, count_it: bool| match best_of(
                     &work, command,
@@ -119,7 +129,9 @@ fn main() {
                         }
                     }
                     None => {
-                        eprintln!("{name}{count}: {label} は変換に失敗したので `-` にします");
+                        eprintln!(
+                            "{name}{count}: {label} failed to convert, so its cell becomes `-`"
+                        );
                         cells.push("-".to_string());
                         if count_it {
                             pages.push("-".to_string());
@@ -133,7 +145,7 @@ fn main() {
                 true,
             );
             measure(
-                "sghtmltopdf（ストリーミング）",
+                "sghtmltopdf (streaming)",
                 &|out| sg_command(&sghtmltopdf, &html, out, true),
                 false,
             );
@@ -142,7 +154,7 @@ fn main() {
             }
             if let Some(chrome) = &chrome {
                 measure(
-                    "ヘッドレスChrome",
+                    "headless Chrome",
                     &|out| chrome_command(chrome, &html, out),
                     true,
                 );
@@ -157,11 +169,11 @@ fn main() {
     }
 }
 
-/// `build`が返すコマンドを[`RUNS`]回動かし、「ピークメモリ / 処理時間」と
-/// 生成されたPDFのページ数を返す。
+/// Run the command `build` returns [`RUNS`] times and return "peak memory / running time"
+/// plus the page count of the PDF produced.
 ///
-/// 1回でも変換に失敗したら`None`。失敗した回の数値は当てにならないので、
-/// 成功した回だけで平均を取るようなことはしない。
+/// `None` if even one conversion failed. The numbers from a failed run are unreliable, so we
+/// never average over just the successful ones.
 fn best_of(work: &Path, build: &dyn Fn(&Path) -> Command) -> Option<(String, usize)> {
     let out = work.join("out.pdf");
     let mut best_kib = f64::MAX;
@@ -173,23 +185,26 @@ fn best_of(work: &Path, build: &dyn Fn(&Path) -> Command) -> Option<(String, usi
         best_secs = best_secs.min(secs);
     }
     Some((
-        format!("{:.0}MB / {:.2}秒", best_kib / 1024.0, best_secs),
+        format!("{:.0}MB / {:.2}s", best_kib / 1024.0, best_secs),
         count_pages(&out),
     ))
 }
 
-/// コマンドを動かし、`(ピークPSS[KiB], 秒)`を返す。変換が失敗したら`None`。
+/// Run the command and return `(peak PSS in KiB, seconds)`. `None` if the conversion failed.
 fn run_and_measure(mut command: Command) -> Option<(f64, f64)> {
     let started = Instant::now();
     let mut child = command
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("変換コマンドを起動できません");
+        .expect("cannot start the conversion command");
 
     let mut peak = 0;
     loop {
-        match child.try_wait().expect("子プロセスの状態を取得できません") {
+        match child
+            .try_wait()
+            .expect("cannot obtain the child process's status")
+        {
             Some(status) => {
                 if !status.success() {
                     return None;
@@ -205,10 +220,10 @@ fn run_and_measure(mut command: Command) -> Option<(f64, f64)> {
     Some((peak as f64, started.elapsed().as_secs_f64()))
 }
 
-/// `root`とその子孫プロセスの`Pss`の合計(KiB)。
+/// The total `Pss` (KiB) of `root` and its descendant processes.
 ///
-/// `Pss`(proportional set size)は共有ページを共有しているプロセス数で割って
-/// 数えるので、マルチプロセスのブラウザでも二重計上にならない。
+/// `Pss` (proportional set size) divides shared pages by the number of processes sharing
+/// them, so a multi-process browser is not double-counted.
 fn tree_pss_kib(root: u32) -> u64 {
     let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
     let Ok(entries) = std::fs::read_dir("/proc") else {
@@ -269,11 +284,11 @@ fn wk_command(wkhtmltopdf: &Path, html: &Path, out: &Path) -> Command {
     command
         .arg("-q")
         .arg("--disable-javascript")
-        // `@font-face`のローカルフォントを読ませるために要る。
+        // Needed so the local font in `@font-face` can be read.
         .arg("--enable-local-file-access")
         .arg("--zoom")
         .arg(ZOOM)
-        // wkhtmltopdfは`@page`の`size`/`margin`を見ないのでCLIでも渡す。
+        // wkhtmltopdf ignores `@page`'s `size`/`margin`, so they are passed on the CLI too.
         .arg("--page-size")
         .arg(PAGE_SIZE)
         .args(["-T", MARGIN, "-B", MARGIN, "-L", MARGIN, "-R", MARGIN])
@@ -286,7 +301,7 @@ fn chrome_command(chrome: &Path, html: &Path, out: &Path) -> Command {
     let mut command = Command::new(chrome);
     command
         .arg("--headless")
-        // コンテナやWSLで動かすために要る(プロセス構成は変わる)。
+        // Needed to run it in a container or under WSL (the process layout changes).
         .arg("--no-sandbox")
         .arg("--disable-gpu")
         .arg("--disable-extensions")
@@ -296,12 +311,12 @@ fn chrome_command(chrome: &Path, html: &Path, out: &Path) -> Command {
     command
 }
 
-/// PDF内の`/Type /Page`の個数。3者が同じ量を処理したかの確認用。
+/// The number of `/Type /Page` occurrences in the PDF. Used to confirm all three processed the same amount.
 fn count_pages(pdf: &Path) -> usize {
     let bytes = std::fs::read(pdf).unwrap_or_default();
     let mut count = 0;
     for (i, _) in bytes.windows(5).enumerate().filter(|(_, w)| *w == b"/Type") {
-        // `/Type`と`/Page`の間の空白の有無は書き手によって違う。
+        // Whether there is whitespace between `/Type` and `/Page` differs by writer.
         let mut j = i + 5;
         while matches!(bytes.get(j), Some(b' ' | b'\n' | b'\r')) {
             j += 1;
@@ -314,7 +329,7 @@ fn count_pages(pdf: &Path) -> usize {
     count
 }
 
-/// 比較用のHTML。用紙は`@page`で、寸法はpxで書く(3者が解釈できる単位のため)。
+/// The HTML used for the comparison. The paper is set with `@page` and the dimensions in px (a unit all three understand).
 fn build_html(count: usize, table_mode: bool) -> String {
     let mut html = String::with_capacity(count * 120);
     let _ = write!(
@@ -351,7 +366,7 @@ fn build_html(count: usize, table_mode: bool) -> String {
     html
 }
 
-/// `env_var`で指定された場所、無ければ`PATH`から探す。
+/// Look in the location given by `env_var`, and on `PATH` if there is none.
 fn find_binary(env_var: &str, name: &str) -> Option<PathBuf> {
     if let Ok(path) = env::var(env_var) {
         let path = PathBuf::from(path);
@@ -364,7 +379,7 @@ fn find_binary(env_var: &str, name: &str) -> Option<PathBuf> {
         .then(|| PathBuf::from(String::from_utf8_lossy(&found.stdout).trim()))
 }
 
-/// `cargo build --release`が置くCLIバイナリ。
+/// The CLI binary `cargo build --release` produces.
 fn release_binary() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../target/release")
@@ -375,7 +390,7 @@ fn font_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fonts/DejaVuSans.ttf")
 }
 
-/// 1000区切りのカンマを入れる(表の読みやすさのため)。
+/// Insert thousands separators (to make the table easier to read).
 fn group_digits(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);

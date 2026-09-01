@@ -1,14 +1,14 @@
-//! harfrustによるテキストシェイピングとグリフ幅の取得。
+//! Text shaping and glyph advance lookup via harfrust.
 
 use super::font::Font;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShapedGlyph {
     pub glyph_id: u16,
-    /// このグリフに対応する、元のテキスト内のUTF-8バイトオフセット
-    /// (PDFの`/ToUnicode`CMap生成等、グリフから元の文字へ逆引きする際に使う)。
+    /// UTF-8 byte offset of this glyph in the original text
+    /// (used to map a glyph back to its source character, e.g. when building a PDF `/ToUnicode` CMap).
     pub cluster: u32,
-    /// 描画位置に対するアドバンス幅・オフセット(px)。
+    /// Advance width and offset relative to the drawing position, in px.
     pub x_advance: f32,
     pub x_offset: f32,
     pub y_offset: f32,
@@ -17,11 +17,11 @@ pub struct ShapedGlyph {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapedText {
     pub glyphs: Vec<ShapedGlyph>,
-    /// 全グリフのアドバンス幅の合計(px)。
+    /// Sum of the advance widths of all glyphs, in px.
     pub width: f32,
 }
 
-/// `font`で`text`を`font_size`(px)にシェイピングする。
+/// Shape `text` with `font` at `font_size` (px).
 pub fn shape_text(font: &Font, text: &str, font_size: f32) -> ShapedText {
     let units_per_em = font.units_per_em() as f32;
     let scale = if units_per_em > 0.0 {
@@ -32,7 +32,7 @@ pub fn shape_text(font: &Font, text: &str, font_size: f32) -> ShapedText {
 
     let mut buffer = harfrust::UnicodeBuffer::new();
     buffer.push_str(text);
-    // 書字方向・スクリプト・言語をここで確定させ、それをキーに計画させる
+    // Pin down direction, script and language here, and let the plan be keyed on them
     buffer.guess_segment_properties();
     let plan = font.shape_plan(&(buffer.direction(), buffer.script(), buffer.language()));
     let output = font
@@ -56,7 +56,7 @@ pub fn shape_text(font: &Font, text: &str, font_size: f32) -> ShapedText {
     ShapedText { glyphs, width }
 }
 
-/// レイアウトの行分割が必要とする、テキストの描画幅(px)のみを返す簡易API。
+/// Simple API returning only the drawn width of the text (px), which is all line breaking needs.
 pub fn measure_text(font: &Font, text: &str, font_size: f32) -> f32 {
     shape_text(font, text, font_size).width
 }

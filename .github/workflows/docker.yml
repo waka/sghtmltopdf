@@ -1,10 +1,10 @@
 name: docker
 
-# 公式Dockerイメージ(ghcr.io/waka/sghtmltopdf)のビルド・スモークテスト・push
-# 対象は linux/amd64 と linux/arm64
-#   ビルドはどちらもamd64ランナー上で行い、arm64はDockerfileの中でクロスコンパイルする
-#   - QEMUの中でrustcを動かすと数十分かかるため
-#   - QEMUは出来上がったarm64イメージを動かすためだけに使う
+# Build, smoke-test and push the official Docker image (ghcr.io/waka/sghtmltopdf).
+# Targets are linux/amd64 and linux/arm64.
+#   Both are built on amd64 runners; arm64 is cross-compiled inside the Dockerfile.
+#   - Running rustc under QEMU takes tens of minutes.
+#   - QEMU is used only to run the finished arm64 image.
 on:
   push:
     branches: [main]
@@ -30,13 +30,13 @@ jobs:
         arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v4
-      # arm64のイメージを実行するためのbinfmt登録(ビルドには要らない)
+      # Register binfmt so the arm64 image can be run (not needed to build it)
       - uses: docker/setup-qemu-action@v3
         if: matrix.arch == 'arm64'
         with:
           platforms: arm64
       - uses: docker/setup-buildx-action@v3
-      - name: イメージをビルドしてローカルに読み込む
+      - name: Build the image and load it locally
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -45,7 +45,7 @@ jobs:
           tags: sghtmltopdf:smoke
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-      - name: スモークテスト
+      - name: Smoke test
         run: PLATFORM=linux/${{ matrix.arch }} docker/smoke.sh sghtmltopdf:smoke
 
   push:
@@ -58,15 +58,15 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-      # バージョンは全配布物で揃える
-      - name: タグとcoreのバージョンが一致することを確かめる
+      # The version must match across every distribution artifact
+      - name: Check the tag matches core's version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           tag="${GITHUB_REF_NAME#v}"
           version=$(grep -m1 '^version = ' core/Cargo.toml | cut -d'"' -f2)
           echo "tag=$tag version=$version"
           if [ "$tag" != "$version" ]; then
-            echo "::error::タグ($tag)とcore/Cargo.tomlのversion($version)が一致しません" >&2
+            echo "::error::the tag ($tag) does not match the version in core/Cargo.toml ($version)" >&2
             exit 1
           fi
       - uses: docker/setup-buildx-action@v3
@@ -75,8 +75,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # タグは <major>.<minor>.<patch> / <major>.<minor> / latest / sha-<short> の4つ
-      # `latest`はsemverタグのときだけ付く(mainへのpushでは`edge`になる)
+      # Four tag forms: <major>.<minor>.<patch> / <major>.<minor> / latest / sha-<short>
+      # `latest` is only applied for semver tags (a push to main gets `edge` instead)
       - uses: docker/metadata-action@v5
         id: meta
         with:
@@ -86,7 +86,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=edge,branch=main
             type=sha
-      - name: マルチアーキのイメージをpushする
+      - name: Push the multi-arch image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -97,10 +97,10 @@ jobs:
           cache-from: |
             type=gha,scope=amd64
             type=gha,scope=arm64
-      - name: pushしたタグ
+      - name: Pushed tags
         run: |
           {
-            echo "### pushしたイメージ"
+            echo "### Pushed images"
             echo '```'
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
