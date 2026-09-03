@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `position: relative` now moves the content of the element together with its background
+  and border (#29). The offset was applied to the box's own rectangle after its lines and
+  child boxes had been placed, so text, images, nested blocks and list markers were left
+  at the unoffset position. A `position: relative` inline element (`<span>`) now shifts
+  its own text too, and an absolutely positioned descendant of a relative element uses the
+  offset padding box as its containing block.
 - Paint the rows of a `display: grid` container on the pages it was split across (#18).
   The pagination allocated the right number of pages and moved each row band into page
   coordinates, but shifted the items inside the band the opposite way, so every page after

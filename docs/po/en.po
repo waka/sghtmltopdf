@@ -4427,11 +4427,15 @@ msgstr "`top`, `right`, `bottom`, `left`"
 #: src/supports/properties.md:70
 msgid ""
 "`absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を"
-"避けるため`top`基準に解決する)。`relative`ではオフセットとして機能する"
+"避けるため`top`基準に解決する)。`relative`では背景・枠線と中身(テキスト・画像・"
+"子ボックス)をまとめてずらすオフセットとして機能する。`relative`の`top`/`bottom`の"
+"パーセンテージは0扱い"
 msgstr ""
 "With `absolute` and `fixed`, aligning to the bottom by giving `bottom` alone "
 "is not supported; everything resolves from `top`, to avoid a circular "
-"dependency on the height. With `relative` they act as offsets"
+"dependency on the height. With `relative` they act as offsets that move the "
+"background and border together with the content (text, images, child "
+"boxes). Percentages in `top`/`bottom` on a `relative` element count as 0"
 
 #: src/supports/properties.md:71
 msgid "`inset`(ショートハンド)"
