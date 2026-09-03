@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against, so plain source order gives the same result, and where it differs the usual
   specificity contest decides. The bare `@layer a, b;` ordering statement is still ignored.
 
+- Render colour emoji in colour (#12). Embedded bitmaps (`CBDT`/`CBLC`, `sbix`) and
+  `COLR`/`CPAL` v0 layered fills are both drawn; a font carrying either is now accepted by
+  font selection, by `@font-face` and by the system font search, so Apple Color Emoji and
+  Noto Color Emoji work whether they are named through `--font` or found automatically.
+  Before this, such a font was declined outright (#9) and the emoji fell back to tofu.
+
+  Colour glyphs go into the PDF as a Type 3 font, one glyph procedure per glyph: a bitmap
+  draws an image XObject with its alpha channel as an `/SMask`, and a `COLR` v0 glyph fills
+  its layers as paths in the palette's colours. The glyphs stay text, so `/ToUnicode`,
+  extraction, search and copy work exactly as they do for ordinary characters, and line
+  breaking, justification, `letter-spacing` and `--grayscale` all apply to them. The
+  original font program is never embedded, so the 9.9MB pass-through of a bitmap-only font
+  cannot happen: only the glyphs the document actually uses are written.
+
+  COLRv1 (gradients, transforms, compositing) and OpenType SVG remain out of scope. A
+  COLRv1 font carries `glyf`, so it still renders as its monochrome base outlines. Palette
+  selection through `font-palette` is not supported; palette 0 is always used.
+
 ### Fixed
 
 - Paint the rows of a `display: grid` container on the pages it was split across (#18).
@@ -30,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   long document body laid out with `flex-direction: column` flows across pages. The space
   `gap` (or `justify-content`) leaves between the bands is carried across the split, so a
   container that grows past one page keeps the spacing it had.
+- Measure a word space with the text font rather than with a fallback colour font. Noto
+  Color Emoji is monospaced at about 1.25em, so the gap following an emoji came out roughly
+  four times too wide.
 - `text-align` now moves inline images and `inline-block` boxes along with the text (#19).
   A line box keeps its text runs and its atomic inline boxes (`<img>`, `display: inline-block`,
   form controls) in separate lists, and the alignment step only shifted the runs, so a

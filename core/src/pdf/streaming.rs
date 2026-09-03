@@ -25,14 +25,15 @@ use crate::layout::{Page, PageSettings};
 use crate::sink::Sink;
 use crate::style::{ComputedStyle, PageRule};
 
+use super::color_font::{write_color_fonts, FontPlan};
 use super::document::{
     alpha_gs_resource_name, collect_anchor_positions, collect_image_uses, collect_link_areas,
     collect_margin_box_usage, collect_opacity_uses, collect_usage, file_identifier, render_box,
     render_header_footer_rules, render_margin_boxes, render_page_overlay, write_document_info,
     write_link_annotation, write_resources, LinkSettings, PageOverlay, RefAllocator, RenderTarget,
-    ALPHA_STEPS,
+    TextFonts, ALPHA_STEPS,
 };
-use super::font::{deflate, embed_font_streaming_chunks, FontIds, FontUsage};
+use super::font::{deflate, embed_font_streaming_chunks, FontUsage};
 use super::img::{embed_image_streaming_chunks, ids_for_image, ImageIds, PreparedImage};
 use super::options::PdfOutputOptions;
 
@@ -50,8 +51,12 @@ pub struct StreamingPdfWriter<S: Sink> {
     alloc: RefAllocator,
     catalog_id: Ref,
     pages_tree_id: Ref,
-    font_ids: Vec<FontIds>,
-    font_resource_names: Vec<String>,
+    /// Font resources (Type0 for outline glyphs, Type 3 for colour glyphs).
+    ///
+    /// Allocated up front because each page writes its own `/Resources`
+    /// dictionary as soon as the page is final: there is no later point at
+    /// which a font could be added to a page already written out.
+    font_plan: FontPlan,
     usages: Vec<FontUsage>,
     page_ids: Vec<Ref>,
     settings: PageSettings,
@@ -124,17 +129,10 @@ impl<S: Sink> StreamingPdfWriter<S> {
         let mut alloc = RefAllocator::default();
         let catalog_id = alloc.next();
         let pages_tree_id = alloc.next();
-        let font_ids: Vec<FontIds> = (0..fonts.len())
-            .map(|_| FontIds {
-                font_file: alloc.next(),
-                descriptor: alloc.next(),
-                cid_font: alloc.next(),
-                type0_font: alloc.next(),
-                to_unicode: alloc.next(),
-                cid_to_gid_map: alloc.next(),
-            })
-            .collect();
-        let font_resource_names = (0..fonts.len()).map(|i| format!("F{i}")).collect();
+        // Streaming cannot know how many colour glyphs the document will use,
+        // so reserve the upper bound for every font that could have any. Slots
+        // that go unused are written as empty Type 3 fonts at `finish`.
+        let font_plan = FontPlan::new(fonts, &mut alloc, &FontPlan::upper_bound_counts(fonts));
         let usages = (0..fonts.len()).map(|_| FontUsage::default()).collect();
         let alpha_gs_ids: Vec<Ref> = (0..=ALPHA_STEPS).map(|_| alloc.next()).collect();
         let alpha_gs_names: Vec<String> = (0..=ALPHA_STEPS).map(alpha_gs_resource_name).collect();
@@ -146,8 +144,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             alloc,
             catalog_id,
             pages_tree_id,
-            font_ids,
-            font_resource_names,
+            font_plan,
             usages,
             page_ids: Vec::new(),
             settings,
@@ -301,16 +298,20 @@ impl<S: Sink> StreamingPdfWriter<S> {
         content.transform([scale, 0.0, 0.0, scale, 0.0, 0.0]);
         // 色変換を挟むラッパー。
         let mut target = RenderTarget::new(&mut content, self.output.grayscale);
+        // `remaps: None` — CIDs stay the original glyph IDs in streaming mode.
+        let text_fonts = TextFonts {
+            remaps: None,
+            plan: &self.font_plan,
+            usages: &self.usages,
+        };
         for b in &page.boxes {
-            // `remaps: None` — CIDは常に元のグリフIDのまま使う。
             render_box(
                 &mut target,
                 b,
                 styles,
                 fonts,
                 &self.settings,
-                None,
-                &self.font_resource_names,
+                &text_fonts,
                 &self.image_ids,
                 background_images,
                 &self.alpha_gs_names,
@@ -323,7 +324,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 &mut target,
                 overlay,
                 fonts,
-                &self.font_resource_names,
+                &text_fonts,
                 &self.alpha_gs_names,
             );
         }
@@ -341,8 +342,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 &self.page_rules,
                 page_number,
                 total_pages,
-                None,
-                &self.font_resource_names,
+                &text_fonts,
             );
         }
         let content_bytes = content.finish();
@@ -416,8 +416,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             }
             write_resources(
                 p.resources(),
-                &self.font_resource_names,
-                &self.font_ids,
+                &self.font_plan,
                 &page_image_refs,
                 &form_refs,
                 &self.alpha_gs_names,
@@ -441,8 +440,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 form.group().transparency().isolated(true).knockout(false);
                 write_resources(
                     form.resources(),
-                    &self.font_resource_names,
-                    &self.font_ids,
+                    &self.font_plan,
                     &page_image_refs,
                     &form_refs,
                     &self.alpha_gs_names,
@@ -458,12 +456,31 @@ impl<S: Sink> StreamingPdfWriter<S> {
     /// 残りのオブジェクト(フォント埋め込み・ページツリー・カタログ・
     /// xref/trailer)をすべて書き出し、`sink.finish()`を呼ぶ。
     pub fn finish(mut self, fonts: &FontCollection) -> Result<S::Output, S::Error> {
-        let font_ids = self.font_ids.clone();
         let usages = std::mem::take(&mut self.usages);
-        for ((font, &ids), usage) in fonts.fonts().iter().zip(font_ids.iter()).zip(usages.iter()) {
+        for (index, font) in fonts.fonts().iter().enumerate() {
+            let Some(simple) = self.font_plan.simple(index) else {
+                // A font without outlines has no Type0 font: every glyph it
+                // contributes is drawn by a Type 3 colour font instead.
+                continue;
+            };
+            let ids = simple.ids;
+            let empty = FontUsage::default();
+            let usage = usages.get(index).unwrap_or(&empty);
             for (id, chunk) in embed_font_streaming_chunks(font, ids, usage, self.output.compress) {
                 self.write_chunk(id, &chunk)?;
             }
+        }
+        let mut alloc = std::mem::take(&mut self.alloc);
+        let color_chunks = write_color_fonts(
+            fonts,
+            &self.font_plan,
+            &usages,
+            &mut alloc,
+            &self.output.clone(),
+        );
+        self.alloc = alloc;
+        for (id, chunk) in color_chunks {
+            self.write_chunk(id, &chunk)?;
         }
 
         let mut chunk = Chunk::new();

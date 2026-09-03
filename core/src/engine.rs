@@ -613,7 +613,7 @@ fn load_explicit_fonts<E>(specs: &[FontSpec]) -> Result<Vec<Font>, EngineError<E
             .map_err(|e| EngineError::Font(format!("フォントの読み込みに失敗しました: {e}")))?;
         // 明示指定でも、輪郭を持たないフォントは採らない。埋め込んでも
         // 何も描かれないうえ、サブセット化が効かずPDFだけが膨らむため。
-        if !font.has_outlines() {
+        if !font.can_render() {
             warn_font_without_outlines(&spec.path.display().to_string());
             continue;
         }
@@ -896,7 +896,7 @@ fn register_generic_fonts<E>(
                 family.css_name()
             ))
         })?;
-        if !font.has_outlines() {
+        if !font.can_render() {
             warn_font_without_outlines(&spec.path.display().to_string());
             continue;
         }

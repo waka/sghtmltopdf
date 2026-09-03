@@ -264,7 +264,7 @@ fn decode_jpeg(bytes: &[u8]) -> Result<PreparedImage, ImageDecodeError> {
     })
 }
 
-fn decode_png(bytes: &[u8]) -> Result<PreparedImage, ImageDecodeError> {
+pub(super) fn decode_png(bytes: &[u8]) -> Result<PreparedImage, ImageDecodeError> {
     let mut decoder = png::Decoder::new(Cursor::new(bytes));
     decoder.set_transformations(Transformations::normalize_to_color8());
     let mut reader = decoder
@@ -589,6 +589,38 @@ pub fn ids_for_image<'a>(
     Some((image_ids.get_mut(&key)?, is_new))
 }
 
+/// Write a raster image out as a list of one-object-per-chunk pieces.
+///
+/// The alpha channel (`/SMask`) and the image proper go in separate chunks
+/// both because streaming output records a `Sink` offset per object, and to
+/// avoid holding two planes in memory at once. Colour glyph bitmaps
+/// ([`super::color_font`]) go through here as well.
+pub(super) fn raster_plane_chunks(
+    image: &PreparedImage,
+    root: Ref,
+    alpha_id: Option<Ref>,
+    grayscale: bool,
+) -> Vec<(Ref, Chunk)> {
+    let (color, alpha) = raster_planes(image, grayscale);
+    let (width, height) = (pixels(image.width), pixels(image.height));
+    let mut chunks = Vec::with_capacity(2);
+    if let (Some(alpha), Some(alpha_id)) = (&alpha, alpha_id) {
+        let mut chunk = Chunk::new();
+        write_plane(&mut chunk, alpha_id, width, height, alpha, None);
+        chunks.push((alpha_id, chunk));
+    }
+    let mut chunk = Chunk::new();
+    write_plane(&mut chunk, root, width, height, &color, alpha_id);
+    chunks.push((root, chunk));
+    chunks
+}
+
+/// Whether `image` has an alpha channel (`/SMask`), which is what tells the
+/// caller whether to allocate a `Ref` for one.
+pub(super) fn has_alpha_plane(image: &PreparedImage) -> bool {
+    matches!(&image.content, PreparedContent::Raster { alpha, .. } if alpha.is_some())
+}
+
 /// バッチモード向け: `image`のXObjectを`pdf`(`DerefMut<Target = Chunk>`)へ
 /// 直接書き込む。
 pub fn embed_image(
@@ -599,26 +631,9 @@ pub fn embed_image(
 ) {
     match &mut ids.kind {
         ImageIdsKind::Raster { alpha } => {
-            let alpha_id = *alpha;
-            let (color, alpha) = raster_planes(image, grayscale);
-            if let (Some(alpha), Some(alpha_id)) = (&alpha, alpha_id) {
-                write_plane(
-                    pdf,
-                    alpha_id,
-                    pixels(image.width),
-                    pixels(image.height),
-                    alpha,
-                    None,
-                );
+            for (_, chunk) in raster_plane_chunks(image, ids.root, *alpha, grayscale) {
+                pdf.extend(&chunk);
             }
-            write_plane(
-                pdf,
-                ids.root,
-                pixels(image.width),
-                pixels(image.height),
-                &color,
-                alpha_id,
-            );
         }
         #[cfg(feature = "svg")]
         ImageIdsKind::Vector { graphic } => {
@@ -641,36 +656,10 @@ pub fn embed_image_streaming_chunks(
     grayscale: bool,
 ) -> Vec<EmbedChunk> {
     match &mut ids.kind {
-        ImageIdsKind::Raster { alpha } => {
-            let alpha_id = *alpha;
-            let (color, alpha) = raster_planes(image, grayscale);
-            // アルファと本体は別チャンクにして1枚ずつ書き出す
-            // (両方を同時にメモリへ載せないため)。
-            let mut chunks = Vec::with_capacity(2);
-            if let (Some(alpha), Some(alpha_id)) = (&alpha, alpha_id) {
-                let mut chunk = Chunk::new();
-                write_plane(
-                    &mut chunk,
-                    alpha_id,
-                    pixels(image.width),
-                    pixels(image.height),
-                    alpha,
-                    None,
-                );
-                chunks.push(EmbedChunk::single(alpha_id, chunk));
-            }
-            let mut chunk = Chunk::new();
-            write_plane(
-                &mut chunk,
-                ids.root,
-                pixels(image.width),
-                pixels(image.height),
-                &color,
-                alpha_id,
-            );
-            chunks.push(EmbedChunk::single(ids.root, chunk));
-            chunks
-        }
+        ImageIdsKind::Raster { alpha } => raster_plane_chunks(image, ids.root, *alpha, grayscale)
+            .into_iter()
+            .map(|(id, chunk)| EmbedChunk::single(id, chunk))
+            .collect(),
         #[cfg(feature = "svg")]
         ImageIdsKind::Vector { graphic } => match graphic.take() {
             // 書き出しは`src`ごとに1回だけなので、複製せず取り出して渡す

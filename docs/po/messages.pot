@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-09-04T00:08:46+09:00\n"
+"POT-Creation-Date: 2026-09-03T11:09:54-05:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -5171,44 +5171,75 @@ msgstr ""
 
 #: src/supports/fonts.md:115
 msgid ""
-"絵文字はモノクロのアウトラインフォントで描きます。 GoogleのNoto Emoji(カラーのNoto Color "
-"Emojiではなく、アウトライン版)を指定すれば、そのまま描画されます。"
+"カラー絵文字はそのままカラーで描画します。 "
+"対応しているのは埋め込みビットマップ(`CBDT`/`CBLC`・`sbix`)と`COLR`/`CPAL`のversion 0です。"
 msgstr ""
 
 #: src/supports/fonts.md:122
-msgid "カラーフォントは非対応です。 `CBDT`/`CBLC`・`COLR`/`CPAL`・`sbix`のいずれも扱いません。"
+msgid ""
+"macOSのApple Color Emoji(`sbix`)、LinuxのNoto Color "
+"Emoji(`CBDT`/`CBLC`)のどちらも使えます。 明示しなくても、文書に出てくる文字を描けるフォントとしてシステムから自動的に見つかります。"
 msgstr ""
 
 #: src/supports/fonts.md:125
-msgid "この種のフォントは指定しても使われず、警告が出ます。"
+msgid "モノクロのアウトラインフォント(GoogleのNoto Emojiなど)もこれまでどおり使えます。"
 msgstr ""
 
-#: src/supports/fonts.md:133
+#: src/supports/fonts.md:127
+msgid "PDFの中でどうなるか"
+msgstr ""
+
+#: src/supports/fonts.md:129
+msgid "カラーグリフはType 3フォントとしてPDFへ書き出します。 グリフはテキストのままなので、抽出・検索・コピーは通常の文字と同じように効きます。"
+msgstr ""
+
+#: src/supports/fonts.md:132
 msgid ""
-"黙って無視するのではなく採用しないのは、輪郭を持たないフォントを埋め込むと、文字が豆腐にすらならず完全に消えたうえ、サブセット化が効かずPDFだけが数MB膨らむためです。 "
-"不採用にすれば通常のフォント探索へ落ち、描画できる文字が無ければ「豆腐になります」の警告が文字を名指しして出ます。"
+"元のフォントプログラムは埋め込みません。 "
+"輪郭を持たないフォントはサブセット化しても削るものが無いため、埋め込むと10MB超のファイルがほぼ素通しでPDFへ入ってしまいます。 "
+"かわりにビットマップは画像として、`COLR`のレイヤはパスの塗りとして、使ったグリフの分だけが入ります。"
 msgstr ""
 
 #: src/supports/fonts.md:136
-msgid "サブセット化"
+msgid "`--grayscale`は絵文字のビットマップにも効きます。"
 msgstr ""
 
 #: src/supports/fonts.md:138
-msgid "埋め込まれるのは実際に使ったグリフだけです。 日本語フォントを丸ごと指定しても、PDFのサイズは文書に出てくる文字の分にしかなりません。"
+msgid "対応していないもの"
+msgstr ""
+
+#: src/supports/fonts.md:140
+msgid "COLRv1(グラデーション・変換・合成)。COLRv1のフォントは`glyf`を持つため、ベースの輪郭がモノクロで描画されます"
 msgstr ""
 
 #: src/supports/fonts.md:141
+msgid "OpenType SVG(`SVG `テーブル)"
+msgstr ""
+
+#: src/supports/fonts.md:142
+msgid "`font-palette`によるパレットの選択(常に0番のパレットを使います)"
+msgstr ""
+
+#: src/supports/fonts.md:144
+msgid "サブセット化"
+msgstr ""
+
+#: src/supports/fonts.md:146
+msgid "埋め込まれるのは実際に使ったグリフだけです。 日本語フォントを丸ごと指定しても、PDFのサイズは文書に出てくる文字の分にしかなりません。"
+msgstr ""
+
+#: src/supports/fonts.md:149
 msgid "ストリーミングモードでの注意"
 msgstr ""
 
-#: src/supports/fonts.md:143
+#: src/supports/fonts.md:151
 msgid ""
 "[ストリーミングモード](../usage/cli/streaming.md)では、文書全体を一度に持たないため "
 "上の3・4のシステムフォント探索が行われません(警告を出して既定フォントで描画します)。 "
 "`--font`系オプションか`@font-face`で明示すれば、ストリーミングでも意図どおりのフォントになります。"
 msgstr ""
 
-#: src/supports/fonts.md:147
+#: src/supports/fonts.md:155
 msgid ""
 "例外として、フォントを1つも指定しなかった場合だけは、既定フォント(ラテン)に加えてCJKを描画できるフォントを1本先回りで読み込みます。 "
 "日本語の文書を何も指定せずストリーミングで変換しても豆腐にならないのはこのためです。 CJK以外のスクリプトは警告の対象になります。"
@@ -7525,7 +7556,9 @@ msgstr ""
 
 #: src/appendix/limitations.md:43
 msgid ""
-"カラーフォント(`CBDT`/`CBLC`・`COLR`/`CPAL`・`sbix`)は非対応です。絵文字は[フォント](../supports/fonts.md#絵文字)を参照してください"
+"カラーフォントは埋め込みビットマップ(`CBDT`/`CBLC`・`sbix`)と`COLR`/`CPAL` "
+"v0のみ。COLRv1(グラデーション)とOpenType "
+"SVGは非対応です。絵文字は[フォント](../supports/fonts.md#絵文字)を参照してください"
 msgstr ""
 
 #: src/appendix/limitations.md:44

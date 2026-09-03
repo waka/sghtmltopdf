@@ -205,10 +205,10 @@ impl SystemFonts {
                 Font::from_bytes(data.to_vec(), index).ok()
             })
             .flatten()
-            // 輪郭を持たないフォント(ビットマップのカラー絵文字等)は、名前が
-            // 一致しても何も描けないので採らない。システムフォント探索は全て
-            // ここを通るので、判定はこの1箇所に集約する。
-            .filter(|font| font.has_outlines())
+            // A font with neither outlines nor colour glyphs draws nothing,
+            // however well its name matched. Every system font lookup goes
+            // through here, so this is the one place that test lives.
+            .filter(|font| font.can_render())
     }
 
     /// CSSの汎用family名(`monospace`/`serif`)を、自前の候補リスト
@@ -289,16 +289,15 @@ impl SystemFonts {
             let Some((family, _)) = info.families.first() else {
                 continue;
             };
-            // `cmap`にあるだけでは足りず、輪郭を持つことも要る(`Font::has_glyph`と
-            // 同じ判定を、`Font`を作らずにその場で行う)。カラー絵文字フォントは
-            // `cmap`を持つので、これが無いと「描ける」と誤判定して採ってしまう。
+            // Being in the `cmap` is not enough; the face also needs
+            // something to draw with. Same test as `Font::has_glyph`, done in
+            // place without building a `Font`.
             let covered = self
                 .db
                 .with_face_data(info.id, |data, index| {
                     skrifa::FontRef::from_index(data, index)
                         .map(|font| {
-                            font.charmap().map(c).is_some()
-                                && font.outline_glyphs().format().is_some()
+                            font.charmap().map(c).is_some() && super::font::face_can_render(&font)
                         })
                         .unwrap_or(false)
                 })
@@ -330,14 +329,22 @@ impl SystemFonts {
     /// フォント自身のメタデータ上「等幅」とされているフェースを1つ選び、その
     /// family名で改めて`load`する(weight/styleの面選択を`load`に任せるため)。
     fn load_any_monospaced(&self, weight: FontWeight, style: FontStyle) -> Option<Font> {
-        // 等幅フラグが立っていても`load`が採らない(輪郭を持たない)ことが
-        // あるので、最初の1件で打ち切らず順に試す。カラー絵文字フォントは
-        // 全グリフが同じ字幅なので等幅として登録されており、実際にここへ来る。
+        // `load` can decline a face even when the monospace flag is set, so
+        // try them in order rather than stopping at the first hit.
+        //
+        // Only faces with outlines qualify. A colour emoji font has the same
+        // advance for every glyph and so is registered as monospaced, and does
+        // reach this point — but `font-family: monospace` resolving to Noto
+        // Color Emoji would mean a document that draws emoji and not one
+        // character of body text.
         self.db
             .faces()
             .filter(|info| info.monospaced)
             .filter_map(|info| info.families.first().map(|(name, _)| name.clone()))
-            .find_map(|family| self.load(&family, weight, style))
+            .find_map(|family| {
+                self.load(&family, weight, style)
+                    .filter(|font| font.has_outlines())
+            })
     }
 
     /// `@font-face`の`src: local(...)`用。`name`(フルネームまたはPostScript名、
@@ -1029,16 +1036,13 @@ mod tests {
         assert_eq!(fonts.len(), 1);
     }
 
-    /// カラー絵文字フォントの回帰テスト。
-    ///
-    /// `cmap`は持つが輪郭を持たないフォントは、文字カバレッジによる自動探索の
-    /// 対象から外れなければならない。ここを通してしまうと、何も描けないフォントが
-    /// 「その文字を描画できるフォント」として採用され、無言で不可視のテキストと
-    /// 巨大なPDFになる(実際にNoto Color Emojiで起きていた)。
+    /// A bitmap colour emoji font is picked up by the coverage search (#12).
+    /// It has no outlines, but it can draw the character from its embedded
+    /// bitmaps, so it genuinely is "a font that can draw this".
     #[test]
-    fn a_colour_font_is_not_picked_up_by_the_coverage_search() {
-        // 探索対象をカラーフォント1本だけにしたディレクトリを作る
-        // (`FONTS_DIR`をそのまま渡すと輪郭を持つフォントが混ざる)。
+    fn a_bitmap_colour_font_is_picked_up_by_the_coverage_search() {
+        // Build a directory holding only the colour font: passing `FONTS_DIR`
+        // as-is would mix in fonts that do have outlines.
         let dir = std::env::temp_dir().join(format!(
             "sghtmltopdf-fonts-colour-only-{}",
             std::process::id()
@@ -1051,12 +1055,17 @@ mod tests {
         .unwrap();
 
         let system = SystemFonts::from_dir(&dir);
-        assert!(
-            system
-                .load_covering('\u{1F389}', FontWeight::Normal, FontStyle::Normal)
-                .is_none(),
-            "輪郭を持たないフォントを「絵文字を描画できる」と判定してはならない"
-        );
+        let (family, font) = system
+            .load_covering('\u{1F389}', FontWeight::Normal, FontStyle::Normal)
+            .expect("a font that can draw the emoji from bitmaps should be accepted");
+        assert!(family.contains("Emoji"), "family name: {family}");
+        assert!(!font.has_outlines());
+        assert!(font.has_color_glyphs());
+
+        // A character the font cannot draw at all is still not found.
+        assert!(system
+            .load_covering('日', FontWeight::Normal, FontStyle::Normal)
+            .is_none());
 
         std::fs::remove_dir_all(&dir).ok();
     }

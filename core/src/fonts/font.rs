@@ -23,6 +23,10 @@ struct FaceView<'a> {
     shaper: Shaper<'a>,
     charmap: Charmap<'a>,
     glyph_metrics: GlyphMetrics<'a>,
+    /// For reading colour glyphs (embedded bitmaps, `COLR`/`CPAL`). Those
+    /// tables are consulted only once per glyph actually used, so there is no
+    /// dedicated view — just a reference to the whole font.
+    font: FontRef<'a>,
 }
 
 /// `FaceView`の借用元。
@@ -132,13 +136,17 @@ struct Metrics {
     weight: u16,
     bounding_box: BoundingBox,
     family_name: Option<String>,
-    /// グリフの輪郭(`glyf`/CFF/CFF2)を持つか。
+    /// Whether the font has glyph outlines (`glyf`/CFF/CFF2).
     ///
-    /// ビットマップ専用のカラー絵文字フォント(`CBDT`/`CBLC`)のように、
-    /// `cmap`は持つが輪郭を持たないフォントがある。この種のフォントは
-    /// 「その文字を持っている」ように見えて実際には何も描けないので、
-    /// フォント選択の対象から外すために区別する。
+    /// Some fonts carry a `cmap` but no outlines, such as bitmap-only colour
+    /// emoji fonts (`CBDT`/`CBLC`). Their font program is never embedded:
+    /// subsetting has nothing to strip and viewers reject the result.
     has_outlines: bool,
+    /// Whether the font has colour glyphs (embedded bitmaps, or `COLR`/`CPAL`).
+    ///
+    /// A font with this set can be drawn even without outlines; those glyphs
+    /// are written to the PDF as a Type 3 font.
+    has_color_glyphs: bool,
 }
 
 impl Metrics {
@@ -180,6 +188,7 @@ impl Metrics {
             is_monospaced: m.is_monospace,
             weight: attributes.weight.value() as u16,
             has_outlines: font.outline_glyphs().format().is_some(),
+            has_color_glyphs: super::color::has_color_glyphs(font),
             bounding_box: m
                 .bounds
                 .map(|b| BoundingBox {
@@ -194,16 +203,27 @@ impl Metrics {
     }
 }
 
-/// 輪郭を持たないフォントを採らなかったことを警告する。
+/// Whether an already-parsed face can draw anything, i.e. has outlines or
+/// colour glyphs.
 ///
-/// `source`は`--font`のパスや`@font-face`のfamily名のような、利用者が
-/// 指定した文字列。自動探索で外したものは対象外(そちらは結果として
-/// 「描画できるフォントがありません」の警告に乗る)。
+/// The same test as [`Font::can_render`], but without building a `Font` (which
+/// copies the byte slice). Used by the full scan over system fonts.
+pub(super) fn face_can_render(font: &FontRef<'_>) -> bool {
+    font.outline_glyphs().format().is_some() || super::color::has_color_glyphs(font)
+}
+
+/// Warn that a font was declined because it cannot draw anything.
+///
+/// That means a font with neither outlines (`glyf`/CFF) nor colour glyphs
+/// (bitmaps, `COLR`). `source` is whatever the user named it by: a `--font`
+/// path, an `@font-face` family. Fonts dropped by the automatic search are not
+/// reported here; they surface through the "no font can draw this" warning
+/// instead.
 pub fn warn_font_without_outlines(source: &str) {
     eprintln!(
-        "警告: {source} は輪郭を持たない(ビットマップのカラー絵文字専用の)\n  \
-         フォントのため使用しません。カラーフォントは未対応です。\n  \
-         絵文字にはモノクロのアウトライン版(Noto Emojiなど)を指定してください"
+        "警告: {source} は輪郭もカラーグリフも持たないため使用しません。\n  \
+         対応しているのは輪郭(glyf/CFF)、埋め込みビットマップ(CBDT/CBLC・sbix)、\n  \
+         COLR/CPAL v0です(COLRv1のグラデーションとOpenType SVGは未対応)"
     );
 }
 
@@ -255,6 +275,7 @@ impl Font {
                 shaper: owner.shaper_data.shaper(&font).build(),
                 charmap: font.charmap(),
                 glyph_metrics: font.glyph_metrics(Size::unscaled(), LocationRef::default()),
+                font,
             })
         })?;
 
@@ -435,19 +456,73 @@ impl Font {
         found
     }
 
-    /// `c`を実際に描画できるか。
+    /// Whether `c` can actually be drawn.
     ///
-    /// `cmap`にあるだけでは足りず、輪郭を持つフォントであることも要る
-    /// ([`Self::has_outlines`])。カラー絵文字フォントは`cmap`を持つので、
-    /// これを見ないと「描ける」と誤判定して無言で不可視のテキストを出す。
+    /// Being in the `cmap` is not enough: the font also has to have something
+    /// to draw with ([`Self::can_render`]). A font with neither outlines nor
+    /// colour glyphs can still carry a `cmap`, and without this check it would
+    /// be taken for capable and silently emit invisible text.
     pub fn has_glyph(&self, c: char) -> bool {
-        self.has_outlines() && self.glyph_id(c).is_some()
+        self.can_render() && self.glyph_id(c).is_some()
     }
 
-    /// グリフの輪郭(`glyf`/CFF/CFF2)を持つか。ビットマップ専用の
-    /// カラー絵文字フォントなど、これが`false`のフォントは何も描けない。
+    /// Whether the font has glyph outlines (`glyf`/CFF/CFF2).
+    ///
+    /// This is `false` for a bitmap-only colour emoji font. A font without
+    /// outlines is never embedded as a font program: subsetting has nothing to
+    /// strip and viewers cannot read the result.
     pub fn has_outlines(&self) -> bool {
         self.metrics.has_outlines
+    }
+
+    /// Whether the font has colour glyphs (embedded bitmaps, or `COLR`/`CPAL`).
+    pub fn has_color_glyphs(&self) -> bool {
+        self.metrics.has_color_glyphs
+    }
+
+    /// Whether this font can draw anything at all, i.e. has outlines or
+    /// colour glyphs.
+    ///
+    /// The single test font selection, `@font-face` loading and the system
+    /// font search use to decide whether a font is usable.
+    pub fn can_render(&self) -> bool {
+        self.has_outlines() || self.has_color_glyphs()
+    }
+
+    /// The colour representation of `glyph_id`: an embedded bitmap, or a
+    /// `COLR` v0 layer list. `None` when it has none, in which case it is an
+    /// ordinary outline glyph.
+    pub fn color_glyph(&self, glyph_id: u16) -> Option<super::color::ColorGlyph> {
+        if !self.has_color_glyphs() {
+            return None;
+        }
+        super::color::read(&self.view().font, glyph_id)
+    }
+
+    /// Whether `glyph_id` can be drawn as a colour glyph.
+    pub fn has_color_glyph(&self, glyph_id: u16) -> bool {
+        self.color_glyph(glyph_id).is_some()
+    }
+
+    /// Feed `glyph_id`'s outline to `pen`, used to write `COLR` v0 layers out
+    /// as PDF paths. A font without outlines does nothing.
+    pub fn draw_outline(&self, glyph_id: u16, pen: &mut impl skrifa::outline::OutlinePen) -> bool {
+        use skrifa::outline::DrawSettings;
+
+        let Some(glyph) = self
+            .view()
+            .font
+            .outline_glyphs()
+            .get(skrifa::GlyphId::from(glyph_id))
+        else {
+            return false;
+        };
+        glyph
+            .draw(
+                DrawSettings::unhinted(Size::unscaled(), LocationRef::default()),
+                pen,
+            )
+            .is_ok()
     }
 
     /// フォント名(`name`テーブルの Typographic Family、無ければ Family)。
@@ -608,8 +683,9 @@ mod tests {
 }
 
 #[cfg(test)]
-mod outline_tests {
+mod colour_tests {
     use super::*;
+    use crate::fonts::color::ColorGlyph;
 
     const TEST_FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
     /// ビットマップのみ(CBDT/CBLC)で、グリフの輪郭を一切持たないフォント。
@@ -619,27 +695,68 @@ mod outline_tests {
     );
 
     #[test]
-    fn a_normal_font_has_outlines() {
+    fn a_normal_font_has_outlines_and_no_colour_glyphs() {
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
         assert!(font.has_outlines());
+        assert!(font.can_render());
+        assert!(!font.has_color_glyphs());
         assert!(font.has_glyph('A'));
+        assert!(font.color_glyph(font.glyph_id('A').unwrap()).is_none());
     }
 
-    /// カラー絵文字フォントは`cmap`を持つので文字を持っているように見えるが、
-    /// 輪郭が無いので実際には何も描けない。「描画できる」と判定してしまうと、
-    /// 無言で不可視のテキストを出したうえPDFだけが膨らむ。
+    /// A bitmap-only font with no outlines at all can still be drawn from its
+    /// embedded bitmaps. While this was `false`, font selection kept ruling an
+    /// emoji font out as "cannot draw this character" — the behaviour before
+    /// #12.
     #[test]
-    fn a_colour_font_covers_nothing() {
+    fn a_bitmap_colour_font_can_render_the_characters_it_covers() {
         let font = Font::load(COLOR_EMOJI_FONT_PATH).expect("should load bundled colour font");
 
-        assert!(!font.has_outlines());
+        assert!(!font.has_outlines(), "premise: this font has no outlines");
+        assert!(font.has_color_glyphs());
+        assert!(font.can_render());
+        assert!(font.has_glyph('\u{1F389}'));
+        // A character missing from the cmap cannot be drawn by a colour font
+        // either.
+        assert!(!font.has_glyph('日'));
+    }
+
+    /// A bitmap glyph comes out as a PNG, and its placement rectangle
+    /// straddles the baseline in font units: the top sits near the ascent and
+    /// the bottom below the baseline.
+    #[test]
+    fn a_bitmap_colour_glyph_is_a_png_placed_across_the_baseline() {
+        let font = Font::load(COLOR_EMOJI_FONT_PATH).expect("should load bundled colour font");
+        let gid = font.glyph_id('\u{1F389}').expect("cmapは絵文字を持つ");
+
+        let Some(ColorGlyph::Bitmap(bitmap)) = font.color_glyph(gid) else {
+            panic!("CBDT/CBLCのグリフはビットマップとして読めるはず");
+        };
+
+        assert_eq!(
+            &bitmap.png[..8],
+            b"\x89PNG\r\n\x1a\n",
+            "a 32-bit CBDT glyph is stored as PNG"
+        );
+
+        let em = font.units_per_em() as f32;
+        // A Noto Color Emoji bitmap is wider than 1em: about 1.25em, matching
+        // its advance width.
+        let width = bitmap.x_max - bitmap.x_min;
         assert!(
-            font.glyph_id('\u{1F389}').is_some(),
-            "cmapは持つのでグリフIDは引ける"
+            width > em && width < em * 2.0,
+            "placement width is not plausible against the em: {width} (em={em})"
         );
         assert!(
-            !font.has_glyph('\u{1F389}'),
-            "輪郭が無いので描画できるとは言えない"
+            (bitmap.y_max - font.ascender() as f32).abs() < em * 0.1,
+            "the top is not near the ascent: {} (ascender={})",
+            bitmap.y_max,
+            font.ascender()
+        );
+        assert!(
+            bitmap.y_min < 0.0,
+            "the bottom should sit below the baseline: {}",
+            bitmap.y_min
         );
     }
 }

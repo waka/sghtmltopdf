@@ -1511,14 +1511,15 @@ fn streaming_stays_quiet_when_everything_is_resolvable() {
     assert!(stderr.is_empty(), "no warning expected, got: {stderr}");
 }
 
-/// 実在のカラー絵文字フォントを明示指定しても採用しないこと。
+/// A real colour emoji font is used, and its glyphs come out as a Type 3 font.
 ///
-/// このフォントは`cmap`を持つので「絵文字を描画できる」ように見えるが、
-/// 輪郭を一切持たないため実際には何も描けない。採用してしまうと、文字が
-/// 豆腐にすらならず消えたうえ、サブセット化が効かず10MB超のフォントが
-/// ほぼ素通しでPDFへ入る。
+/// The font has no outlines at all, so before colour font support it was
+/// declined outright and the emoji silently disappeared. Now the emoji is
+/// drawn from the font's embedded bitmaps, while the font program itself is
+/// still never embedded (subsetting cannot shrink a font with no `glyf`, so
+/// embedding it would drag the whole 10MB file into the PDF).
 #[test]
-fn a_colour_emoji_font_is_refused_with_a_warning() {
+fn a_colour_emoji_font_renders_its_bitmaps_without_embedding_the_font() {
     let dir = std::env::temp_dir().join(format!(
         "sghtmltopdf-e2e-{}-color-emoji",
         std::process::id()
@@ -1536,24 +1537,28 @@ fn a_colour_emoji_font_is_refused_with_a_warning() {
         .arg(&output)
         .output()
         .expect("failed to run sghtmltopdf binary");
-    assert!(out.status.success(), "変換自体は成功させる(1本外すだけ)");
+    assert!(out.status.success());
 
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
     assert!(
-        stderr.contains("輪郭を持たない") && stderr.contains("NotoColorEmoji.ttf"),
-        "不採用にした理由をフォント名付きで伝えるはず: {stderr}"
+        !stderr.contains("NotoColorEmoji.ttf"),
+        "the font is usable now, so nothing should be said about declining it: {stderr}"
     );
     assert!(
-        stderr.contains("\u{1F389}"),
-        "描画できなくなった文字を名指しする通常の警告にも乗るはず: {stderr}"
+        !stderr.contains('\u{1F389}'),
+        "the emoji is drawable, so it must not be reported as uncovered: {stderr}"
     );
 
     let bytes = std::fs::read(&output).expect("output PDF should exist");
     assert!(bytes.starts_with(b"%PDF-"));
+    assert!(
+        count_occurrences(&bytes, b"/Subtype /Type3") >= 1,
+        "the emoji should be drawn by a Type 3 font"
+    );
     let source_size = std::fs::metadata(COLOR_EMOJI_FONT_PATH).unwrap().len();
     assert!(
         (bytes.len() as u64) < source_size / 10,
-        "採用していたらフォントがほぼ素通しで入る。PDF={} 元フォント={source_size}",
+        "the bitmap font must not be embedded. PDF={} source font={source_size}",
         bytes.len()
     );
 

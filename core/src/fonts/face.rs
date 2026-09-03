@@ -57,8 +57,9 @@ fn load_one(
             FontFaceSource::Local(name) => system.load_by_full_name(name),
         };
         if let Some(font) = font {
-            // 読み込めても輪郭が無ければ何も描けないので採らず、次のsrcへ進む。
-            if !font.has_outlines() {
+            // Loaded, but with nothing to draw with (no outlines, no colour
+            // glyphs), so decline it and move on to the next src.
+            if !font.can_render() {
                 warn_font_without_outlines(&format!("@font-face \"{}\"のsrc", rule.family));
                 continue;
             }

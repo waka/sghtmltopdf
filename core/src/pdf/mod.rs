@@ -1,5 +1,6 @@
 //! レイアウト結果のPDFオブジェクトへのエンコード。
 
+mod color_font;
 mod document;
 mod font;
 mod img;

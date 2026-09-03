@@ -1609,11 +1609,22 @@ pub fn shape_standalone_line(
     )
 }
 
+/// Width of the gap between two words, measured on the font of the word that
+/// precedes it.
+///
+/// A font with no outlines is a colour-glyph-only font (Noto Color Emoji and
+/// friends): it is never chosen as a text font, only for the one emoji that
+/// needed it, and its space glyph is sized for emoji rather than for text
+/// (Noto Color Emoji is monospaced at about 1.25em). Measuring with it would
+/// leave a gap four times too wide after every emoji, so fall back to the
+/// first font in the collection that actually draws text.
 fn measure_space_width(fonts: &FontCollection, font_index: usize, font_size: f32) -> f32 {
-    let Some(font) = fonts.get(font_index) else {
-        return 0.0;
+    let font = match fonts.get(font_index) {
+        Some(font) if font.has_outlines() => Some(font),
+        _ => fonts.fonts().iter().find(|font| font.has_outlines()),
     };
-    measure_text(font, " ", font_size)
+    font.map(|font| measure_text(font, " ", font_size))
+        .unwrap_or(0.0)
 }
 
 /// 行内の各ランの計算済み`line_height`のうち最大値を基準に行の高さを決める。
