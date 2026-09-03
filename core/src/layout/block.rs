@@ -1609,8 +1609,10 @@ pub(super) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
         }
         LaidOutContent::Grid(grid) => {
             for row in grid.rows.iter_mut() {
-                row.top += delta;
-                row.bottom += delta;
+                // 行帯の上端/下端はアイテムと同じ座標空間にあるので、
+                // `shift_rect_y`と同じ「`delta`を引く」向きで動かす。
+                row.top -= delta;
+                row.bottom -= delta;
                 for item in row.items.iter_mut() {
                     shift_box_y_in_place(item, delta);
                 }
@@ -1661,8 +1663,8 @@ pub(super) fn shift_content_vertical(b: &LaidOutBox, delta: f32) -> LaidOutBox {
         }
         LaidOutContent::Grid(grid) => {
             for row in grid.rows.iter_mut() {
-                row.top += delta;
-                row.bottom += delta;
+                row.top -= delta;
+                row.bottom -= delta;
                 for item in row.items.iter_mut() {
                     *item = shift_box_y(item, delta);
                 }

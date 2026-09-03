@@ -569,7 +569,10 @@ fn place_box(
                     )
                 },
                 |child: &LaidOutBox| child.is_float,
-                margin_box_top,
+                |child: &LaidOutBox| {
+                    let top = margin_box_top(child);
+                    (top, top + child.layout.margin_box_height())
+                },
                 |child, ph, ps, c| {
                     place_box(child, ph, ps, c);
                 },
@@ -607,7 +610,7 @@ fn place_box(
                 move |i, _line| (forced_breaks[i], false),
                 // 行にfloatの概念は無い。
                 |_line: &LineBox| false,
-                |_line: &LineBox| 0.0,
+                |line: &LineBox| (line.rect.y, line.rect.y + line.rect.height),
                 |line, ph, ps, c| {
                     place_line(line, ph, ps, c);
                 },
@@ -634,7 +637,7 @@ fn place_box(
                 // the behaviour hard to predict.
                 |_i, _band: &FlexBand| (false, false),
                 |_band: &FlexBand| false,
-                |band: &FlexBand| band.top,
+                |band: &FlexBand| (band.top, band.bottom),
                 |band, ph, ps, c| {
                     place_flex_band(band, ph, ps, c);
                 },
@@ -834,24 +837,21 @@ fn place_split<T>(
     cursor: &mut f32,
     break_hints: impl Fn(usize, &T) -> (bool, bool),
     is_float: impl Fn(&T) -> bool,
-    item_margin_box_top: impl Fn(&T) -> f32,
+    item_extent: impl Fn(&T) -> (f32, f32),
     place_one: impl Fn(&mut T, f32, &mut PaginationState<'_>, &mut f32),
 ) {
     let top_extra = container.top_extra();
-    let bottom_extra = container.layout.padding.bottom
-        + container.layout.border.bottom
-        + container.layout.margin.bottom;
 
     // 最初のフラグメントの前に、コンテナ自身の上マージン/枠線/パディング分の
     // スペースを確保する(この余白がページの残りを超える極端なケースの調整は
     // 行わない
     *cursor += top_extra;
 
-    // 絶対Y座標(`b.layout.content.y`)→ページ内相対Y座標(`*cursor`)への
+    // 絶対Y座標(レイアウト時の座標)→ページ内相対Y座標(`*cursor`)への
     // 変換係数。コンテナの最初の子(通常フロー)の絶対Y位置は、コンテナ自身の
     // content領域の絶対Y位置(`b.layout.content.y`)に一致するため、これを
-    // 初期値として使える。非float項目を配置するたびに更新する(改ページで
-    // `*cursor`がリセットされても追従できるようにするため)。
+    // 初期値として使える。項目を1つ置くたびに、実際に置かれた位置から引き直す
+    // (改ページで`*cursor`がリセットされても追従できるようにするため)。
     let mut shift_reference = container.layout.content.y - *cursor;
 
     // `b`が実際に背景色・枠線を描画しないなら、そもそも装飾フラグメントを
@@ -903,6 +903,9 @@ fn place_split<T>(
     };
 
     let item_count = items.len();
+    // 強制改ページ直後は、`shift_reference`が前のページのものになっている。
+    // 次に置く項目はそのページの先頭へ来るので、係数を引き直してから使う。
+    let mut forced_page_start = false;
     for (i, item) in items.iter_mut().enumerate() {
         let (breaks_before, breaks_after) = break_hints(i, item);
         // 現在のページに実際の内容が何もなければ(祖先のマージン分だけ`cursor`が
@@ -910,6 +913,7 @@ fn place_split<T>(
         // 作るだけなので何もしない。
         if breaks_before && current_page_has_content(state) {
             force_new_page(state, cursor, &mut current_page, &mut segments);
+            forced_page_start = true;
         }
 
         if is_float(item) {
@@ -918,12 +922,23 @@ fn place_split<T>(
             // `place_one`(=`place_box`)内部の
             // `shift = margin_box_top -*cursor`計算が周囲の通常フローと同じ
             // 平行移動になり、正しいページ内相対位置に配置される。
-            let mut local_cursor = item_margin_box_top(item) - shift_reference;
+            let mut local_cursor = item_extent(item).0 - shift_reference;
             place_one(item, page_height, state, &mut local_cursor);
         } else {
-            let cursor_before_item = *cursor;
+            // レイアウト時の絶対座標をそのままページ内へ写す。マージンボックスの
+            // 高さを積み上げる方式だと、マージン相殺で重なっている margin box を
+            // 別々に数えてしまい、相殺したはずの分だけ間隔が開く(親へ持ち上げた
+            // 上マージンは階層の数だけ足され、兄弟間の相殺は2つとも足される)。
+            if forced_page_start {
+                shift_reference = item_extent(item).0 - *cursor;
+                forced_page_start = false;
+            }
+            // ページ先頭より上へ出る位置は描画できないので0で止める。
+            *cursor = (item_extent(item).0 - shift_reference).max(0.0);
             place_one(item, page_height, state, cursor);
-            shift_reference = item_margin_box_top(item) - cursor_before_item;
+            // `place_one`の中で改ページされることがあるため、実際に置かれた
+            // 結果(下端のページ内座標)から係数を引き直す。
+            shift_reference = item_extent(item).1 - *cursor;
 
             let now_page = state.current_index();
             if now_page != current_page {
@@ -945,11 +960,21 @@ fn place_split<T>(
         // 空ページを作らないため)。
         if breaks_after && i + 1 < item_count {
             force_new_page(state, cursor, &mut current_page, &mut segments);
+            forced_page_start = true;
         }
     }
 
-    // 呼び出し元(兄弟要素)のため、下マージン/枠線/パディング分もカーソルへ加算する。
-    *cursor += bottom_extra;
+    // 呼び出し元(兄弟要素)のために、コンテナ自身の下端(margin box)を
+    // ページ内座標へ写して返す。`padding-bottom`等を足すだけだと、最後の子と
+    // 相殺した`margin-bottom`を二重に数えたり、内容より大きい明示`height`を
+    // 落としたりする。中身がはみ出している場合に兄弟と重ならないよう、
+    // 最後に置いた項目の下端より上には戻さない。
+    let container_bottom = container.layout.content.y
+        + container.layout.content.height
+        + container.layout.padding.bottom
+        + container.layout.border.bottom
+        + container.layout.margin.bottom;
+    *cursor = (container_bottom - shift_reference).max(*cursor);
 
     if !needs_fragments {
         return;
@@ -1164,6 +1189,16 @@ fn place_grid(
         if pending.is_empty() {
             fragment_top = *cursor;
             shift = row.top - *cursor;
+
+            // 断片の最初の行がページの残りに収まらないなら、はみ出させずに
+            // 次ページの先頭から始める(この判定を省くと、ページ下端に置かれた
+            // 行の下半分が欠ける)。まっさらなページにも収まらない巨大な行は
+            // そのまま置く(前進しなくなるのを避けるため)。
+            if row.bottom - shift > page_height && current_page_has_content(state) {
+                new_page(state, cursor);
+                fragment_top = *cursor;
+                shift = row.top - *cursor;
+            }
         }
 
         // 直前の行帯からまたいでいるアイテムがあると、その境界では切れない。
@@ -1270,12 +1305,6 @@ struct FlexBand {
     items: Vec<LaidOutBox>,
     top: f32,
     bottom: f32,
-    /// Vertical distance from the bottom of the previous band (0.0 for the
-    /// first one). `gap`/`row-gap`, and any space `justify-content` left
-    /// between the bands, belong to no item's margin box, so `place_split`,
-    /// which packs each item at the cursor, would drop it. [`place_flex_band`]
-    /// adds it back, the way [`place_grid`] keeps the gaps between its rows.
-    gap_before: f32,
 }
 
 /// Tolerance (px) used when deciding where a band ends. The coordinates taffy
@@ -1305,21 +1334,11 @@ fn group_flex_items_into_bands(mut items: Vec<LaidOutBox>) -> Vec<FlexBand> {
                 band.items.push(item);
                 band.bottom = band.bottom.max(bottom);
             }
-            _ => {
-                // The space taffy left between this band and the previous one
-                // (`gap`, or `justify-content`); negative overlap cannot happen
-                // here, since an item that overlapped would have joined the band.
-                let gap_before = bands
-                    .last()
-                    .map(|previous| (top - previous.bottom).max(0.0))
-                    .unwrap_or(0.0);
-                bands.push(FlexBand {
-                    items: vec![item],
-                    top,
-                    bottom,
-                    gap_before,
-                })
-            }
+            _ => bands.push(FlexBand {
+                items: vec![item],
+                top,
+                bottom,
+            }),
         }
     }
     bands
@@ -1339,13 +1358,6 @@ fn place_flex_band(
     state: &mut PaginationState<'_>,
     cursor: &mut f32,
 ) {
-    // Reopen the space that separates this band from the previous one, so a
-    // split container keeps the spacing an unsplit one has. At the very top of a
-    // page there is no previous band to separate from, so the gap is dropped
-    // (`place_grid` drops the row gap at a page boundary the same way).
-    if *cursor > 0.0 {
-        *cursor += band.gap_before;
-    }
     if let [item] = band.items.as_mut_slice() {
         place_box(item, page_height, state, cursor);
         return;
@@ -1430,6 +1442,15 @@ fn place_table(
             let (top, s) = start_new_fragment(cursor, row_top, extra_above);
             fragment_top = top;
             shift = s;
+
+            // グリッドと同じく、最初の行がページの残りに収まらないなら
+            // 次ページの先頭から始める(captionの高さも含めて判定する)。
+            if row_bottom - shift > page_height && current_page_has_content(state) {
+                new_page(state, cursor);
+                let (top, s) = start_new_fragment(cursor, row_top, extra_above);
+                fragment_top = top;
+                shift = s;
+            }
         }
 
         // この行を今のページに置くと溢れるなら、ここまでの断片を確定して改ページ。

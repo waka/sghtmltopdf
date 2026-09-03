@@ -313,3 +313,84 @@ fn a_document_with_a_repeated_header_encodes_to_a_valid_pdf() {
     assert!(bytes.starts_with(b"%PDF-"));
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
+
+/// ページ内の各ボックス(テーブルのセルまで含む)が、ページの上下に収まって
+/// いるかを確かめる。収まっていないものを`(ページ番号, 上端, 下端)`で返す。
+fn boxes_outside_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<(usize, f32, f32)> {
+    fn walk(
+        page_index: usize,
+        b: &sghtmltopdf_core::layout::LaidOutBox,
+        page_height: f32,
+        out: &mut Vec<(usize, f32, f32)>,
+    ) {
+        let top = b.layout.content.y - b.layout.padding.top - b.layout.border.top;
+        let bottom =
+            top + b.layout.content.height + b.layout.padding.bottom + b.layout.border.bottom;
+        if top < -0.01 || bottom > page_height + 0.01 {
+            out.push((page_index, top, bottom));
+        }
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for child in children {
+                    walk(page_index, child, page_height, out);
+                }
+            }
+            LaidOutContent::Table(table) => {
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    walk(page_index, cell, page_height, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let page_height = PageSettings::default().content_height();
+    let mut out = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        for b in &page.boxes {
+            walk(i, b, page_height, &mut out);
+        }
+    }
+    out
+}
+
+#[test]
+fn a_table_whose_first_row_does_not_fit_starts_on_the_next_page() {
+    // 分割判定は「この断片に既に1行以上ある」ことを条件にしていたため、
+    // テーブルの最初の行だけは、ページの残り高さに収まらなくてもその場に
+    // 置かれ、ページ下端からはみ出して欠けていた。
+    let settings = PageSettings::default();
+    let filler_height = settings.content_height() - 30.0;
+    let html_src = r#"<div class="filler"></div><table><tr><td>first</td></tr><tr><td>second</td></tr></table>"#;
+    let css = format!(
+        "* {{ margin: 0; padding: 0 }} .filler {{ height: {filler_height}px }} td {{ height: 40px }}"
+    );
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+
+    assert_eq!(pages.len(), 2, "テーブルは2ページ目へ送られる");
+    assert_eq!(
+        rows_on_page(&pages[0]),
+        0,
+        "1ページ目には残り30pxしかないので、40pxの行は置けない"
+    );
+    assert_eq!(rows_on_page(&pages[1]), 2);
+    assert!(
+        boxes_outside_pages(&pages).is_empty(),
+        "ページからはみ出したボックスがある: {:?}",
+        boxes_outside_pages(&pages)
+    );
+}
+
+fn rows_on_page(page: &sghtmltopdf_core::layout::Page) -> usize {
+    fn count(b: &sghtmltopdf_core::layout::LaidOutBox) -> usize {
+        match &b.content {
+            LaidOutContent::Table(table) => table.rows.len(),
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                children.iter().map(count).sum()
+            }
+            _ => 0,
+        }
+    }
+    page.boxes.iter().map(count).sum()
+}
