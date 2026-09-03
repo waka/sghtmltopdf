@@ -112,7 +112,7 @@ View-rendering keys (`template`, `layout`, `locals`, …) go to `render_to_strin
 The converter keys are flat CLI flag names, so wicked_pdf's nested `margin: {top: 10}` becomes `margin_top: "10mm"` (with the unit spelled out); [migrating from wicked_pdf](https://waka.github.io/sghtmltopdf/migration/wicked-pdf.html) maps every key one by one.
 
 PDF rendering does not go through the HTTP server, so `/assets/…` URLs are resolved as local files: the Railtie defaults `base_url` to `Rails.root/public` and restricts local reads to `Rails.root` via `allow`.
-That is enough for a precompiled production app; in development, these helpers inline the asset instead:
+That is enough for a precompiled production app; in development, these helpers put the asset into the document itself — the CSS in a `<style>`, the image as a `data:` URI — so nothing has to be fetched and the file may live outside `public/`:
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>

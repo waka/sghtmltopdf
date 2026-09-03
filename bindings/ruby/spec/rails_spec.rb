@@ -218,5 +218,76 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       expect(view.sghtmltopdf_asset_path("no-such-file.css")).to be_nil
       expect(view.sghtmltopdf_asset_path("invoice.css")).to eq(Rails.root.join("public/invoice.css").to_s)
     end
+
+    describe "sghtmltopdf_image_tag" do
+      let(:view) { InvoicesController.new.view_context }
+
+      it "画像をdata URIとして埋め込む" do
+        html = view.sghtmltopdf_image_tag("logo.png")
+
+        expect(html).to include(%(src="data:image/png;base64,))
+        expect(html).to include([File.binread(Rails.root.join("public/logo.png"))].pack("m0"))
+      end
+
+      # #44: `image_tag`にファイルパスを渡していたため、`default_url_options`に
+      # ホストがあるとURLに化け、エンジンがリモート取得を試みて失敗していた。
+      it "default_url_optionsにホストがあってもURLにならない" do
+        Rails.application.routes.default_url_options[:host] = "localhost:3000"
+
+        html = view.sghtmltopdf_image_tag("logo.png")
+
+        expect(html).to include("data:image/png;base64,")
+        expect(html).not_to include("http://")
+      ensure
+        Rails.application.routes.default_url_options.delete(:host)
+      end
+
+      it "オプションはそのまま属性になる" do
+        html = view.sghtmltopdf_image_tag("logo.png", class: "seal", alt: "ロゴ")
+
+        expect(html).to include(%(class="seal"))
+        expect(html).to include(%(alt="ロゴ"))
+      end
+
+      it "inline: falseならbase_url基準の相対パスを出す" do
+        html = view.sghtmltopdf_image_tag("logo.png", inline: false, class: "seal")
+
+        expect(html).to include(%(src="logo.png"))
+        expect(html).to include(%(class="seal"))
+      end
+
+      # 開発環境のように`public/`の外にあるファイルは相対パスで指せないため、
+      # `inline: false`でも埋め込みへ倒す。
+      it "base_urlの外のファイルはinline: falseでも埋め込む" do
+        outside = Rails.root.join("app/assets/images/pipeline-logo.png").to_s
+
+        html = view.sghtmltopdf_image_tag(outside, inline: false)
+
+        expect(html).to include("data:image/png;base64,")
+      end
+
+      it "アプリのアセットでないものはRailsに任せる" do
+        html = view.sghtmltopdf_image_tag("https://example.com/logo.png")
+
+        expect(html).to include(%(src="https://example.com/logo.png"))
+      end
+
+      it "inline: falseで出したパスもエンジンが解決できる" do
+        html = view.sghtmltopdf_image_tag("logo.png", inline: false)
+
+        # `base_url`の既定(Rails.root/public)からの相対パスとして読める。
+        expect(Sghtmltopdf.render(html)).to include("/Subtype /Image")
+      end
+
+      it "ヘルパで埋めた画像がPDFに入る" do
+        get "/invoices/with_image"
+
+        expect(last_response.body).to start_with("%PDF-")
+        # 20x16のPNGがXObjectとして埋まっている。
+        expect(last_response.body).to include("/Subtype /Image")
+        expect(last_response.body).to include("/Width 20")
+        expect(last_response.body).to include("/Height 16")
+      end
+    end
   end
 end

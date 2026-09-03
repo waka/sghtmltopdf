@@ -170,13 +170,19 @@ Railtieが次の既定値を入れます。
 どちらも`Sghtmltopdf.configure`で上書きできます(イニシャライザの実行順に依存しません)。
 `allow`の既定はテンプレートにユーザー入力が混ざっても文書外のファイルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を参照している場合は明示的に足してください。
 
-開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、CSSの中身を`<style>`へ展開するヘルパがあります。
+開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、アセットの中身を文書へ埋め込むヘルパがあります。
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
 <%= sghtmltopdf_image_tag "logo.png" %>
 <%= sghtmltopdf_asset_path "logo.png" %>   <%# 見つからなければnil %>
 ```
+
+`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。
+`sghtmltopdf_image_tag`は画像を`data:`URIとして`<img>`へ埋め込みます。
+どちらも取得を伴わないため、`base_url`や`allow`の設定に依存せず、`public/`の外にあるファイルでも読めます。
+画像が多くbase64でHTMLが膨らむ場合は、`sghtmltopdf_image_tag "logo.png", inline: false`で`base_url`基準の相対パスを出せます。
+このとき`base_url`の外にあるファイルは、相対パスで指せないため埋め込みに戻ります。
 
 ## サーバへ委譲する
 

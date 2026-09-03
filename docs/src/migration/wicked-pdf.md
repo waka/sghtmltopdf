@@ -103,15 +103,18 @@ end
 | `wicked_pdf_image_tag` | `sghtmltopdf_image_tag` |
 | `wicked_pdf_asset_path` | `sghtmltopdf_asset_path`(見つからなければ`nil`) |
 | `wicked_pdf_javascript_include_tag` | — (JSを実行しないので不要) |
-| `wicked_pdf_asset_base64` | — (ローカルファイルを直接読めるので不要) |
+| `wicked_pdf_asset_base64` | — (`sghtmltopdf_image_tag`が既定で埋め込むので不要) |
 
 素の`stylesheet_link_tag`/`image_tag`も、アセットが`public/`配下へprecompileされていればそのまま動きます。
 PDFのレンダリングはHTTPサーバを介さないので、`/assets/…`のようなURLは`--base-url`(Railsでの既定は`Rails.root/public`)を基準にローカルファイルとして解決される。
 
-開発環境のようにアセットがまだ`public/`に無い場合は、CSSの中身を`<style>`へ展開する`sghtmltopdf_stylesheet_link_tag`を使う。
+開発環境のようにアセットがまだ`public/`に無い場合は、アセットの中身を文書へ埋め込むヘルパを使う。
+`sghtmltopdf_stylesheet_link_tag`はCSSを`<style>`へ展開し、`sghtmltopdf_image_tag`は画像を`data:`URIとして埋め込む。
+`wicked_pdf_image_tag`が`file://`のURLを出していたのに対し、こちらは取得そのものが起きない。
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
+<%= sghtmltopdf_image_tag "logo.png" %>
 ```
 
 ## 既定値の違い

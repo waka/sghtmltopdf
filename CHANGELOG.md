@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `sghtmltopdf_image_tag` now embeds the image as a `data:` URI instead of handing a
+  filesystem path to `image_tag` (#44). Rails turned that path into a URL — with
+  `default_url_options[:host]` set, an `http://` one the engine refused to fetch, and
+  without it an absolute path that was resolved against `base_url` and missed — so the
+  helper documented for local images could not load one. Nothing is fetched at render
+  time now, so the helper no longer depends on `base_url` or `allow` and reads files
+  outside `public/`, which is what the development case needs. Pass `inline: false` to
+  emit a path relative to `base_url` instead. `sghtmltopdf_asset_path` also stops mapping
+  a source that is already a URL onto a same-named file under `public/`.
 - `position: relative` now moves the content of the element together with its background
   and border (#29). The offset was applied to the box's own rectangle after its lines and
   child boxes had been placed, so text, images, nested blocks and list markers were left
