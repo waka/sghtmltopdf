@@ -1618,8 +1618,11 @@ pub(super) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
         }
         LaidOutContent::Grid(grid) => {
             for row in grid.rows.iter_mut() {
-                row.top += delta;
-                row.bottom += delta;
+                // A row band's top and bottom live in the same coordinate space
+                // as the items in it, so they move the way `shift_rect_y` does:
+                // by subtracting `delta`.
+                row.top -= delta;
+                row.bottom -= delta;
                 for item in row.items.iter_mut() {
                     shift_box_y_in_place(item, delta);
                 }
@@ -1670,8 +1673,8 @@ pub(super) fn shift_content_vertical(b: &LaidOutBox, delta: f32) -> LaidOutBox {
         }
         LaidOutContent::Grid(grid) => {
             for row in grid.rows.iter_mut() {
-                row.top += delta;
-                row.bottom += delta;
+                row.top -= delta;
+                row.bottom -= delta;
                 for item in row.items.iter_mut() {
                     *item = shift_box_y(item, delta);
                 }

@@ -313,3 +313,85 @@ fn a_document_with_a_repeated_header_encodes_to_a_valid_pdf() {
     assert!(bytes.starts_with(b"%PDF-"));
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
+
+/// Checks that every box on a page (down to the table cells) stays between the
+/// top and the bottom of it. Returns the ones that do not, as
+/// `(page index, top, bottom)`.
+fn boxes_outside_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<(usize, f32, f32)> {
+    fn walk(
+        page_index: usize,
+        b: &sghtmltopdf_core::layout::LaidOutBox,
+        page_height: f32,
+        out: &mut Vec<(usize, f32, f32)>,
+    ) {
+        let top = b.layout.content.y - b.layout.padding.top - b.layout.border.top;
+        let bottom =
+            top + b.layout.content.height + b.layout.padding.bottom + b.layout.border.bottom;
+        if top < -0.01 || bottom > page_height + 0.01 {
+            out.push((page_index, top, bottom));
+        }
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for child in children {
+                    walk(page_index, child, page_height, out);
+                }
+            }
+            LaidOutContent::Table(table) => {
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    walk(page_index, cell, page_height, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let page_height = PageSettings::default().content_height();
+    let mut out = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        for b in &page.boxes {
+            walk(i, b, page_height, &mut out);
+        }
+    }
+    out
+}
+
+#[test]
+fn a_table_whose_first_row_does_not_fit_starts_on_the_next_page() {
+    // Splitting required the fragment to already hold a row, so the first row of
+    // a table was laid down where it was however little room was left on the
+    // page, and was cut off by the page edge.
+    let settings = PageSettings::default();
+    let filler_height = settings.content_height() - 30.0;
+    let html_src = r#"<div class="filler"></div><table><tr><td>first</td></tr><tr><td>second</td></tr></table>"#;
+    let css = format!(
+        "* {{ margin: 0; padding: 0 }} .filler {{ height: {filler_height}px }} td {{ height: 40px }}"
+    );
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+
+    assert_eq!(pages.len(), 2, "the table moves to the second page");
+    assert_eq!(
+        rows_on_page(&pages[0]),
+        0,
+        "only 30px are left on the first page, too little for a 40px row"
+    );
+    assert_eq!(rows_on_page(&pages[1]), 2);
+    assert!(
+        boxes_outside_pages(&pages).is_empty(),
+        "some boxes stick out of their page: {:?}",
+        boxes_outside_pages(&pages)
+    );
+}
+
+fn rows_on_page(page: &sghtmltopdf_core::layout::Page) -> usize {
+    fn count(b: &sghtmltopdf_core::layout::LaidOutBox) -> usize {
+        match &b.content {
+            LaidOutContent::Table(table) => table.rows.len(),
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                children.iter().map(count).sum()
+            }
+            _ => 0,
+        }
+    }
+    page.boxes.iter().map(count).sum()
+}

@@ -24,6 +24,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at the unoffset position. A `position: relative` inline element (`<span>`) now shifts
   its own text too, and an absolutely positioned descendant of a relative element uses the
   offset padding box as its containing block.
+- Keep the spacing that margin collapsing produced when a document is split across pages.
+  The pagination rebuilt each page by stacking margin boxes at a running cursor, which
+  reopened every margin the layout had collapsed: adjacent siblings were pushed apart by
+  the smaller of the two margins (paragraphs 50.6px apart instead of 34.7px with the
+  default stylesheet), and a `margin-top` hoisted out of a first child was added once per
+  ancestor, so the top of the first page was pushed down by a multiple of it (85.8px
+  instead of 21.4px for `<h1>` under `<html><body>`). Boxes are now placed at the offsets
+  the layout gave them, so a document that spans several pages has the same geometry as
+  the same content on a single page, and pages hold as much as they should.
+- Start a `display: grid` or `display: table` on the next page when its first row does not
+  fit in what is left of the current one. The row-splitting rule only broke once a fragment
+  already held a row, so the first row was laid down at the bottom of the page whatever the
+  space left and was cut off by the page edge, where blocks and flex containers move on.
+- Place the row bands of a `display: grid` container the same way as everything else when
+  its subtree is moved vertically. `shift_box_y_in_place` and `shift_content_vertical`
+  added the delta to `LaidOutGridRow`'s `top`/`bottom` while subtracting it from every
+  other coordinate, so a paginated grid under collapsing margins started its second page
+  above the top of the page and lost the rows there.
 - Paint the rows of a `display: grid` container on the pages it was split across (#18).
   The pagination allocated the right number of pages and moved each row band into page
   coordinates, but shifted the items inside the band the opposite way, so every page after

@@ -545,3 +545,87 @@ fn grid_items_on_later_pages_are_placed_within_the_page() {
         "every paragraph appears exactly once, in order"
     );
 }
+
+#[test]
+fn a_paginated_grid_under_collapsing_margins_stays_inside_its_pages() {
+    // Only the row bands (`LaidOutGridRow`'s `top`/`bottom`) moved the opposite
+    // way from their items in `shift_box_y_in_place`, so a grid inside a
+    // structure where margin collapsing shifts the children ended up above the
+    // top of the page (a negative y) from the second page on, losing the rows
+    // there.
+    let cells: String = (0..40).map(|i| format!("<div>g{i}</div>")).collect();
+    let html =
+        format!(r#"<div class="wrap"><div class="inner"><div class="g">{cells}</div></div></div>"#);
+    let css = "* { margin: 0; padding: 0 } \
+               .wrap { margin-top: 20px } \
+               .inner { margin-top: 40px } \
+               .g { display: grid; grid-template-columns: 1fr 1fr } \
+               .g > div { height: 60px }";
+    let dom = html::parse(html.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    let settings = PageSettings::default();
+    let page_height = settings.content_height();
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+
+    assert!(pages.len() > 1, "20 rows of 60px do not fit on one page");
+    for (page_index, page) in pages.iter().enumerate() {
+        let lines = text_lines_on_page(page);
+        assert!(!lines.is_empty(), "page {page_index} is empty");
+        for (text, y, height) in &lines {
+            assert!(
+                *y >= -0.01 && y + height <= page_height + 0.01,
+                "{text:?} is outside page {page_index}: y={y} height={height}"
+            );
+        }
+        let first_y = lines[0].1;
+        let expected = if page_index == 0 { 40.0 } else { 0.0 };
+        assert!(
+            (first_y - expected).abs() < 0.01,
+            "the first line of page {page_index} should be at y={expected} (the collapsed \
+             top margin only counts on the first page): y={first_y}"
+        );
+    }
+}
+
+#[test]
+fn a_grid_row_that_does_not_fit_the_rest_of_the_page_starts_on_the_next_page() {
+    // Splitting a row band required the fragment to already hold a row, so the
+    // first band of a grid was laid down where it was however little room was
+    // left on the page, and was cut off by the page edge (blocks and flex
+    // containers move on to the next page).
+    let settings = PageSettings::default();
+    let filler_height = settings.content_height() - 30.0;
+    let html = r#"<div class="filler"></div><div class="g"><div>ga</div><div>gb</div><div>gc</div><div>gd</div></div>"#;
+    let css = format!(
+        "* {{ margin: 0; padding: 0 }} .filler {{ height: {filler_height}px }} \
+         .g {{ display: grid; grid-template-columns: 1fr 1fr }} .g > div {{ height: 40px }}"
+    );
+    let dom = html::parse(html.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let page_height = settings.content_height();
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+
+    assert_eq!(pages.len(), 2, "the grid moves to the second page");
+    assert!(
+        text_lines_on_page(&pages[0]).is_empty(),
+        "only 30px are left on the first page, too little for a 40px band: {:?}",
+        text_lines_on_page(&pages[0])
+    );
+    let second = text_lines_on_page(&pages[1]);
+    assert_eq!(
+        second.len(),
+        4,
+        "two bands of four items land on the second page: {second:?}"
+    );
+    for (text, y, height) in &second {
+        assert!(
+            *y >= -0.01 && y + height <= page_height + 0.01,
+            "{text:?} sticks out of the page: y={y} height={height}"
+        );
+    }
+    assert!(
+        (second[0].1 - 0.0).abs() < 0.01,
+        "the second page starts at the top of the page: {:?}",
+        second[0]
+    );
+}

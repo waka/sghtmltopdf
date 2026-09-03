@@ -263,3 +263,97 @@ fn widows_forces_lines_forward_end_to_end() {
         "the paragraph should still split across exactly two pages"
     );
 }
+
+/// Every text line on the page as (text, in-page y), in document order.
+fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32)> {
+    fn walk(b: &LaidOutBox, out: &mut Vec<(String, f32)>) {
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for child in children {
+                    walk(child, out);
+                }
+            }
+            LaidOutContent::Grid(grid) => {
+                for item in grid.rows.iter().flat_map(|row| &row.items) {
+                    walk(item, out);
+                }
+            }
+            LaidOutContent::Inline(lines) => {
+                for line in lines {
+                    let text: String = line.runs.iter().map(|run| run.text.as_str()).collect();
+                    if !text.trim().is_empty() {
+                        out.push((text, line.rect.y));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for b in &page.boxes {
+        walk(b, &mut out);
+    }
+    out
+}
+
+fn paginate(html_src: &str, css: &str) -> Vec<sghtmltopdf_core::layout::Page> {
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    paginate_document(&dom, &styles, &test_fonts(), &PageSettings::default())
+}
+
+#[test]
+fn collapsed_margins_between_siblings_survive_pagination() {
+    // The `margin-bottom` and `margin-top` of adjacent siblings collapse, so
+    // paragraphs 30px tall with 20px above and below sit 50px apart. Pagination
+    // that stacks margin box heights reopens the collapsed 20px and spreads them
+    // to 70px, so the same document looks different as soon as it no longer fits
+    // on one page.
+    let paragraphs: String = (0..40).map(|i| format!("<p>p{i}</p>")).collect();
+    let pages = paginate(
+        &paragraphs,
+        "* { margin: 0; padding: 0 } p { margin: 20px 0; height: 30px }",
+    );
+
+    assert!(pages.len() > 1, "40 paragraphs do not fit on one page");
+    for (page_index, page) in pages.iter().enumerate() {
+        let lines = text_lines_on_page(page);
+        assert!(!lines.is_empty(), "page {page_index} is empty");
+        for pair in lines.windows(2) {
+            let (above, above_y) = &pair[0];
+            let (below, below_y) = &pair[1];
+            assert!(
+                (below_y - above_y - 50.0).abs() < 0.01,
+                "{above} and {below} on page {page_index} are {} apart, expected 30px of \
+                 height plus the 20px the margins collapsed to",
+                below_y - above_y
+            );
+        }
+    }
+    assert!(
+        (text_lines_on_page(&pages[0])[0].1 - 20.0).abs() < 0.01,
+        "the 20px top margin of the first paragraph counts once: {:?}",
+        text_lines_on_page(&pages[0])[0]
+    );
+}
+
+#[test]
+fn a_hoisted_top_margin_is_counted_once_whatever_the_nesting_depth() {
+    // With no top border or padding on the parent, the `margin-top` of a first
+    // child is hoisted out of it and the collapsed value ends up in the
+    // `margin.top` of every ancestor. Pagination that adds its own `margin-top`
+    // at each level adds the same 40px once per level, pushing the top of the
+    // first page down (this document started at 200px instead of 40px).
+    let paragraphs: String = (0..60).map(|i| format!("<p>p{i}</p>")).collect();
+    let pages = paginate(
+        &format!(r#"<div class="wrap"><div class="inner">{paragraphs}</div></div>"#),
+        "* { margin: 0; padding: 0 } .inner { margin-top: 40px } p { height: 20px }",
+    );
+
+    assert!(pages.len() > 1, "60 paragraphs do not fit on one page");
+    let first = &text_lines_on_page(&pages[0])[0];
+    assert!(
+        (first.1 - 40.0).abs() < 0.01,
+        "the first paragraph sits below the 40px that was hoisted out: {first:?}"
+    );
+}
