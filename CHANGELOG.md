@@ -18,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Read a `src` (or `url()`, or `href`) written as a filesystem path instead of joining it
+  onto the base directory and looking for something that cannot be there. A reference
+  starting with `/` is still resolved relative to the site root first, which is what the
+  Rails asset pipeline emits and what every document that works today relies on; only when
+  no file is there is the same string read again as an absolute path. Whether it may be
+  read is decided by the existing rules, so one inside the base directory is read as it is
+  and one outside it needs `--allow`. `<img src="/var/www/app/public/logo.png">` used to
+  look for `<base directory>/var/www/app/public/logo.png` and could not be made to work by
+  any flag; when neither reading finds a file, the error now names both paths.
 - `sghtmltopdf_image_tag` now embeds the image as a `data:` URI instead of handing a
   filesystem path to `image_tag` (#44). Rails turned that path into a URL — with
   `default_url_options[:host]` set, an `http://` one the engine refused to fetch, and

@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-09-04T02:20:34+09:00\n"
+"POT-Creation-Date: 2026-09-04T02:38:22+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -1928,7 +1928,7 @@ msgstr "Link each heading back to the table of contents"
 msgid "`--page-offset <N>`"
 msgstr "`--page-offset <N>`"
 
-#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:243
 msgid "0"
 msgstr "0"
 
@@ -2051,10 +2051,48 @@ msgstr ""
 "check resolves real paths)."
 
 #: src/usage/cli/reference.md:213
+msgid "`/`で始まる参照"
+msgstr "A reference starting with `/`"
+
+#: src/usage/cli/reference.md:215
+msgid ""
+"`/assets/logo.png`のように`/`で始まる参照は、まず基準ディレクトリからのサイト"
+"ルート相対(`<基準ディレクトリ>/assets/logo.png`)として解決します。 Railsのア"
+"セットパイプラインが出すパスがこの形なので、precompile済みの`public/`を基準"
+"ディレクトリにすればそのまま解決できます。"
+msgstr ""
+"A reference starting with `/`, such as `/assets/logo.png`, is first resolved "
+"relative to the site root, that is, to the base directory (`<base "
+"directory>/assets/logo.png`). That is the shape the Rails asset pipeline "
+"emits, so pointing the base directory at a precompiled `public/` resolves it "
+"as it is."
+
+#: src/usage/cli/reference.md:218
+msgid ""
+"そこにファイルが無い場合に限り、同じ文字列をファイルシステムの絶対パスとして"
+"解釈し直します。 `<img src=\"/var/www/app/public/logo.png\">`のような書き方の"
+"ためのフォールバックです。 このとき読めるかどうかは他の参照と同じ規則で決まり"
+"ます。 絶対パスが基準ディレクトリの中を指していればそのまま読め、外を指してい"
+"れば`--allow`が要ります。"
+msgstr ""
+"Only when there is no file there is the same string read again as a "
+"filesystem path. It is the fallback for a document written as `<img src=\"/"
+"var/www/app/public/logo.png\">`. What may be read is then decided by the same "
+"rules as for any other reference: an absolute path inside the base directory "
+"is read as it is, one outside it needs `--allow`."
+
+#: src/usage/cli/reference.md:223
+msgid ""
+"どちらの解釈でもファイルが見つからない場合は、両方のパスを挙げたエラーになり"
+"ます。"
+msgstr ""
+"When neither reading finds a file, the error names both paths."
+
+#: src/usage/cli/reference.md:225
 msgid "入力の大きさの制限"
 msgstr "Limits on input size"
 
-#: src/usage/cli/reference.md:215
+#: src/usage/cli/reference.md:227
 msgid ""
 "要素数がおよそ50万ノードを超えるHTMLはエラーになります。 算出スタイル・ボック"
 "スツリー・レイアウト結果がノード数に比例して積み上がるためで、実測では1ノード"
@@ -2064,7 +2102,7 @@ msgstr ""
 "box tree and the layout result all grow in proportion to the node count; "
 "measured at 472 B to 1210 B per node."
 
-#: src/usage/cli/reference.md:218
+#: src/usage/cli/reference.md:230
 msgid ""
 "数千ページ規模の文書でも数十万ノードなので、実在の文書がここに当たることはま"
 "ずありません。 当たった場合は文書を分割するか、[ストリーミングモード]"
@@ -2077,7 +2115,7 @@ msgstr ""
 "each processed part as it goes, so it can convert documents whose total "
 "exceeds the limit."
 
-#: src/usage/cli/reference.md:222
+#: src/usage/cli/reference.md:234
 msgid ""
 "テキストの量に比例するメモリはこの上限では抑えられません(要素3個でも10MiBのテ"
 "キストなら約1.7GiB使います)。 HTTPサーバモードでは`--max-body-size`がその役割"
@@ -2087,11 +2125,11 @@ msgstr ""
 "(three elements holding 10 MiB of text still use about 1.7 GiB). In HTTP "
 "server mode `--max-body-size` plays that role."
 
-#: src/usage/cli/reference.md:225
+#: src/usage/cli/reference.md:237
 msgid "ログとexit code"
 msgstr "Logging and exit codes"
 
-#: src/usage/cli/reference.md:227
+#: src/usage/cli/reference.md:239
 msgid ""
 "`--log-level <none|error|warn|info>`(既定`info`)、`-q`/`--quiet`(=`--log-"
 "level none`)。"
@@ -2099,34 +2137,34 @@ msgstr ""
 "`--log-level <none|error|warn|info>`, `info` by default, and `-q` or `--"
 "quiet`, which is the same as `--log-level none`."
 
-#: src/usage/cli/reference.md:229
+#: src/usage/cli/reference.md:241
 msgid "code"
 msgstr "Code"
 
-#: src/usage/cli/reference.md:229 src/usage/ruby_rails.md:54
+#: src/usage/cli/reference.md:241 src/usage/ruby_rails.md:54
 #: src/usage/ruby_rails.md:165 src/migration/wkhtmltopdf-options.md:6
 msgid "意味"
 msgstr "Meaning"
 
-#: src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:243
 msgid "成功"
 msgstr "Success"
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "1"
 msgstr "1"
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "使用法エラー(不明なオプション、値の形式不正、非対応オプションの指定)"
 msgstr ""
 "Usage error: an unknown option, a malformed value, or an option that is not "
 "supported"
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid "2"
 msgstr "2"
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid ""
 "入力/リソースエラー(ファイルが無い、フォントが読めない、`abort`指定での取得失"
 "敗)"
@@ -2134,20 +2172,20 @@ msgstr ""
 "Input or resource error: a missing file, a font that cannot be read, or a "
 "failed fetch under `abort`"
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "3"
 msgstr "3"
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "レンダリングエラー(ストリーミングモードの制約違反など)"
 msgstr ""
 "Rendering error, such as breaking one of the streaming mode restrictions"
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid "4"
 msgstr "4"
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid ""
 "制限時間超過(HTTPサーバモードの`--timeout`のみ。CLIには時間制限がないため出ま"
 "せん)"
@@ -3621,12 +3659,12 @@ msgid ""
 msgstr ""
 "`sghtmltopdf_stylesheet_link_tag` expands the CSS itself into a `<style>`. "
 "`sghtmltopdf_image_tag` embeds the image in the `<img>` as a `data:` URI. "
-"Neither fetches anything, so they do not depend on `base_url` or `allow`, and "
-"they read files outside `public/` as well. For a document with so many images "
-"that base64 bloats the HTML, `sghtmltopdf_image_tag \"logo.png\", inline: "
-"false` emits a path relative to `base_url` instead. A file outside `base_url` "
-"falls back to being embedded even then, since a relative path could not point "
-"at it."
+"Neither fetches anything, so they do not depend on `base_url` or `allow`, "
+"and they read files outside `public/` as well. For a document with so many "
+"images that base64 bloats the HTML, `sghtmltopdf_image_tag \"logo.png\", "
+"inline: false` emits a path relative to `base_url` instead. A file outside "
+"`base_url` falls back to being embedded even then, since a relative path "
+"could not point at it."
 
 #: src/usage/ruby_rails.md:187
 msgid "サーバへ委譲する"

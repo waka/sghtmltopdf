@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-09-04T02:20:34+09:00\n"
+"POT-Creation-Date: 2026-09-04T02:38:22+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -1546,7 +1546,7 @@ msgstr ""
 msgid "`--page-offset <N>`"
 msgstr ""
 
-#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:243
 msgid "0"
 msgstr ""
 
@@ -1641,80 +1641,102 @@ msgid ""
 msgstr ""
 
 #: src/usage/cli/reference.md:213
-msgid "入力の大きさの制限"
+msgid "`/`で始まる参照"
 msgstr ""
 
 #: src/usage/cli/reference.md:215
+msgid ""
+"`/assets/logo.png`のように`/`で始まる参照は、まず基準ディレクトリからのサイトルート相対(`<基準ディレクトリ>/assets/logo.png`)として解決します。 "
+"Railsのアセットパイプラインが出すパスがこの形なので、precompile済みの`public/`を基準ディレクトリにすればそのまま解決できます。"
+msgstr ""
+
+#: src/usage/cli/reference.md:218
+msgid ""
+"そこにファイルが無い場合に限り、同じ文字列をファイルシステムの絶対パスとして解釈し直します。 `<img "
+"src=\"/var/www/app/public/logo.png\">`のような書き方のためのフォールバックです。 "
+"このとき読めるかどうかは他の参照と同じ規則で決まります。 "
+"絶対パスが基準ディレクトリの中を指していればそのまま読め、外を指していれば`--allow`が要ります。"
+msgstr ""
+
+#: src/usage/cli/reference.md:223
+msgid "どちらの解釈でもファイルが見つからない場合は、両方のパスを挙げたエラーになります。"
+msgstr ""
+
+#: src/usage/cli/reference.md:225
+msgid "入力の大きさの制限"
+msgstr ""
+
+#: src/usage/cli/reference.md:227
 msgid ""
 "要素数がおよそ50万ノードを超えるHTMLはエラーになります。 "
 "算出スタイル・ボックスツリー・レイアウト結果がノード数に比例して積み上がるためで、実測では1ノードあたり472B〜1210Bでした。"
 msgstr ""
 
-#: src/usage/cli/reference.md:218
+#: src/usage/cli/reference.md:230
 msgid ""
 "数千ページ規模の文書でも数十万ノードなので、実在の文書がここに当たることはまずありません。 "
 "当たった場合は文書を分割するか、[ストリーミングモード](streaming.md)を使ってください。 "
 "ストリーミングモードでは処理済みの部分が随時解放されるため、総量が上限を超えていても変換できます。"
 msgstr ""
 
-#: src/usage/cli/reference.md:222
+#: src/usage/cli/reference.md:234
 msgid ""
 "テキストの量に比例するメモリはこの上限では抑えられません(要素3個でも10MiBのテキストなら約1.7GiB使います)。 "
 "HTTPサーバモードでは`--max-body-size`がその役割を担います。"
 msgstr ""
 
-#: src/usage/cli/reference.md:225
+#: src/usage/cli/reference.md:237
 msgid "ログとexit code"
 msgstr ""
 
-#: src/usage/cli/reference.md:227
+#: src/usage/cli/reference.md:239
 msgid ""
 "`--log-level <none|error|warn|info>`(既定`info`)、`-q`/`--quiet`(=`--log-level "
 "none`)。"
 msgstr ""
 
-#: src/usage/cli/reference.md:229
+#: src/usage/cli/reference.md:241
 msgid "code"
 msgstr ""
 
-#: src/usage/cli/reference.md:229 src/usage/ruby_rails.md:54
+#: src/usage/cli/reference.md:241 src/usage/ruby_rails.md:54
 #: src/usage/ruby_rails.md:165 src/migration/wkhtmltopdf-options.md:6
 msgid "意味"
 msgstr ""
 
-#: src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:243
 msgid "成功"
 msgstr ""
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "1"
 msgstr ""
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "使用法エラー(不明なオプション、値の形式不正、非対応オプションの指定)"
 msgstr ""
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid "2"
 msgstr ""
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid "入力/リソースエラー(ファイルが無い、フォントが読めない、`abort`指定での取得失敗)"
 msgstr ""
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "3"
 msgstr ""
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "レンダリングエラー(ストリーミングモードの制約違反など)"
 msgstr ""
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid "4"
 msgstr ""
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid "制限時間超過(HTTPサーバモードの`--timeout`のみ。CLIには時間制限がないため出ません)"
 msgstr ""
 
