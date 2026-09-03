@@ -264,7 +264,7 @@ fn widows_forces_lines_forward_end_to_end() {
     );
 }
 
-/// ページ内の各テキスト行を(文字列, ページ内y)で、文書順に返す。
+/// Every text line on the page as (text, in-page y), in document order.
 fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32)> {
     fn walk(b: &LaidOutBox, out: &mut Vec<(String, f32)>) {
         match &b.content {
@@ -304,53 +304,56 @@ fn paginate(html_src: &str, css: &str) -> Vec<sghtmltopdf_core::layout::Page> {
 
 #[test]
 fn collapsed_margins_between_siblings_survive_pagination() {
-    // 隣接する兄弟の`margin-bottom`/`margin-top`は相殺するので、高さ30px・
-    // 上下マージン20pxの段落は50px間隔で並ぶ。ページ分割がmargin boxの高さを
-    // 積み上げて配置していると、相殺したはずの20pxが復活して70px間隔になり、
-    // 1ページに収まる同じ文書と見た目が変わってしまう。
+    // The `margin-bottom` and `margin-top` of adjacent siblings collapse, so
+    // paragraphs 30px tall with 20px above and below sit 50px apart. Pagination
+    // that stacks margin box heights reopens the collapsed 20px and spreads them
+    // to 70px, so the same document looks different as soon as it no longer fits
+    // on one page.
     let paragraphs: String = (0..40).map(|i| format!("<p>p{i}</p>")).collect();
     let pages = paginate(
         &paragraphs,
         "* { margin: 0; padding: 0 } p { margin: 20px 0; height: 30px }",
     );
 
-    assert!(pages.len() > 1, "40段落は1ページに収まらない");
+    assert!(pages.len() > 1, "40 paragraphs do not fit on one page");
     for (page_index, page) in pages.iter().enumerate() {
         let lines = text_lines_on_page(page);
-        assert!(!lines.is_empty(), "ページ{page_index}が空");
+        assert!(!lines.is_empty(), "page {page_index} is empty");
         for pair in lines.windows(2) {
             let (above, above_y) = &pair[0];
             let (below, below_y) = &pair[1];
             assert!(
                 (below_y - above_y - 50.0).abs() < 0.01,
-                "ページ{page_index}の{above}と{below}の間隔が{}(期待値は高さ30px+相殺後のマージン20px)",
+                "{above} and {below} on page {page_index} are {} apart, expected 30px of \
+                 height plus the 20px the margins collapsed to",
                 below_y - above_y
             );
         }
     }
     assert!(
         (text_lines_on_page(&pages[0])[0].1 - 20.0).abs() < 0.01,
-        "先頭段落の上マージン20pxは1回だけ効く: {:?}",
+        "the 20px top margin of the first paragraph counts once: {:?}",
         text_lines_on_page(&pages[0])[0]
     );
 }
 
 #[test]
 fn a_hoisted_top_margin_is_counted_once_whatever_the_nesting_depth() {
-    // 親に上境界が無いとき、最初の子の`margin-top`は親の外へ持ち上げられ、
-    // 相殺後の値が祖先すべての`margin.top`に入る。ページ分割が各階層で自分の
-    // `margin-top`を足していくと、同じ40pxを階層の数だけ足してしまい、
-    // 1ページ目の先頭が下へずれる(このHTMLでは40pxではなく200pxになっていた)。
+    // With no top border or padding on the parent, the `margin-top` of a first
+    // child is hoisted out of it and the collapsed value ends up in the
+    // `margin.top` of every ancestor. Pagination that adds its own `margin-top`
+    // at each level adds the same 40px once per level, pushing the top of the
+    // first page down (this document started at 200px instead of 40px).
     let paragraphs: String = (0..60).map(|i| format!("<p>p{i}</p>")).collect();
     let pages = paginate(
         &format!(r#"<div class="wrap"><div class="inner">{paragraphs}</div></div>"#),
         "* { margin: 0; padding: 0 } .inner { margin-top: 40px } p { height: 20px }",
     );
 
-    assert!(pages.len() > 1, "60段落は1ページに収まらない");
+    assert!(pages.len() > 1, "60 paragraphs do not fit on one page");
     let first = &text_lines_on_page(&pages[0])[0];
     assert!(
         (first.1 - 40.0).abs() < 0.01,
-        "先頭段落は持ち上げられた40pxのぶんだけ下がる: {first:?}"
+        "the first paragraph sits below the 40px that was hoisted out: {first:?}"
     );
 }

@@ -314,8 +314,9 @@ fn a_document_with_a_repeated_header_encodes_to_a_valid_pdf() {
     assert!(bytes.windows(5).any(|w| w == b"%%EOF"));
 }
 
-/// ページ内の各ボックス(テーブルのセルまで含む)が、ページの上下に収まって
-/// いるかを確かめる。収まっていないものを`(ページ番号, 上端, 下端)`で返す。
+/// Checks that every box on a page (down to the table cells) stays between the
+/// top and the bottom of it. Returns the ones that do not, as
+/// `(page index, top, bottom)`.
 fn boxes_outside_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<(usize, f32, f32)> {
     fn walk(
         page_index: usize,
@@ -355,9 +356,9 @@ fn boxes_outside_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<(usize, 
 
 #[test]
 fn a_table_whose_first_row_does_not_fit_starts_on_the_next_page() {
-    // 分割判定は「この断片に既に1行以上ある」ことを条件にしていたため、
-    // テーブルの最初の行だけは、ページの残り高さに収まらなくてもその場に
-    // 置かれ、ページ下端からはみ出して欠けていた。
+    // Splitting required the fragment to already hold a row, so the first row of
+    // a table was laid down where it was however little room was left on the
+    // page, and was cut off by the page edge.
     let settings = PageSettings::default();
     let filler_height = settings.content_height() - 30.0;
     let html_src = r#"<div class="filler"></div><table><tr><td>first</td></tr><tr><td>second</td></tr></table>"#;
@@ -368,16 +369,16 @@ fn a_table_whose_first_row_does_not_fit_starts_on_the_next_page() {
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
     let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
 
-    assert_eq!(pages.len(), 2, "テーブルは2ページ目へ送られる");
+    assert_eq!(pages.len(), 2, "the table moves to the second page");
     assert_eq!(
         rows_on_page(&pages[0]),
         0,
-        "1ページ目には残り30pxしかないので、40pxの行は置けない"
+        "only 30px are left on the first page, too little for a 40px row"
     );
     assert_eq!(rows_on_page(&pages[1]), 2);
     assert!(
         boxes_outside_pages(&pages).is_empty(),
-        "ページからはみ出したボックスがある: {:?}",
+        "some boxes stick out of their page: {:?}",
         boxes_outside_pages(&pages)
     );
 }

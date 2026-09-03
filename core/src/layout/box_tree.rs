@@ -13,7 +13,7 @@ use crate::html::{Dom, NodeData, NodeId};
 use crate::pdf::{ImageAssetCache, PreparedImage};
 use crate::style::{
     CaptionSide, ComputedStyle, Display, LengthPercentage, LengthPercentageOrAuto,
-    ListStylePosition, ListStyleType, RgbaColor, WhiteSpace,
+    ListStylePosition, ListStyleType, Position, RgbaColor, WhiteSpace,
 };
 
 use super::white_space;
@@ -231,6 +231,36 @@ pub struct InlineSpan {
     /// インライン背景として塗ってしまう。ここでスパン構築時に「IFC内で
     /// 直近のインライン要素が指定した背景」だけを取り出して持たせる。
     pub background_color: RgbaColor,
+    /// The `top`/`right`/`bottom`/`left` of the `position: relative` inline
+    /// elements enclosing this text, outermost first. After line layout the runs
+    /// are shifted visually by this much (`layout::inline`); nested ones add up.
+    /// For the same reason as `background_color`, this cannot be read back from
+    /// the computed style of the text node, which has inherited even the
+    /// `position` of the block.
+    pub relative_insets: Vec<RelativeInset>,
+}
+
+/// The `top`/`right`/`bottom`/`left` specified on a `position: relative`
+/// element. Resolving them to an offset needs the containing block width, so the
+/// caller does it (`layout::block::resolve_relative_offset`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RelativeInset {
+    pub top: LengthPercentageOrAuto,
+    pub right: LengthPercentageOrAuto,
+    pub bottom: LengthPercentageOrAuto,
+    pub left: LengthPercentageOrAuto,
+}
+
+impl RelativeInset {
+    /// Returns the four sides if `style` is `position: relative`.
+    pub fn of(style: &ComputedStyle) -> Option<Self> {
+        (style.position == Position::Relative).then_some(Self {
+            top: style.top,
+            right: style.right,
+            bottom: style.bottom,
+            left: style.left,
+        })
+    }
 }
 
 impl InlineSpan {
@@ -249,6 +279,7 @@ impl InlineSpan {
             atomic: None,
             link: context.link.clone(),
             background_color: context.background_color,
+            relative_insets: context.relative_insets.clone(),
         }
     }
 
@@ -262,6 +293,7 @@ impl InlineSpan {
             atomic: Some(Box::new(atomic)),
             link: None,
             background_color: RgbaColor::TRANSPARENT,
+            relative_insets: Vec::new(),
         }
     }
 
@@ -277,6 +309,7 @@ impl InlineSpan {
             atomic: None,
             link: None,
             background_color: RgbaColor::TRANSPARENT,
+            relative_insets: Vec::new(),
         }
     }
 }
@@ -290,6 +323,9 @@ struct InlineContext {
     link: Option<Rc<str>>,
     /// 直近のインライン要素が指定した背景色。
     background_color: RgbaColor,
+    /// What the enclosing `position: relative` inline elements specify,
+    /// outermost first.
+    relative_insets: Vec<RelativeInset>,
 }
 
 impl Default for InlineContext {
@@ -297,6 +333,7 @@ impl Default for InlineContext {
         Self {
             link: None,
             background_color: RgbaColor::TRANSPARENT,
+            relative_insets: Vec::new(),
         }
     }
 }
@@ -587,6 +624,7 @@ fn apply_first_letter(node: NodeId, style: &ComputedStyle, spans: &mut Vec<Inlin
             atomic: None,
             link: spans[span_index].link.clone(),
             background_color: spans[span_index].background_color,
+            relative_insets: spans[span_index].relative_insets.clone(),
         },
     );
 }
@@ -1352,6 +1390,11 @@ fn collect_spans_in_context(
             }
             if let Some(href) = link_href(dom, node) {
                 context.link = Some(href);
+            }
+            // A `position: relative` inline element shifts the runs of all its
+            // descendants together (#29).
+            if let Some(inset) = styles.get(&node).and_then(|s| RelativeInset::of(s)) {
+                context.relative_insets.push(inset);
             }
             push_before_content(styles, node, out);
             for child in dom.children(node) {

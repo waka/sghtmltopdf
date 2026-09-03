@@ -67,7 +67,7 @@
 | `float` | ✅ | `none`/`left`/`right`。`width: auto`のshrink-to-fitに対応 |
 | `clear` | ✅ | `none`/`left`/`right`/`both` |
 | `position` | ⚠️ | `static`/`relative`/`absolute`/`fixed`。`sticky`は非対応。`absolute`/`fixed`には後述の制約あり |
-| `top` / `right` / `bottom` / `left` | ⚠️ | `absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を避けるため`top`基準に解決する)。`relative`ではオフセットとして機能する |
+| `top` / `right` / `bottom` / `left` | ⚠️ | `absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を避けるため`top`基準に解決する)。`relative`では背景・枠線と中身(テキスト・画像・子ボックス)をまとめてずらすオフセットとして機能する。`relative`の`top`/`bottom`のパーセンテージは0扱い |
 | `inset`(ショートハンド) | ✅ | 1〜4値ショートハンド(展開規則は`margin`と同じ) |
 | `inset-inline` / `inset-block` / `inset-inline-start`等 | ⚠️ | 論理プロパティ。写像規則は[`margin-inline`](#ボックスモデル)と同じ |
 | `transform` | ⚠️ | `translate`/`translateX`/`translateY`/`scale`/`scaleX`/`scaleY`/`rotate`/`skew`/`skewX`/`skewY`/`matrix`。3D系(`translate3d`/`rotate3d`/`perspective()`等)は非対応。PDFのCTM変換で実装するため、変換後の内容はページ分割の判定に影響しない |

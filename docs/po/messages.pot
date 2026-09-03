@@ -3546,7 +3546,7 @@ msgstr ""
 
 #: src/supports/properties.md:70
 msgid ""
-"`absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を避けるため`top`基準に解決する)。`relative`ではオフセットとして機能する"
+"`absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を避けるため`top`基準に解決する)。`relative`では背景・枠線と中身(テキスト・画像・子ボックス)をまとめてずらすオフセットとして機能する。`relative`の`top`/`bottom`のパーセンテージは0扱い"
 msgstr ""
 
 #: src/supports/properties.md:71
