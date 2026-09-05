@@ -105,12 +105,16 @@ end
 | `wicked_pdf_javascript_include_tag` | — (JSを実行しないので不要) |
 | `wicked_pdf_asset_base64` | — (`sghtmltopdf_image_tag`に`inline: true`) |
 
-素の`stylesheet_link_tag`/`image_tag`も、アセットが`public/`配下へprecompileされていればそのまま動きます。
+素の`image_tag`も、アセットが`public/`配下へprecompileされていればそのまま動きます。
 PDFのレンダリングはHTTPサーバを介さないので、`/assets/…`のようなURLは`--base-url`(Railsでの既定は`Rails.root/public`)を基準にローカルファイルとして解決される。
 
 開発環境のようにアセットがまだ`public/`に無い場合は、パイプラインのロードパスから実ファイルを引くヘルパを使う。
 `sghtmltopdf_stylesheet_link_tag`はCSSを`<style>`へ展開し、`sghtmltopdf_image_tag`は画像をパスで指す(読めない場所にある場合は`data:`URIで埋め込む)。
 `wicked_pdf_image_tag`が`file://`のURLを出していたのに対し、こちらはエンジンがローカルファイルとして読む形になる。
+
+CSSについては素の`stylesheet_link_tag`では足りません。
+パイプラインはprecompile時にCSS中の`url()`も書き換えるため、`asset_host`を設定していると`@font-face`の参照がHTTPSの絶対URLになり、取得できずにフォントが既定へ落ちます。
+`sghtmltopdf_stylesheet_link_tag`は展開時にこれをディスク上のファイルへ指し直します。
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>

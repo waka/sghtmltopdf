@@ -185,6 +185,26 @@ Railtieが次の既定値を入れます。
 `image_tag`が出す`/assets/logo-abc123.png`はダイジェストもマウント位置もパイプラインが実行時に作る仮想的なもので、対応するファイルはディスク上にありません。
 
 `sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。
+このとき中身をそのまま写すのではなく、`url()`の参照先をエンジンが読める形へ指し直し、`@import`を再帰的に取り込みます。
+
+指し直しが必要なのは、アセットパイプラインがprecompile時に`url()`を`asset_path`で書き換えるためです。
+`asset_host`を設定していればHTTPSの絶対URLになり(Sprocketsの場合)、そうでなければダイジェスト付きの`/assets/…`になります。
+PDFのレンダリングはHTTPサーバを介さないので、どちらもそのままでは取得できません。
+`@font-face`の取得に失敗しても`font-family`の次の候補には進まず、エンジン既定のフォントに落ちるだけなので、気づきにくい形で見た目が変わります。
+
+| CSS中の`url()` | 指し直し先 |
+|---|---|
+| `https://cdn.example.com/assets/x-<digest>.otf` | パス部分をローカルのファイルに対応付ける |
+| `/assets/x-<digest>.otf` | `public/`、次にパイプラインのロードパス |
+| `fonts/x.otf` | まずCSSファイル自身のディレクトリ、次にパイプラインのロードパス |
+| `data:`、`#fragment`のみ | そのまま |
+| ローカルに見つからないURL | そのまま(CDNのフォントなど本物のリモート参照) |
+
+絶対URLはホスト名を`asset_host`と突き合わせません。
+`asset_host`はProcや`%d`を含む文字列も取れるため、逆引きの一般解がないからです。
+代わりにパス部分がディスク上に実在するかどうかで判定します。
+
+指し直したあとの形は`sghtmltopdf_image_tag`と同じで、`base_url`の下なら相対パス、読める場所にあれば絶対パス、読めなければ`data:`URIです。
 
 `sghtmltopdf_image_tag`は画像をパスで指します。
 `base_url`の下にあれば相対パス、そうでなければ絶対パスです。

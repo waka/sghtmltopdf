@@ -61,6 +61,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   also stops mapping a source that is already a URL onto a same-named file under `public/`,
   and no longer gives up on a `public/`-only file in a Propshaft app, where `asset_path`
   raises `MissingAssetError` rather than returning a path.
+- `sghtmltopdf_stylesheet_link_tag` now points the `url()`s of the CSS it inlines at files
+  the engine can read, instead of copying the file verbatim (#45). The asset pipeline
+  rewrites every `url()` through `asset_path` while precompiling, so a `@font-face` source
+  became a digested `/assets/…` path, or an absolute `https://…` URL once `asset_host` was
+  set; rendering never goes through the HTTP server, so neither could be fetched and the
+  family fell back to the engine default rather than to the next `font-family` — silently,
+  since a `@font-face` that cannot be loaded only warns. Each reference is now mapped back
+  onto its file — the path part of an absolute URL, a site-root-relative path under
+  `public/` or the pipeline load path, a relative one against the stylesheet's own
+  directory as CSS says it means — and written the way `sghtmltopdf_image_tag` writes an
+  image: relative to `base_url`, the absolute path when it sits elsewhere the engine may
+  read, a `data:` URI when it may not. A reference that names no file of the application,
+  such as a font served by a CDN, is left alone. `@import` is spliced in rather than left
+  for the engine, which resolves every `url()` against the document's base whatever
+  stylesheet it came from, so the same problem would reappear one level down.
 - `position: relative` now moves the content of the element together with its background
   and border (#29). The offset was applied to the box's own rectangle after its lines and
   child boxes had been placed, so text, images, nested blocks and list markers were left

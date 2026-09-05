@@ -1,10 +1,15 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "rails_helper"
 require "tmpdir"
 
 # ダミーのRailsアプリ(spec/dummy)のコントローラからPDFが返ること。
 RSpec.describe "Railsのコントローラ", type: :rails do
+  # `@font-face`の経路を見るために使う。ダミーアプリには置かず、
+  # 例ごとに`public/`へ複製して消す。
+  FONT_FIXTURE = File.expand_path("../../../core/tests/fonts/DejaVuSansMono.ttf", __dir__)
+
   describe "render pdf:" do
     it "PDFを返す" do
       get "/invoices/show"
@@ -311,6 +316,173 @@ RSpec.describe "Railsのコントローラ", type: :rails do
         expect(last_response.body).to include("/Subtype /Image")
         expect(last_response.body).to include("/Width 20")
         expect(last_response.body).to include("/Height 16")
+      end
+    end
+
+    # #45: precompileしたCSSの`url()`はパイプラインが`asset_path`で書き換えた
+    # あとなので、`asset_host`があればHTTPSの絶対URLになる。PDF生成はHTTP
+    # サーバを通らないので取得できず、`@font-face`は無言で既定フォントに
+    # 落ちる。ヘルパはこれをディスク上のファイルへ指し直す。
+    describe "sghtmltopdf_stylesheet_link_tag" do
+      let(:view) { InvoicesController.new.view_context }
+
+      # フォントをダミーアプリに置きっぱなしにしないよう、`public/`の下へ
+      # 一式を作って例ごとに消す。
+      around do |example|
+        @dir = Rails.root.join("public/css-fixtures")
+        FileUtils.mkdir_p(@dir.join("fonts"))
+        FileUtils.cp(FONT_FIXTURE, @dir.join("fonts/gyre.ttf"))
+        FileUtils.cp(Rails.root.join("public/logo.png"), @dir.join("seal.png"))
+        example.run
+      ensure
+        FileUtils.rm_rf(@dir)
+      end
+
+      # `public/css-fixtures/main.css`に`css`を書いて、ヘルパの出力を返す。
+      def inline(css, name: "main")
+        File.write(@dir.join("#{name}.css"), css)
+        view.sghtmltopdf_stylesheet_link_tag("css-fixtures/#{name}")
+      end
+
+      it "asset_hostのついた絶対URLをローカルのファイルへ指し直す" do
+        html = inline(<<~CSS)
+          @font-face {
+            font-family: "Gyre";
+            src: url(https://cdn.example.com/css-fixtures/fonts/gyre.ttf);
+          }
+        CSS
+
+        expect(html).to include(%(url("css-fixtures/fonts/gyre.ttf")))
+        expect(html).not_to include("https://")
+      end
+
+      it "ルート相対の参照をローカルのファイルへ指し直す" do
+        html = inline(%(body { background-image: url("/css-fixtures/seal.png"); }))
+
+        expect(html).to include(%(url("css-fixtures/seal.png")))
+      end
+
+      # エンジンは全CSSソースを連結してから解決するので、相対`url()`は
+      # 文書のbase_url基準になる。CSSファイルの実パスを知っているのは
+      # こちら側だけなので、ここで解決してから流し込む。
+      it "相対参照はCSSファイル自身のディレクトリ基準で解決する" do
+        html = inline(%(body { background-image: url(seal.png); }))
+
+        expect(html).to include(%(url("css-fixtures/seal.png")))
+      end
+
+      it "..で親をたどる参照も解決する" do
+        html = inline(%(body { background-image: url("../../logo.png"); }), name: "fonts/deep")
+
+        expect(html).to include(%(url("logo.png")))
+      end
+
+      it "クエリとフラグメントは落とす" do
+        html = inline(%(@font-face { src: url(fonts/gyre.ttf?v=2#iefix); }))
+
+        expect(html).to include(%(url("css-fixtures/fonts/gyre.ttf")))
+        expect(html).not_to include("iefix")
+      end
+
+      it "data: URIと素のフラグメントは素通しする" do
+        html = inline(<<~CSS)
+          @font-face { src: url(data:font/ttf;base64,AAEAAA); }
+          .mask { mask: url(#clip); }
+        CSS
+
+        expect(html).to include("url(data:font/ttf;base64,AAEAAA)")
+        expect(html).to include("url(#clip)")
+      end
+
+      it "ローカルに無いリモートURLは素通しする" do
+        html = inline(%(@font-face { src: url(https://fonts.gstatic.com/s/x.woff2); }))
+
+        expect(html).to include("url(https://fonts.gstatic.com/s/x.woff2)")
+      end
+
+      # `local()`はファイル参照ではないので触らない。
+      it "local()には手を付けない" do
+        html = inline(%(@font-face { src: local("Gyre"), url(fonts/gyre.ttf); }))
+
+        expect(html).to include(%(local("Gyre")))
+        expect(html).to include(%(url("css-fixtures/fonts/gyre.ttf")))
+      end
+
+      # 読めない場所のファイルをパスで指すと、取得失敗が既定で無視される
+      # ぶん無言で消える。`@font-face`は`abort`にしても中断されないので、
+      # なおさら埋め込みへ倒す。
+      it "エンジンが読めない場所のファイルは埋め込みに倒す" do
+        Sghtmltopdf.configure { |c| c.server_url = "http://127.0.0.1:1" }
+
+        html = inline(%(@font-face { src: url(fonts/gyre.ttf); }))
+
+        expect(html).to include("data:font/ttf;base64,")
+      end
+
+      it "@importを再帰的に展開し、取り込んだ先のurl()も書き換える" do
+        File.write(@dir.join("fonts/child.css"), %(body { background-image: url(../seal.png); }))
+        html = inline(%(@import url("fonts/child.css");\nh1 { color: red; }))
+
+        expect(html).not_to include("@import")
+        expect(html).to include(%(url("css-fixtures/seal.png")))
+        expect(html).to include("h1 { color: red; }")
+      end
+
+      it "引用符だけの@importとメディア条件つきの@importも展開する" do
+        File.write(@dir.join("a.css"), "h1 { color: red; }")
+        File.write(@dir.join("b.css"), "h2 { color: blue; }")
+        html = inline(%(@import "a.css";\n@import url(b.css) print;))
+
+        expect(html).to include("h1 { color: red; }")
+        expect(html).to include("h2 { color: blue; }")
+        expect(html).not_to include("print")
+      end
+
+      it "コメントアウトされた@importは展開しない" do
+        File.write(@dir.join("a.css"), "h1 { color: red; }")
+        html = inline(%(/* @import "a.css"; */\nh2 { color: blue; }))
+
+        expect(html).not_to include("color: red")
+        expect(html).to include(%(/* @import "a.css"; */))
+      end
+
+      # 自分の祖先を取り込むCSSは、深さ上限まで展開すると読み込み回数が
+      # 分岐ぶん膨らむ。連鎖に出てきたファイルはそこで止めてエンジンに任せる。
+      it "循環した@importはそのまま残す" do
+        File.write(@dir.join("a.css"), %(@import "main.css";\nh1 { color: red; }))
+        html = inline(%(@import url("a.css");))
+
+        expect(html).to include("h1 { color: red; }")
+        expect(html).to include(%(@import "main.css";))
+      end
+
+      it "ローカルに無い@importはそのまま残してエンジンに任せる" do
+        html = inline(%(@import url("https://example.com/x.css");))
+
+        expect(html).to include(%(@import url("https://example.com/x.css");))
+      end
+
+      # 埋め込まれたフォントはPDF上どれも`/EmbeddedFont`という名前になるので、
+      # 名前では見分けられない。#45の症状そのもの、つまり「取得に失敗すると
+      # `font-family`の次の候補ではなくエンジン既定へ落ちる」を突き合わせる。
+      it "指し直した@font-faceのフォントが実際に効く" do
+        css = <<~CSS
+          @font-face {
+            font-family: "Gyre";
+            src: url(https://cdn.example.com/css-fixtures/fonts/gyre.ttf);
+          }
+          body { font-family: "Gyre"; }
+        CSS
+        body = "<p>Hello</p>"
+
+        rewritten = Sghtmltopdf.render(inline(css) + body)
+        # 書き換える前のCSSをそのまま流し込んだ場合(修正前の挙動)。
+        verbatim = Sghtmltopdf.render(%(<style type="text/css">#{css}</style>#{body}))
+        without = Sghtmltopdf.render(body)
+
+        expect(rewritten).to include("/FontFile2")
+        expect(normalize(verbatim)).to eq(normalize(without))
+        expect(normalize(rewritten)).not_to eq(normalize(without))
       end
     end
   end

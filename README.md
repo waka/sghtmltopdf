@@ -119,6 +119,9 @@ That is enough for a precompiled production app; in development the digested `/a
 <%= sghtmltopdf_image_tag "logo.png" %>
 ```
 
+`sghtmltopdf_stylesheet_link_tag` does not copy the CSS verbatim: it points every `url()` at a file the engine can read and splices in every `@import`.
+The asset pipeline rewrites `url()` through `asset_path` while precompiling, which turns a `@font-face` source into a digested `/assets/…` path, or into an absolute URL once `asset_host` is set — neither can be fetched while rendering, and a `@font-face` that fails to load falls back to the engine default rather than to the next `font-family`.
+
 To send pages as soon as their layout is final, pass a block and use `ActionController::Live` this also makes `Rack::Timeout` and `Thread#kill` effective at chunk boundaries:
 
 ```ruby

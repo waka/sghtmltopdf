@@ -1,0 +1,6 @@
+/* 実体は`app/assets/images/pipeline-logo.png`。このファイルの隣には無いので、
+   ロードパスの論理パスとして引かれる経路になる。 */
+body {
+  background-image: url(pipeline-logo.png);
+  background-size: 20px 16px;
+}
