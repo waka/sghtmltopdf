@@ -103,15 +103,18 @@ end
 | `wicked_pdf_image_tag` | `sghtmltopdf_image_tag` |
 | `wicked_pdf_asset_path` | `sghtmltopdf_asset_path`(見つからなければ`nil`) |
 | `wicked_pdf_javascript_include_tag` | — (JSを実行しないので不要) |
-| `wicked_pdf_asset_base64` | — (ローカルファイルを直接読めるので不要) |
+| `wicked_pdf_asset_base64` | — (`sghtmltopdf_image_tag`に`inline: true`) |
 
 素の`stylesheet_link_tag`/`image_tag`も、アセットが`public/`配下へprecompileされていればそのまま動きます。
 PDFのレンダリングはHTTPサーバを介さないので、`/assets/…`のようなURLは`--base-url`(Railsでの既定は`Rails.root/public`)を基準にローカルファイルとして解決される。
 
-開発環境のようにアセットがまだ`public/`に無い場合は、CSSの中身を`<style>`へ展開する`sghtmltopdf_stylesheet_link_tag`を使う。
+開発環境のようにアセットがまだ`public/`に無い場合は、パイプラインのロードパスから実ファイルを引くヘルパを使う。
+`sghtmltopdf_stylesheet_link_tag`はCSSを`<style>`へ展開し、`sghtmltopdf_image_tag`は画像をパスで指す(読めない場所にある場合は`data:`URIで埋め込む)。
+`wicked_pdf_image_tag`が`file://`のURLを出していたのに対し、こちらはエンジンがローカルファイルとして読む形になる。
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
+<%= sghtmltopdf_image_tag "logo.png" %>
 ```
 
 ## 既定値の違い
@@ -119,9 +122,9 @@ PDFのレンダリングはHTTPサーバを介さないので、`/assets/…`の
 * マージン: wkhtmltopdfは四辺10mm。sghtmltopdfは四辺1in(96px)。
   同じ見た目にしたければ`margin_*`を明示する
 * CLIオプションとCSSの`@page`: wkhtmltopdfはCLIが勝つが、sghtmltopdfは `@page` が勝つ(オプションは初期値)
-* ローカルファイルの参照範囲: Railsでは`--allow`の既定が`Rails.root`になる。アプリの外(例: `/usr/share/fonts`)のファイルを`<img>`や`@font-face`の`url()`で参照している場合は、`Sghtmltopdf.configure { |c| c.allow = [Rails.root.to_s, "/usr/share/fonts"] }`のように明示する。`--font`系(`gothic_font`など)で渡すフォントはこの制限を受けない
+* ローカルファイルの参照範囲: Railsでは`--allow-path`(旧`--allow`。別名として受ける)の既定が`public/`とアセットパイプラインのロードパスになる。そこから外れるファイル(例: `/usr/share/fonts`、`Rails.root.join("tmp")`)を`<img>`や`@font-face`の`url()`で参照している場合は、`Sghtmltopdf.configure { |c| c.allow_path += ["/usr/share/fonts"] }`のように明示する。`--font`系(`gothic_font`など)で渡すフォントはこの制限を受けない
 * リモート取得: `http(s)`のアセット取得は既定で無効。必要なら`allow_remote_assets: true`
-* `disable_local_file_access`との併用: `--allow`は読み取り範囲を狭めるだけで、許可を与えるものではない。wicked_pdfで`disable_local_file_access: true`と`allow: [dir]`を併用して「dirだけ読める」状態にしていた場合、そのまま持ち込むとローカル読み取りが全て止まる。`allow`だけを残すこと
+* `disable_local_file_access`との併用: `--allow-path`は読み取り範囲を狭めるだけで、許可を与えるものではない。wicked_pdfで`disable_local_file_access: true`と`allow: [dir]`を併用して「dirだけ読める」状態にしていた場合、そのまま持ち込むとローカル読み取りが全て止まる。`allow_path`だけを残すこと
 
 ## フォント
 
@@ -146,7 +149,7 @@ Sghtmltopdf.configure { |c| c.server_url = "http://pdf.internal:8080" }
 負荷分散はLB(nginx・k8s Service)を前段に置く前提で、URLは1つだけ受ける。
 到達できないときは`Sghtmltopdf::ServerError`になり、ローカル変換へはフォールバックしない。
 
-サーバモードでは`base_url`・`allow`・フォント指定などローカルパスを取るオプションはリクエストから指定できない(サーバ起動時にだけ設定できる)。
+サーバモードでは`base_url`・`allow_path`・フォント指定などローカルパスを取るオプションはリクエストから指定できない(サーバ起動時にだけ設定できる)。
 Railtieが入れる既定値は自動的に外れるが、`configure`で明示的に設定している場合は400(`UsageError`)になるので、サーバ側の起動オプションへ移す。
 
 ## まだ無いもの

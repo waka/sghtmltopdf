@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-09-04T00:08:46+09:00\n"
+"POT-Creation-Date: 2026-09-05T18:47:48+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -70,7 +70,7 @@ msgstr "Selectors, values, and at-rules"
 
 #: src/SUMMARY.md:22 src/usage/cli/reference.md:60 src/usage/ruby_rails.md:95
 #: src/supports/fonts.md:1 src/migration/wkhtmltopdf.md:18
-#: src/migration/wicked-pdf.md:126
+#: src/migration/wicked-pdf.md:129
 msgid "フォント"
 msgstr "Fonts"
 
@@ -1928,7 +1928,7 @@ msgstr "Link each heading back to the table of contents"
 msgid "`--page-offset <N>`"
 msgstr "`--page-offset <N>`"
 
-#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:168 src/usage/cli/reference.md:243
 msgid "0"
 msgstr "0"
 
@@ -1982,8 +1982,8 @@ msgid "禁止"
 msgstr "Denied"
 
 #: src/usage/cli/reference.md:181
-msgid "`--allow <PATH>`"
-msgstr "`--allow <PATH>`"
+msgid "`--allow-path <PATH>`"
+msgstr "`--allow-path <PATH>`"
 
 #: src/usage/cli/reference.md:181
 msgid "制限なし"
@@ -1995,12 +1995,12 @@ msgstr "`--allow-remote-assets`"
 
 #: src/usage/cli/reference.md:184
 msgid ""
-"`--allow`を1つ以上指定すると、ローカル参照はそのディレクトリ配下だけに限定さ"
-"れます。 `<img src>`・外部CSS・`@font-face`のすべてに効きます。"
+"`--allow-path`を1つ以上指定すると、ローカル参照はそのディレクトリ配下だけに限"
+"定されます。 `<img src>`・外部CSS・`@font-face`のすべてに効きます。"
 msgstr ""
-"Given one or more `--allow` paths, local references are confined to those "
-"directories. This applies to `<img src>`, external CSS, and `@font-face` "
-"alike."
+"Given one or more `--allow-path` directories, local references are "
+"confined to those directories. This applies to `<img src>`, external CSS, "
+"and `@font-face` alike."
 
 #: src/usage/cli/reference.md:187
 msgid ""
@@ -2035,26 +2035,65 @@ msgstr ""
 
 #: src/usage/cli/reference.md:199
 msgid ""
-"外のファイルを意図的に参照する場合は`--allow`で範囲を明示してください。 `--"
-"allow`を指定した場合は、基準ディレクトリではなく許可したディレクトリが境界に"
-"なります。"
-msgstr "Ranges"
+"外のファイルを意図的に参照する場合は`--allow-path`で範囲を明示してください。 "
+"`--allow-path`を指定した場合は、基準ディレクトリではなく許可したディレクトリ"
+"が境界になります。"
+msgstr ""
+"Name the range explicitly with `--allow-path` when you mean to reference a "
+"file outside it. Once `--allow-path` is given, the boundary is the allowed "
+"directories rather than the base directory."
 
 #: src/usage/cli/reference.md:210
 msgid ""
 "判定はパス文字列に対して行うため、基準ディレクトリ配下のシンボリックリンクは"
-"辿ります。 シンボリックリンクの先まで含めて閉じたい場合は`--allow`を使ってく"
-"ださい(こちらは実パスで判定します)。"
+"辿ります。 シンボリックリンクの先まで含めて閉じたい場合は`--allow-path`を使っ"
+"てください(こちらは実パスで判定します)。"
 msgstr ""
-"The check is lexical, so symlinks under the base directory are followed. Use "
-"`--allow` when you want the boundary to hold across symlinks as well (that "
-"check resolves real paths)."
+"The check is lexical, so symlinks under the base directory are followed. "
+"Use `--allow-path` when you want the boundary to hold across symlinks as "
+"well (that check resolves real paths)."
 
 #: src/usage/cli/reference.md:213
+msgid "`/`で始まる参照"
+msgstr "A reference starting with `/`"
+
+#: src/usage/cli/reference.md:215
+msgid ""
+"`/assets/logo.png`のように`/`で始まる参照は、まず基準ディレクトリからのサイト"
+"ルート相対(`<基準ディレクトリ>/assets/logo.png`)として解決します。 Railsのア"
+"セットパイプラインが出すパスがこの形なので、precompile済みの`public/`を基準"
+"ディレクトリにすればそのまま解決できます。"
+msgstr ""
+"A reference starting with `/`, such as `/assets/logo.png`, is first resolved "
+"relative to the site root, that is, to the base directory (`<base directory>/"
+"assets/logo.png`). That is the shape the Rails asset pipeline emits, so "
+"pointing the base directory at a precompiled `public/` resolves it as it is."
+
+#: src/usage/cli/reference.md:218
+msgid ""
+"そこにファイルが無い場合に限り、同じ文字列をファイルシステムの絶対パスとして"
+"解釈し直します。 `<img src=\"/var/www/app/public/logo.png\">`のような書き方の"
+"ためのフォールバックです。 このとき読めるかどうかは他の参照と同じ規則で決まり"
+"ます。 絶対パスが基準ディレクトリの中を指していればそのまま読め、外を指してい"
+"れば`--allow-path`が要ります。"
+msgstr ""
+"Only when there is no file there is the same string read again as a "
+"filesystem path. It is the fallback for a document written as `<img "
+"src=\"/var/www/app/public/logo.png\">`. What may be read is then decided "
+"by the same rules as for any other reference: an absolute path inside the "
+"base directory is read as it is, one outside it needs `--allow-path`."
+
+#: src/usage/cli/reference.md:223
+msgid ""
+"どちらの解釈でもファイルが見つからない場合は、両方のパスを挙げたエラーになり"
+"ます。"
+msgstr "When neither reading finds a file, the error names both paths."
+
+#: src/usage/cli/reference.md:225
 msgid "入力の大きさの制限"
 msgstr "Limits on input size"
 
-#: src/usage/cli/reference.md:215
+#: src/usage/cli/reference.md:227
 msgid ""
 "要素数がおよそ50万ノードを超えるHTMLはエラーになります。 算出スタイル・ボック"
 "スツリー・レイアウト結果がノード数に比例して積み上がるためで、実測では1ノード"
@@ -2064,7 +2103,7 @@ msgstr ""
 "box tree and the layout result all grow in proportion to the node count; "
 "measured at 472 B to 1210 B per node."
 
-#: src/usage/cli/reference.md:218
+#: src/usage/cli/reference.md:230
 msgid ""
 "数千ページ規模の文書でも数十万ノードなので、実在の文書がここに当たることはま"
 "ずありません。 当たった場合は文書を分割するか、[ストリーミングモード]"
@@ -2077,7 +2116,7 @@ msgstr ""
 "each processed part as it goes, so it can convert documents whose total "
 "exceeds the limit."
 
-#: src/usage/cli/reference.md:222
+#: src/usage/cli/reference.md:234
 msgid ""
 "テキストの量に比例するメモリはこの上限では抑えられません(要素3個でも10MiBのテ"
 "キストなら約1.7GiB使います)。 HTTPサーバモードでは`--max-body-size`がその役割"
@@ -2087,11 +2126,11 @@ msgstr ""
 "(three elements holding 10 MiB of text still use about 1.7 GiB). In HTTP "
 "server mode `--max-body-size` plays that role."
 
-#: src/usage/cli/reference.md:225
+#: src/usage/cli/reference.md:237
 msgid "ログとexit code"
 msgstr "Logging and exit codes"
 
-#: src/usage/cli/reference.md:227
+#: src/usage/cli/reference.md:239
 msgid ""
 "`--log-level <none|error|warn|info>`(既定`info`)、`-q`/`--quiet`(=`--log-"
 "level none`)。"
@@ -2099,34 +2138,34 @@ msgstr ""
 "`--log-level <none|error|warn|info>`, `info` by default, and `-q` or `--"
 "quiet`, which is the same as `--log-level none`."
 
-#: src/usage/cli/reference.md:229
+#: src/usage/cli/reference.md:241
 msgid "code"
 msgstr "Code"
 
-#: src/usage/cli/reference.md:229 src/usage/ruby_rails.md:54
+#: src/usage/cli/reference.md:241 src/usage/ruby_rails.md:54
 #: src/usage/ruby_rails.md:165 src/migration/wkhtmltopdf-options.md:6
 msgid "意味"
 msgstr "Meaning"
 
-#: src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:243
 msgid "成功"
 msgstr "Success"
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "1"
 msgstr "1"
 
-#: src/usage/cli/reference.md:232
+#: src/usage/cli/reference.md:244
 msgid "使用法エラー(不明なオプション、値の形式不正、非対応オプションの指定)"
 msgstr ""
 "Usage error: an unknown option, a malformed value, or an option that is not "
 "supported"
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid "2"
 msgstr "2"
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:245
 msgid ""
 "入力/リソースエラー(ファイルが無い、フォントが読めない、`abort`指定での取得失"
 "敗)"
@@ -2134,20 +2173,20 @@ msgstr ""
 "Input or resource error: a missing file, a font that cannot be read, or a "
 "failed fetch under `abort`"
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "3"
 msgstr "3"
 
-#: src/usage/cli/reference.md:234
+#: src/usage/cli/reference.md:246
 msgid "レンダリングエラー(ストリーミングモードの制約違反など)"
 msgstr ""
 "Rendering error, such as breaking one of the streaming mode restrictions"
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid "4"
 msgstr "4"
 
-#: src/usage/cli/reference.md:235
+#: src/usage/cli/reference.md:247
 msgid ""
 "制限時間超過(HTTPサーバモードの`--timeout`のみ。CLIには時間制限がないため出ま"
 "せん)"
@@ -3164,7 +3203,7 @@ msgstr ""
 "the same parser."
 
 #: src/usage/ruby_rails.md:50 src/usage/ruby_rails.md:87
-#: src/usage/ruby_rails.md:142 src/usage/ruby_rails.md:192
+#: src/usage/ruby_rails.md:142 src/usage/ruby_rails.md:210
 #: src/migration/wicked-pdf.md:34
 msgid "\"A4\""
 msgstr "\"A4\""
@@ -3203,8 +3242,8 @@ msgid "`grayscale: false` / `nil`"
 msgstr "`grayscale: false` or `nil`"
 
 #: src/usage/ruby_rails.md:59
-msgid "`allow: [\"/a\", \"/b\"]`"
-msgstr "`allow: [\"/a\", \"/b\"]`"
+msgid "`allow_path: [\"/a\", \"/b\"]`"
+msgstr "`allow_path: [\"/a\", \"/b\"]`"
 
 #: src/usage/ruby_rails.md:59
 msgid "同じオプションの繰り返し"
@@ -3318,7 +3357,7 @@ msgid "# config/initializers/sghtmltopdf.rb など\n"
 msgstr "# for example config/initializers/sghtmltopdf.rb\n"
 
 #: src/usage/ruby_rails.md:88 src/migration/wicked-pdf.md:36
-#: src/migration/wicked-pdf.md:133
+#: src/migration/wicked-pdf.md:136
 msgid "\"vendor/fonts/NotoSansJP-Regular.ttf\""
 msgstr "\"vendor/fonts/NotoSansJP-Regular.ttf\""
 
@@ -3353,9 +3392,10 @@ msgstr "\"/app/vendor/fonts/NotoSansMono-Regular.ttf\""
 
 #: src/usage/ruby_rails.md:108
 msgid ""
-"`font`系で渡すフォントは、後述の`allow`(ローカル参照の制限)の対象外です。"
+"`font`系で渡すフォントは、後述の`allow_path`(ローカル参照の制限)の対象外で"
+"す。"
 msgstr ""
-"Fonts passed through the `font` options are exempt from `allow`, the "
+"Fonts passed through the `font` options are exempt from `allow_path`, the "
 "restriction on local references described below."
 
 #: src/usage/ruby_rails.md:110
@@ -3475,14 +3515,14 @@ msgstr "\"invoice\""
 msgid "# ファイル名(.pdfは自動で付く)\n"
 msgstr "# the file name; .pdf is appended for you\n"
 
-#: src/usage/ruby_rails.md:140 src/usage/ruby_rails.md:263
+#: src/usage/ruby_rails.md:140 src/usage/ruby_rails.md:281
 #: src/migration/wicked-pdf.md:22 src/migration/wicked-pdf.md:92
 msgid "\"invoices/show\""
 msgstr "\"invoices/show\""
 
-#: src/usage/ruby_rails.md:141 src/usage/ruby_rails.md:176
-#: src/usage/ruby_rails.md:263 src/migration/wicked-pdf.md:22
-#: src/migration/wicked-pdf.md:114
+#: src/usage/ruby_rails.md:141 src/usage/ruby_rails.md:178
+#: src/usage/ruby_rails.md:281 src/migration/wicked-pdf.md:22
+#: src/migration/wicked-pdf.md:116
 msgid "\"pdf\""
 msgstr "\"pdf\""
 
@@ -3568,52 +3608,110 @@ msgstr ""
 "`stylesheet_link_tag` works as is"
 
 #: src/usage/ruby_rails.md:168
-msgid "`allow`"
-msgstr "`allow`"
+msgid "`allow_path`"
+msgstr "`allow_path`"
 
 #: src/usage/ruby_rails.md:168
-msgid "`[Rails.root]`"
-msgstr "`[Rails.root]`"
+msgid "`public/`とアセットパイプラインのロードパス"
+msgstr "`public/` and the asset pipeline load paths"
 
 #: src/usage/ruby_rails.md:168
-msgid "ローカル参照をアプリ配下に限定する"
-msgstr "Confines local references to the application directory"
+msgid "ローカル参照をアプリのアセット配下に限定する"
+msgstr "Confines local references to the application's assets"
 
 #: src/usage/ruby_rails.md:170
 msgid ""
 "どちらも`Sghtmltopdf.configure`で上書きできます(イニシャライザの実行順に依存"
-"しません)。 `allow`の既定はテンプレートにユーザー入力が混ざっても文書外のファ"
-"イルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を参照し"
-"ている場合は明示的に足してください。"
+"しません)。 `allow_path`の既定はテンプレートにユーザー入力が混ざっても文書外"
+"のファイルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を"
+"参照している場合は明示的に足してください。 内訳は`public/`と`config.assets."
+"paths`(Propshaft/Sprocketsのロードパス)で、gemやengineが提供するアセットのよ"
+"うに`Rails.root`の外にあるものも含みます。 `config/`や`db/`は入らないので、"
+"`Rails.root.join(\"tmp/chart.png\")`のようにアセット以外の場所を参照している"
+"場合も足してください。"
 msgstr ""
 "Both can be overridden with `Sghtmltopdf.configure`, regardless of "
-"initializer order. The `allow` default exists so that user input mixed into "
-"a template cannot read files outside the document; if you reference "
-"something outside the application, such as `/usr/share/fonts`, add it "
-"explicitly."
+"initializer order. The `allow_path` default exists so that user input "
+"mixed into a template cannot read files outside the document; if you "
+"reference something outside the application, such as `/usr/share/fonts`, "
+"add it explicitly. It is made up of `public/` and `config.assets.paths` "
+"(the Propshaft or Sprockets load paths), which includes assets that live "
+"outside `Rails.root`, such as the ones a gem or an engine provides. "
+"`config/` and `db/` are not in it, so add those too if you reference "
+"somewhere that is not an asset, such as "
+"`Rails.root.join(\"tmp/chart.png\")`."
 
-#: src/usage/ruby_rails.md:173
+#: src/usage/ruby_rails.md:175
 msgid ""
-"開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、CSS"
-"の中身を`<style>`へ展開するヘルパがあります。"
+"開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、ア"
+"セットの中身を文書へ埋め込むヘルパがあります。"
 msgstr ""
 "For cases such as development, where assets have not been written to `public/"
-"` yet, there are helpers that inline the CSS into a `<style>` element."
+"` yet, there are helpers that put the asset itself into the document."
 
-#: src/usage/ruby_rails.md:177 src/usage/ruby_rails.md:178
-#: src/supports/images.md:148
+#: src/usage/ruby_rails.md:179 src/usage/ruby_rails.md:180
+#: src/supports/images.md:148 src/migration/wicked-pdf.md:117
 msgid "\"logo.png\""
 msgstr "\"logo.png\""
 
-#: src/usage/ruby_rails.md:178
+#: src/usage/ruby_rails.md:180
 msgid "<%# 見つからなければnil %>"
 msgstr "<%# nil if it cannot be found %>"
 
-#: src/usage/ruby_rails.md:181
+#: src/usage/ruby_rails.md:183
+msgid ""
+"どちらもアセットの実ファイルをパイプラインのロードパスから引き当てます。 開発"
+"環境で素の`image_tag`が使えないのはこのためです。 `image_tag`が出す`/assets/"
+"logo-abc123.png`はダイジェストもマウント位置もパイプラインが実行時に作る仮想"
+"的なもので、対応するファイルはディスク上にありません。"
+msgstr ""
+"Both look the asset up in the pipeline load path to find the real file. That "
+"is why a plain `image_tag` does not work in development: the `/assets/logo-"
+"abc123.png` it emits is virtual, with both the digest and the mount point "
+"made up by the pipeline at request time, and no file of that name is on disk."
+
+#: src/usage/ruby_rails.md:187
+msgid "`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。"
+msgstr ""
+"`sghtmltopdf_stylesheet_link_tag` expands the CSS itself into a `<style>`."
+
+#: src/usage/ruby_rails.md:189
+msgid ""
+"`sghtmltopdf_image_tag`は画像をパスで指します。 `base_url`の下にあれば相対パ"
+"ス、そうでなければ絶対パスです。 エンジンは`base_url`から解決できない絶対パス"
+"をファイルシステムのパスとして読むので、開発環境で`app/assets`にあるファイル"
+"もそのまま指せます。"
+msgstr ""
+"`sghtmltopdf_image_tag` references the image by path: relative when it sits "
+"under `base_url`, and absolute when it does not. The engine reads an "
+"absolute path as a filesystem path once it fails to resolve under "
+"`base_url`, so a file in `app/assets` in development can be pointed at as it "
+"is."
+
+#: src/usage/ruby_rails.md:193
+msgid ""
+"パスで指せるのはエンジンがそこを読める場合だけなので、`allow_path`(未設定なら"
+"`base_url`)の外にあるファイルは`data:`URIとして埋め込みます。 取得の失敗は既"
+"定で無視されるため、パスで指したまま読めないと画像が無言で消えてしまうからで"
+"す。 同じ理由で、`server_url`を設定して別プロセスへ委譲する場合も埋め込みま"
+"す。委譲先が同じファイルシステムを見ているとは限りません。"
+msgstr ""
+"A path only works where the engine is allowed to read, so a file outside "
+"`allow_path` (or outside `base_url`, when `allow_path` is not set) is "
+"embedded as a `data:` URI instead. A failed fetch is ignored by default, "
+"so an image pointed at by a path the engine cannot read would silently "
+"vanish. The same goes for delegating to another process with `server_url`, "
+"which may not be looking at this filesystem."
+
+#: src/usage/ruby_rails.md:197
+msgid "`inline: true`を渡すと常に埋め込みます。"
+msgstr "Pass `inline: true` to embed unconditionally."
+
+#: src/usage/ruby_rails.md:199
 msgid "サーバへ委譲する"
 msgstr "Delegating to a server"
 
-#: src/usage/ruby_rails.md:183
+#: src/usage/ruby_rails.md:201
 msgid ""
 "`server_url`を指定すると、変換を[HTTPサーバモード](../server/index.md)で動く "
 "別プロセスへ投げます。 アプリのCPUを使いたくない場合や、gemの対応プラット"
@@ -3624,21 +3722,21 @@ msgstr ""
 "the application's CPU on rendering, or when you run somewhere the gem does "
 "not support, such as Windows."
 
-#: src/usage/ruby_rails.md:189 src/migration/wicked-pdf.md:143
+#: src/usage/ruby_rails.md:207 src/migration/wicked-pdf.md:146
 msgid "\"http://pdf.internal:8080\""
 msgstr "\"http://pdf.internal:8080\""
 
-#: src/usage/ruby_rails.md:192
+#: src/usage/ruby_rails.md:210
 msgid "# 委譲される\n"
 msgstr "# delegated\n"
 
-#: src/usage/ruby_rails.md:195
+#: src/usage/ruby_rails.md:213
 msgid "URLは1つだけです。負荷分散はLB(nginx・k8s Service)を前段に置く前提です"
 msgstr ""
 "Only one URL is accepted. Load balancing is expected to be handled by "
 "something in front, such as nginx or a Kubernetes Service"
 
-#: src/usage/ruby_rails.md:196
+#: src/usage/ruby_rails.md:214
 msgid ""
 "到達できないときはローカルへフォールバックしません(`ServerError`)。 サーバ起"
 "動時にだけ指定できるフォントが効かず、出力が変わってしまうためです"
@@ -3647,7 +3745,7 @@ msgstr ""
 "it raises `ServerError`. Fonts can only be set when the server starts, so "
 "falling back would silently change the output"
 
-#: src/usage/ruby_rails.md:198
+#: src/usage/ruby_rails.md:216
 msgid ""
 "HTTPのステータスは上のエラー分類へ対応します(400→`UsageError`、"
 "413→`InputError`、500→`RenderError`、その他→`ServerError`)"
@@ -3655,11 +3753,11 @@ msgstr ""
 "The HTTP statuses map onto the error classes above: 400 to `UsageError`, 413 "
 "to `InputError`, 500 to `RenderError`, and anything else to `ServerError`"
 
-#: src/usage/ruby_rails.md:200
+#: src/usage/ruby_rails.md:218
 msgid "サーバでは指定できないオプション"
 msgstr "Options that cannot be set against a server"
 
-#: src/usage/ruby_rails.md:202
+#: src/usage/ruby_rails.md:220
 msgid ""
 "ローカルパスを取るものと出力先・アクセス制御はサーバ起動時にしか設定できませ"
 "ん(指定すると`UsageError`)。"
@@ -3668,22 +3766,22 @@ msgstr ""
 "controls can only be set when the server starts; passing them raises "
 "`UsageError`."
 
-#: src/usage/ruby_rails.md:212
+#: src/usage/ruby_rails.md:230
 msgid ""
-"Railtieが入れる`base_url`/`allow`の既定値は自動的に外れるので、Railsでそのま"
-"ま`server_url`を足しても400にはなりません。 `configure`で明示的に設定している"
-"場合は、サーバ側の起動オプションへ移してください。"
+"Railtieが入れる`base_url`/`allow_path`の既定値は自動的に外れるので、Railsでそ"
+"のまま`server_url`を足しても400にはなりません。 `configure`で明示的に設定して"
+"いる場合は、サーバ側の起動オプションへ移してください。"
 msgstr ""
-"The `base_url` and `allow` defaults supplied by the Railtie are dropped "
-"automatically, so simply adding `server_url` in a Rails app does not produce "
-"a 400. If you set them explicitly with `configure`, move them to the "
-"server's startup options."
+"The `base_url` and `allow_path` defaults supplied by the Railtie are "
+"dropped automatically, so simply adding `server_url` in a Rails app does "
+"not produce a 400. If you set them explicitly with `configure`, move them "
+"to the server's startup options."
 
-#: src/usage/ruby_rails.md:215
+#: src/usage/ruby_rails.md:233
 msgid "チャンクごとに受け取る"
 msgstr "Receiving the PDF in chunks"
 
-#: src/usage/ruby_rails.md:217
+#: src/usage/ruby_rails.md:235
 msgid ""
 "ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとにブロックが"
 "呼ばれます(返り値は`nil`)。 Rackの`response.stream`へ流したり、S3のマルチパー"
@@ -3693,7 +3791,7 @@ msgstr ""
 "assembled and returned; the return value is `nil`. This is the hook for "
 "writing into Rack's `response.stream` or feeding an S3 multipart upload."
 
-#: src/usage/ruby_rails.md:224
+#: src/usage/ruby_rails.md:242
 msgid ""
 "ローカル変換でもサーバ委譲でも、PDF全体が組み上がるのを待たずに書き出せま"
 "す。 ローカルは確定したページから順に、サーバはその`?stream=1`(chunked "
@@ -3704,7 +3802,7 @@ msgstr ""
 "is finalised; with a server, its `?stream=1` response, sent with chunked "
 "transfer encoding, is passed straight through."
 
-#: src/usage/ruby_rails.md:227
+#: src/usage/ruby_rails.md:245
 msgid ""
 "ただし逐次になるのはPDFの書き出しだけで、HTMLのパースとレイアウトは文書全体に"
 "対して先に行います。 そのため最初のチャンクが届くのは変換の終盤で、ピークメモ"
@@ -3717,7 +3815,7 @@ msgstr ""
 "block. To have pages finalised while the HTML is still being read, combine "
 "this with [streaming mode](#when-you-need-to-keep-memory-down)."
 
-#: src/usage/ruby_rails.md:231
+#: src/usage/ruby_rails.md:249
 msgid ""
 "1回に渡すバイト数の目安は`chunk_size:`で変えられます(既定64KiB、ローカル変換"
 "のみ)。 小さくすると細かく届きますが、そのたびにGVLを取り直すのでレンダリング"
@@ -3728,11 +3826,11 @@ msgstr ""
 "more finely, but the GVL has to be reacquired each time, which slows "
 "rendering down."
 
-#: src/usage/ruby_rails.md:238
+#: src/usage/ruby_rails.md:256
 msgid "`Thread#kill`とタイムアウトが効く"
 msgstr "`Thread#kill` and timeouts work"
 
-#: src/usage/ruby_rails.md:240
+#: src/usage/ruby_rails.md:258
 msgid ""
 "ブロックの呼び出しはRubyのメソッド呼び出しなので、その時点で保留中の割り込み"
 "が処理されます。 ブロック付きで呼んでいる限り、`Thread#kill`や`Timeout."
@@ -3742,11 +3840,11 @@ msgstr ""
 "is handled at that point. As long as you pass a block, `Thread#kill`, "
 "`Timeout.timeout`, and `Rack::Timeout` all take effect at chunk boundaries."
 
-#: src/usage/ruby_rails.md:245
+#: src/usage/ruby_rails.md:263
 msgid "# 10秒で中断できる\n"
 msgstr "# can be interrupted after 10 seconds\n"
 
-#: src/usage/ruby_rails.md:249
+#: src/usage/ruby_rails.md:267
 msgid ""
 "ブロックを渡さない`render`/`render_to_file`は変換の間まったくRubyへ戻らないた"
 "め、途中で止められません。 長い変換に上限をかけたい場合はブロック付きで呼んで"
@@ -3756,11 +3854,11 @@ msgstr ""
 "the conversion and therefore cannot be stopped part way. To put a limit on a "
 "long conversion, call them with a block."
 
-#: src/usage/ruby_rails.md:252
+#: src/usage/ruby_rails.md:270
 msgid "Railsで逐次返却する"
 msgstr "Streaming the response from Rails"
 
-#: src/usage/ruby_rails.md:254
+#: src/usage/ruby_rails.md:272
 msgid ""
 "`render pdf:`のレンダラは、組み上がったPDFを`send_data`で一括返却します。 確"
 "定したページから順に返したい場合は`ActionController::Live`と組み合わせます。"
@@ -3769,15 +3867,15 @@ msgstr ""
 "`send_data`. To send pages as they are finalised, combine it with "
 "`ActionController::Live`."
 
-#: src/usage/ruby_rails.md:262
+#: src/usage/ruby_rails.md:280
 msgid "\"Content-Type\""
 msgstr "\"Content-Type\""
 
-#: src/usage/ruby_rails.md:262 src/usage/ruby_rails.md:281
+#: src/usage/ruby_rails.md:280 src/usage/ruby_rails.md:299
 msgid "\"application/pdf\""
 msgstr "\"application/pdf\""
 
-#: src/usage/ruby_rails.md:271
+#: src/usage/ruby_rails.md:289
 msgid ""
 "途中まで書き出したあとに失敗すると、クライアントには壊れたPDFが届きます(ヘッ"
 "ダは既に送信済みなのでステータスを変えられません)。 サーバモードの`?stream=1`"
@@ -3787,11 +3885,11 @@ msgstr ""
 "broken PDF, because the headers have already gone out and the status can no "
 "longer be changed. This is the same property as `?stream=1` in server mode."
 
-#: src/usage/ruby_rails.md:274
+#: src/usage/ruby_rails.md:292
 msgid "S3へ直接上げる"
 msgstr "Uploading straight to S3"
 
-#: src/usage/ruby_rails.md:276
+#: src/usage/ruby_rails.md:294
 msgid ""
 "gemはS3向けの実装を持ちません(依存を増やさず、書き方も短いためです)。 マルチ"
 "パートアップロードは最後のパート以外は5MB以上という制約があるので、溜めてから"
@@ -3801,20 +3899,20 @@ msgstr ""
 "the code is short anyway. A multipart upload requires every part except the "
 "last to be at least 5MB, so buffer before sending."
 
-#: src/usage/ruby_rails.md:282
+#: src/usage/ruby_rails.md:300
 msgid "\"\""
 msgstr "\"\""
 
-#: src/usage/ruby_rails.md:305
+#: src/usage/ruby_rails.md:323
 msgid "小さいPDFなら`put_object(body: Sghtmltopdf.render(html))`で十分です。"
 msgstr ""
 "For a small PDF, `put_object(body: Sghtmltopdf.render(html))` is enough."
 
-#: src/usage/ruby_rails.md:307
+#: src/usage/ruby_rails.md:325
 msgid "メモリを抑えたいとき"
 msgstr "When you need to keep memory down"
 
-#: src/usage/ruby_rails.md:309
+#: src/usage/ruby_rails.md:327
 msgid ""
 "数万要素規模のHTMLでは、エンジンの[ストリーミングモード](./cli/streaming.md)"
 "を使うとメモリが大きく減ります(実測: 60,000要素で 228MB → 28MB。[メモリと処理"
@@ -3825,7 +3923,7 @@ msgstr ""
 "goes from 228MB to 28MB. See [Memory and processing time](./cli/streaming."
 "md#memory-and-processing-time)."
 
-#: src/usage/ruby_rails.md:315
+#: src/usage/ruby_rails.md:333
 msgid ""
 "その代わり、文書全体を見ないと決まらないもの(`toc`・`counter(pages)`・"
 "`<body>`より後の`<style>`など)が使えません。 制約の一覧は[ストリーミングモー"
@@ -4427,15 +4525,15 @@ msgstr "`top`, `right`, `bottom`, `left`"
 #: src/supports/properties.md:70
 msgid ""
 "`absolute`/`fixed`では`bottom`単独指定による下端揃えが非対応(高さの循環参照を"
-"避けるため`top`基準に解決する)。`relative`では背景・枠線と中身(テキスト・画像・"
-"子ボックス)をまとめてずらすオフセットとして機能する。`relative`の`top`/`bottom`の"
-"パーセンテージは0扱い"
+"避けるため`top`基準に解決する)。`relative`では背景・枠線と中身(テキスト・画"
+"像・子ボックス)をまとめてずらすオフセットとして機能する。`relative`の`top`/"
+"`bottom`のパーセンテージは0扱い"
 msgstr ""
 "With `absolute` and `fixed`, aligning to the bottom by giving `bottom` alone "
 "is not supported; everything resolves from `top`, to avoid a circular "
 "dependency on the height. With `relative` they act as offsets that move the "
-"background and border together with the content (text, images, child "
-"boxes). Percentages in `top`/`bottom` on a `relative` element count as 0"
+"background and border together with the content (text, images, child boxes). "
+"Percentages in `top`/`bottom` on a `relative` element count as 0"
 
 #: src/supports/properties.md:71
 msgid "`inset`(ショートハンド)"
@@ -7035,16 +7133,16 @@ msgstr ""
 msgid ""
 "SVGの中の`<image href=\"...\">`のような外部参照は解決しません。参照ごとに 警"
 "告を出して無視します。SVGの中からのファイル読み出しは`<img>`側の 封じ込め(基"
-"準ディレクトリ・`--allow`・`--disable-local-file-access`)を 迂回してしまうた"
-"め、経路自体を塞いでいます。`data:` URIは対象外 (SVG自身の中で完結しているた"
-"め許可されます)"
+"準ディレクトリ・`--allow-path`・`--disable-local-file-access`)を 迂回してしま"
+"うため、経路自体を塞いでいます。`data:` URIは対象外 (SVG自身の中で完結してい"
+"るため許可されます)"
 msgstr ""
-"External references from inside an SVG, such as `<image href=\"...\">`, are "
-"not resolved. Each one is ignored with a warning. Reading a file from inside "
-"an SVG would bypass the containment that applies to `<img>` (the base "
-"directory, `--allow`, and `--disable-local-file-access`), so the path is "
-"closed off entirely. `data:` URIs are exempt (they are self-contained within "
-"the SVG itself)"
+"External references from inside an SVG, such as `<image href=\"...\">`, "
+"are not resolved. Each one is ignored with a warning. Reading a file from "
+"inside an SVG would bypass the containment that applies to `<img>` (the "
+"base directory, `--allow-path`, and `--disable-local-file-access`), so the "
+"path is closed off entirely. `data:` URIs are exempt (they are "
+"self-contained within the SVG itself)"
 
 #: src/supports/images.md:138
 msgid ""
@@ -7253,9 +7351,11 @@ msgstr "Private"
 
 #: src/supports/images.md:218
 msgid ""
-"信頼できないHTMLを変換する場合は、`--allow`でローカル参照の範囲も併せて絞って"
-"ください。"
-msgstr "Ranges"
+"信頼できないHTMLを変換する場合は、`--allow-path`でローカル参照の範囲も併せて"
+"絞ってください。"
+msgstr ""
+"When converting untrusted HTML, narrow the range of local references as "
+"well with `--allow-path`."
 
 #: src/supports/images.md:224
 msgid "JPEGはそのまま埋め込まれる"
@@ -8352,9 +8452,13 @@ msgid "`--allow <path>`"
 msgstr "`--allow <path>`"
 
 #: src/migration/wkhtmltopdf-options.md:78
-msgid "ローカル読み込みを許可するディレクトリ。サーバモードでは特に重要"
+msgid ""
+"ローカル読み込みを許可するディレクトリ。sghtmltopdfでの綴りは`--allow-path`"
+"で、`--allow`は別名として受ける。サーバモードでは特に重要"
 msgstr ""
-"The directories local reads are confined to; it matters most in server mode"
+"The directories local reads are confined to. sghtmltopdf spells it "
+"`--allow-path` and takes `--allow` as an alias; it matters most in server "
+"mode"
 
 #: src/migration/wkhtmltopdf-options.md:79
 msgid "`--background` / `--no-background`"
@@ -9173,8 +9277,8 @@ msgid "`wicked_pdf_asset_base64`"
 msgstr "`wicked_pdf_asset_base64`"
 
 #: src/migration/wicked-pdf.md:106
-msgid "— (ローカルファイルを直接読めるので不要)"
-msgstr "— (unnecessary, since local files can be read directly)"
+msgid "— (`sghtmltopdf_image_tag`に`inline: true`)"
+msgstr "— (`sghtmltopdf_image_tag` with `inline: true`)"
 
 #: src/migration/wicked-pdf.md:108
 msgid ""
@@ -9190,18 +9294,25 @@ msgstr ""
 
 #: src/migration/wicked-pdf.md:111
 msgid ""
-"開発環境のようにアセットがまだ`public/`に無い場合は、CSSの中身を`<style>`へ展"
-"開する`sghtmltopdf_stylesheet_link_tag`を使う。"
+"開発環境のようにアセットがまだ`public/`に無い場合は、パイプラインのロードパス"
+"から実ファイルを引くヘルパを使う。 `sghtmltopdf_stylesheet_link_tag`はCSSを"
+"`<style>`へ展開し、`sghtmltopdf_image_tag`は画像をパスで指す(読めない場所にあ"
+"る場合は`data:`URIで埋め込む)。 `wicked_pdf_image_tag`が`file://`のURLを出し"
+"ていたのに対し、こちらはエンジンがローカルファイルとして読む形になる。"
 msgstr ""
-"Where the assets are not in `public/` yet, as in development, use "
-"`sghtmltopdf_stylesheet_link_tag`, which inlines the CSS into a `<style>` "
-"element."
+"When the assets are not in `public/` yet, as in development, use the helpers "
+"that look the real file up in the pipeline load path: "
+"`sghtmltopdf_stylesheet_link_tag` expands the CSS into a `<style>`, and "
+"`sghtmltopdf_image_tag` references the image by path (embedding it as a "
+"`data:` URI when it sits somewhere the engine cannot read). Where "
+"`wicked_pdf_image_tag` emitted a `file://` URL, here the engine reads it as "
+"a local file."
 
-#: src/migration/wicked-pdf.md:117
+#: src/migration/wicked-pdf.md:120
 msgid "既定値の違い"
 msgstr "Differences in the defaults"
 
-#: src/migration/wicked-pdf.md:119
+#: src/migration/wicked-pdf.md:122
 msgid ""
 "マージン: wkhtmltopdfは四辺10mm。sghtmltopdfは四辺1in(96px)。 同じ見た目にし"
 "たければ`margin_*`を明示する"
@@ -9209,7 +9320,7 @@ msgstr ""
 "Margins: wkhtmltopdf uses 10mm on all four sides, sghtmltopdf 1in (96px) on "
 "all four sides. State `margin_*` explicitly to keep the same look"
 
-#: src/migration/wicked-pdf.md:121
+#: src/migration/wicked-pdf.md:124
 msgid ""
 "CLIオプションとCSSの`@page`: wkhtmltopdfはCLIが勝つが、sghtmltopdfは `@page` "
 "が勝つ(オプションは初期値)"
@@ -9217,16 +9328,25 @@ msgstr ""
 "CLI options versus `@page` in CSS: in wkhtmltopdf the CLI wins, in "
 "sghtmltopdf `@page` wins and the options are initial values"
 
-#: src/migration/wicked-pdf.md:122
+#: src/migration/wicked-pdf.md:125
 msgid ""
-"ローカルファイルの参照範囲: Railsでは`--allow`の既定が`Rails.root`になる。ア"
-"プリの外(例: `/usr/share/fonts`)のファイルを`<img>`や`@font-face`の`url()`で"
-"参照している場合は、`Sghtmltopdf.configure { |c| c.allow = [Rails.root.to_s, "
-"\"/usr/share/fonts\"] }`のように明示する。`--font`系(`gothic_font`など)で渡す"
-"フォントはこの制限を受けない"
-msgstr "Ranges"
+"ローカルファイルの参照範囲: Railsでは`--allow-path`(旧`--allow`。別名として受"
+"ける)の既定が`public/`とアセットパイプラインのロードパスになる。そこから外れ"
+"るファイル(例: `/usr/share/fonts`、`Rails.root.join(\"tmp\")`)を`<img>`や"
+"`@font-face`の`url()`で参照している場合は、`Sghtmltopdf.configure { |c| c."
+"allow_path += [\"/usr/share/fonts\"] }`のように明示する。`--font`系"
+"(`gothic_font`など)で渡すフォントはこの制限を受けない"
+msgstr ""
+"Range of local file references: on Rails the `--allow-path` default "
+"(formerly `--allow`, still accepted as an alias) is `public/` plus the "
+"asset pipeline load paths. If you reference a file outside those, say "
+"`/usr/share/fonts` or `Rails.root.join(\"tmp\")`, from an `<img>` or a "
+"`url()` in `@font-face`, name it explicitly with `Sghtmltopdf.configure { "
+"|c| c.allow_path += [\"/usr/share/fonts\"] }`. Fonts passed through the "
+"`--font` options (`gothic_font` and friends) are not subject to this "
+"restriction."
 
-#: src/migration/wicked-pdf.md:123
+#: src/migration/wicked-pdf.md:126
 msgid ""
 "リモート取得: `http(s)`のアセット取得は既定で無効。必要なら"
 "`allow_remote_assets: true`"
@@ -9234,20 +9354,20 @@ msgstr ""
 "Remote fetching: retrieving `http(s)` assets is off by default. Turn it on "
 "with `allow_remote_assets: true` if you need it"
 
-#: src/migration/wicked-pdf.md:124
+#: src/migration/wicked-pdf.md:127
 msgid ""
-"`disable_local_file_access`との併用: `--allow`は読み取り範囲を狭めるだけで、"
-"許可を与えるものではない。wicked_pdfで`disable_local_file_access: true`と"
+"`disable_local_file_access`との併用: `--allow-path`は読み取り範囲を狭めるだけ"
+"で、許可を与えるものではない。wicked_pdfで`disable_local_file_access: true`と"
 "`allow: [dir]`を併用して「dirだけ読める」状態にしていた場合、そのまま持ち込む"
-"とローカル読み取りが全て止まる。`allow`だけを残すこと"
+"とローカル読み取りが全て止まる。`allow_path`だけを残すこと"
 msgstr ""
-"Combining with `disable_local_file_access`: `--allow` only narrows the range "
-"of local reads, it does not grant them. If you used "
-"`disable_local_file_access: true` together with `allow: [dir]` in wicked_pdf "
-"to mean \"only dir is readable\", carrying both across stops local reads "
-"entirely. Keep `allow` on its own."
+"Combining with `disable_local_file_access`: `--allow-path` only narrows "
+"the range of local reads, it does not grant them. If you used "
+"`disable_local_file_access: true` together with `allow: [dir]` in "
+"wicked_pdf to mean \"only dir is readable\", carrying both across stops "
+"local reads entirely. Keep `allow_path` on its own."
 
-#: src/migration/wicked-pdf.md:128
+#: src/migration/wicked-pdf.md:131
 msgid ""
 "wkhtmltopdfはシステムのフォント設定に依存するが、sghtmltopdfは`gothic_font`/"
 "`serif_font`/`mono_font`で指定できる。 日本語を出す場合は、コンテナのフォント"
@@ -9258,11 +9378,11 @@ msgstr ""
 "Japanese output it is safer to state them, so that you are not at the mercy "
 "of what a container happens to have."
 
-#: src/migration/wicked-pdf.md:137
+#: src/migration/wicked-pdf.md:140
 msgid "別プロセスへ逃がす(wicked_pdfには無い選択肢)"
 msgstr "Moving the work to another process, which wicked_pdf could not do"
 
-#: src/migration/wicked-pdf.md:139
+#: src/migration/wicked-pdf.md:142
 msgid ""
 "wicked_pdfはリクエストごとにwkhtmltopdfのプロセスを起動するが、sghtmltopdfの"
 "gemはアプリのプロセス内で変換する(重い処理の間はGVLを解放するのでPumaの他ス"
@@ -9275,7 +9395,7 @@ msgstr ""
 "still do not want to spend the application's CPU on it, `server_url` "
 "delegates to a separate `sghtmltopdf server` process."
 
-#: src/migration/wicked-pdf.md:146
+#: src/migration/wicked-pdf.md:149
 msgid ""
 "負荷分散はLB(nginx・k8s Service)を前段に置く前提で、URLは1つだけ受ける。 到達"
 "できないときは`Sghtmltopdf::ServerError`になり、ローカル変換へはフォールバッ"
@@ -9286,28 +9406,29 @@ msgstr ""
 "reached you get `Sghtmltopdf::ServerError`; it does not fall back to "
 "converting locally."
 
-#: src/migration/wicked-pdf.md:149
-msgid ""
-"サーバモードでは`base_url`・`allow`・フォント指定などローカルパスを取るオプ"
-"ションはリクエストから指定できない(サーバ起動時にだけ設定できる)。 Railtieが"
-"入れる既定値は自動的に外れるが、`configure`で明示的に設定している場合は"
-"400(`UsageError`)になるので、サーバ側の起動オプションへ移す。"
-msgstr ""
-"In server mode, options that take a local path, such as `base_url`, `allow`, "
-"and the font settings, cannot be given per request; they are only settable "
-"when the server starts. The defaults supplied by the Railtie are dropped "
-"automatically, but anything you set explicitly with `configure` produces a "
-"400 and a `UsageError`, so move those to the server's startup options."
-
 #: src/migration/wicked-pdf.md:152
+msgid ""
+"サーバモードでは`base_url`・`allow_path`・フォント指定などローカルパスを取る"
+"オプションはリクエストから指定できない(サーバ起動時にだけ設定できる)。 "
+"Railtieが入れる既定値は自動的に外れるが、`configure`で明示的に設定している場"
+"合は400(`UsageError`)になるので、サーバ側の起動オプションへ移す。"
+msgstr ""
+"In server mode, options that take a local path, such as `base_url`, "
+"`allow_path`, and the font settings, cannot be given per request; they are "
+"only settable when the server starts. The defaults supplied by the Railtie "
+"are dropped automatically, but anything you set explicitly with "
+"`configure` produces a 400 and a `UsageError`, so move those to the "
+"server's startup options."
+
+#: src/migration/wicked-pdf.md:155
 msgid "まだ無いもの"
 msgstr "Not there yet"
 
-#: src/migration/wicked-pdf.md:154
+#: src/migration/wicked-pdf.md:157
 msgid "PDFの結合・アウトライン: 非対応"
 msgstr "Merging PDFs and PDF outlines are not supported"
 
-#: src/migration/wicked-pdf.md:156
+#: src/migration/wicked-pdf.md:159
 msgid ""
 "なお逐次出力(ストリーミング)はwicked_pdfには無い機能で、ブロック付きの"
 "`render`で使える。 `ActionController::Live`と組み合わせれば、確定したページか"
@@ -9626,6 +9747,44 @@ msgstr ""
 "Embedding a JavaScript engine remains something to consider if the need "
 "arises. Items above that are not deliberate non-goals, such as PDF outlines, "
 "may well be supported later."
+
+#~ msgid "`allow`"
+#~ msgstr "`allow`"
+
+#~ msgid "`[Rails.root]`"
+#~ msgstr "`[Rails.root]`"
+
+#~ msgid ""
+#~ "`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。 "
+#~ "`sghtmltopdf_image_tag`は画像を`data:`URIとして`<img>`へ埋め込みます。 ど"
+#~ "ちらも取得を伴わないため、`base_url`や`allow`の設定に依存せず、`public/`の"
+#~ "外にあるファイルでも読めます。 画像が多くbase64でHTMLが膨らむ場合は、"
+#~ "`sghtmltopdf_image_tag \"logo.png\", inline: false`で`base_url`基準の相対"
+#~ "パスを出せます。 このとき`base_url`の外にあるファイルは、相対パスで指せな"
+#~ "いため埋め込みに戻ります。"
+#~ msgstr ""
+#~ "`sghtmltopdf_stylesheet_link_tag` expands the CSS itself into a "
+#~ "`<style>`. `sghtmltopdf_image_tag` embeds the image in the `<img>` as a "
+#~ "`data:` URI. Neither fetches anything, so they do not depend on "
+#~ "`base_url` or `allow`, and they read files outside `public/` as well. For "
+#~ "a document with so many images that base64 bloats the HTML, "
+#~ "`sghtmltopdf_image_tag \"logo.png\", inline: false` emits a path relative "
+#~ "to `base_url` instead. A file outside `base_url` falls back to being "
+#~ "embedded even then, since a relative path could not point at it."
+
+#~ msgid "— (`sghtmltopdf_image_tag`が既定で埋め込むので不要)"
+#~ msgstr "— (not needed: `sghtmltopdf_image_tag` embeds the image by default)"
+
+#~ msgid "— (ローカルファイルを直接読めるので不要)"
+#~ msgstr "— (unnecessary, since local files can be read directly)"
+
+#~ msgid ""
+#~ "開発環境のようにアセットがまだ`public/`に無い場合は、CSSの中身を`<style>`"
+#~ "へ展開する`sghtmltopdf_stylesheet_link_tag`を使う。"
+#~ msgstr ""
+#~ "Where the assets are not in `public/` yet, as in development, use "
+#~ "`sghtmltopdf_stylesheet_link_tag`, which inlines the CSS into a `<style>` "
+#~ "element."
 
 #~ msgid ""
 #~ "`display: flex`のレイアウトは[taffy](https://github.com/DioxusLabs/taffy)"

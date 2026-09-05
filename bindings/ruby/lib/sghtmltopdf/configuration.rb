@@ -24,12 +24,12 @@ module Sghtmltopdf
     end
 
     def [](key)
-      key = key.to_sym
+      key = Options.canonical_key(key)
       @options.key?(key) ? @options[key] : @defaults[key]
     end
 
     def []=(key, value)
-      @options[key.to_sym] = value
+      @options[Options.canonical_key(key)] = value
     end
 
     # @param with_defaults [Boolean] 流し込まれた既定値を含めるか。
@@ -43,7 +43,7 @@ module Sghtmltopdf
     # 既定値を流し込む。Railtieが Rails向けの既定値を入れるのに使う。
     # 明示的に設定された値より弱い(順序に関係なく`[]=`が勝つ)。
     def apply_defaults(defaults)
-      defaults.each { |key, value| @defaults[key.to_sym] = value }
+      defaults.each { |key, value| @defaults[Options.canonical_key(key)] = value }
       self
     end
 

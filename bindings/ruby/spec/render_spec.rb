@@ -77,6 +77,21 @@ RSpec.describe "Sghtmltopdf.render" do
       expect(normalize(Sghtmltopdf.render(html, page_size: "A4")))
         .not_to eq(normalize(Sghtmltopdf.render(html)))
     end
+
+    # `allow`は`allow_path`の別名。2つのキーのまま持ち回ると、既定が一方で
+    # 呼び出し時の指定がもう一方のときにマージが上書きにならず、両方が
+    # argvへ出てしまう(同じフラグの繰り返しは「合併」の意味になる)。
+    it "別名のキーは正規名へ寄せられ、既定を上書きできる" do
+      Sghtmltopdf.configure { |c| c.allow_path = ["/nonexistent-default"] }
+
+      expect(Sghtmltopdf.config[:allow]).to eq(["/nonexistent-default"])
+
+      Sghtmltopdf.configure { |c| c.allow = ["/nonexistent-other"] }
+
+      expect(Sghtmltopdf.config[:allow_path]).to eq(["/nonexistent-other"])
+      expect(Sghtmltopdf.config.to_h.keys).to include(:allow_path)
+      expect(Sghtmltopdf.config.to_h.keys).not_to include(:allow)
+    end
   end
 
   describe "スレッド安全性" do

@@ -17,7 +17,25 @@ module Sghtmltopdf
     # クエリにも出さない。
     TRANSPORT_KEYS = %i[server_url server_open_timeout server_read_timeout chunk_size].freeze
 
+    # 別名のキー(値は正規名)。CLIは`--allow`を`--allow-path`の別名として
+    # 受けるが、Ruby側は2つのキーのまま持ち回ってはいけない。既定が一方の
+    # キー、呼び出し時の指定がもう一方のキーだと、ハッシュのマージでは
+    # 上書きにならず両方がargvへ出てしまう(同じフラグの繰り返しは
+    # 「置き換え」ではなく「合併」の意味になる)。
+    ALIAS_KEYS = {allow: :allow_path}.freeze
+
     module_function
+
+    # 別名のキーを正規名へ寄せる。
+    def canonical_key(key)
+      key = key.to_sym
+      ALIAS_KEYS.fetch(key, key)
+    end
+
+    # ハッシュのキーをまとめて正規化する。
+    def canonicalize(options)
+      options.to_h { |key, value| [canonical_key(key), value] }
+    end
 
     # @param options [Hash] Rubyのオプションハッシュ
     # @return [Array<String>] clapへ渡す引数列
@@ -113,7 +131,8 @@ module Sghtmltopdf
     # 変換オプションだけを、渡された順にペアとして列挙する。
     def each_pair(options, &block)
       options.each do |key, value|
-        next if TRANSPORT_KEYS.include?(key.to_sym)
+        key = canonical_key(key)
+        next if TRANSPORT_KEYS.include?(key)
 
         pairs_for(key, value).each(&block)
       end

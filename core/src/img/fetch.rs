@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use ureq::config::Config;
@@ -15,7 +15,7 @@ use ureq::unversioned::resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver
 use ureq::unversioned::transport::{DefaultConnector, NextTimeout};
 use ureq::{Agent, Error as UreqError};
 
-use super::{resolve_local_asset_path, ImgSrc};
+use super::{resolve_local_asset_path, ImgSrc, ResolvedAssetPath};
 
 /// 取得したバイト列の既定上限(20MiB)。ローカル/リモート/data:のいずれの
 /// 取得元にも同じ上限を適用する(軽量・低メモリという設計方針上、非HTTP
@@ -35,6 +35,17 @@ impl fmt::Display for FetchError {
 }
 
 impl std::error::Error for FetchError {}
+
+/// Which file a local reference resolves to, and how it should be judged.
+struct LocalTarget {
+    /// The path to read.
+    path: PathBuf,
+    /// Whether it lies outside `base_dir` (refused unless `--allow-path` says so).
+    escapes_base_dir: bool,
+    /// The other candidate, set only when neither existed, so that the error
+    /// can name it.
+    also_tried: Option<PathBuf>,
+}
 
 /// `<img>`のバイト列取得を担う。文書ごとに1つ構築し、複数の`<img>`要素の
 /// 取得で使い回す想定(`ureq::Agent`の内部コネクションプーリングも活かせる)。
@@ -56,7 +67,7 @@ pub struct ImageFetcher {
     /// ローカルファイル参照を許すか(`--disable-local-file-access`でfalse)。
     allow_local: bool,
     /// 空でなければ、ローカル参照をこのディレクトリ配下に限定する
-    /// (`--allow`)。
+    /// (`--allow-path`).
     allowed_dirs: Vec<PathBuf>,
 }
 
@@ -72,7 +83,8 @@ impl ImageFetcher {
         self
     }
 
-    /// ローカルファイルの読み込み可否と、許可ディレクトリ(`--allow`)を設定する。
+    /// Sets whether local files may be read at all, and which directories are
+    /// allowed (`--allow-path`).
     ///
     /// `allow_local`が`false`のとき、ローカルパス参照はすべて拒否する
     /// (HTTPサーバモードの既定を想定)。`allowed_dirs`が空でなければ、
@@ -135,9 +147,72 @@ impl ImageFetcher {
         }
     }
 
-    /// `base_dir`相対のローカルファイルを読む。
-    /// `..`でbase_dirの外へ出る参照は[`resolve_local_asset_path`]が弾く。
-    /// 外を参照する必要がある場合は`--allow`で範囲を明示する。
+    /// Picks which of the resolved candidates to read, and says whether it lies
+    /// outside `base_dir`.
+    ///
+    /// The site-root reading of `raw` comes first, so a document that works
+    /// today keeps working. Only when that file does not exist is `raw` taken
+    /// as a filesystem path, which is what `<img src="/Users/me/app/logo.png">`
+    /// means. Reading it still has to get past `--allow-path`, exactly like any
+    /// other reference outside base_dir.
+    fn choose_candidate(&self, resolved: ResolvedAssetPath) -> LocalTarget {
+        if resolved.path.exists() {
+            return LocalTarget {
+                path: resolved.path,
+                escapes_base_dir: resolved.escapes_base_dir,
+                also_tried: None,
+            };
+        }
+        match resolved.absolute {
+            Some(absolute) if absolute.exists() => LocalTarget {
+                escapes_base_dir: !self.is_within_base_dir(&absolute),
+                path: absolute,
+                also_tried: None,
+            },
+            // Neither candidate exists. Report the site-root one, the reading
+            // the reference was written for, and name the other one so that a
+            // filesystem path does not just look like a nonsense join.
+            other => LocalTarget {
+                path: resolved.path,
+                escapes_base_dir: resolved.escapes_base_dir,
+                also_tried: other,
+            },
+        }
+    }
+
+    /// Whether `path` is inside `base_dir`, compared as real paths (`base_dir`
+    /// may be relative, as it is with the CLI default of the input's own
+    /// directory). A path that cannot be resolved counts as outside, so that an
+    /// unclear case needs `--allow-path`.
+    fn is_within_base_dir(&self, path: &Path) -> bool {
+        let (Ok(base), Ok(candidate)) = (self.base_dir.canonicalize(), path.canonicalize()) else {
+            return false;
+        };
+        candidate.starts_with(base)
+    }
+
+    /// The error for a reference that resolved to nothing readable.
+    ///
+    /// `/…`は`--base-url`からのサイトルート相対として解決するため、
+    /// ファイルシステムの絶対パスを書いたつもりの人に連結後のパスだけを
+    /// 見せても、何が起きたのか分からない。両方を挙げる。
+    fn not_found(path: &Path, also_tried: &Option<PathBuf>, error: std::io::Error) -> FetchError {
+        match also_tried {
+            Some(absolute) => FetchError(format!(
+                "{}: {error}\n  \
+                 (`/`で始まる参照は --base-url からのサイトルート相対として解決します。\n  \
+                 絶対パス {} としても探しましたが、そちらもありませんでした)",
+                path.display(),
+                absolute.display()
+            )),
+            None => FetchError(format!("{}: {error}", path.display())),
+        }
+    }
+
+    /// Reads a local file, relative to `base_dir`.
+    /// A reference that leaves base_dir through `..` is refused by
+    /// [`resolve_local_asset_path`]; name the directories to be read on purpose
+    /// with `--allow-path`.
     fn read_local(&self, path: &str) -> Result<Vec<u8>, FetchError> {
         if !self.allow_local {
             return Err(FetchError(
@@ -146,16 +221,21 @@ impl ImageFetcher {
             ));
         }
         let resolved = resolve_local_asset_path(&self.base_dir, path);
-        // `--allow`が無いときはbase_dirがそのまま境界になる。あるときは
-        // そちらが範囲を決めるので、外へ出ること自体は許して下で判定する。
-        if resolved.escapes_base_dir && self.allowed_dirs.is_empty() {
+        let LocalTarget {
+            path: full_path,
+            escapes_base_dir,
+            also_tried,
+        } = self.choose_candidate(resolved);
+        // Without `--allow-path`, base_dir is the boundary itself. With it, the
+        // allowed directories decide, so leaving base_dir is let through here
+        // and judged below.
+        if escapes_base_dir && self.allowed_dirs.is_empty() {
             return Err(FetchError(format!(
                 "基準ディレクトリ({})の外を参照しています。\n  \
-                 外部のファイルを読む場合は --allow でディレクトリを明示してください",
+                 外部のファイルを読む場合は --allow-path でディレクトリを明示してください",
                 self.base_dir.display()
             )));
         }
-        let full_path = resolved.path;
         if !self.allowed_dirs.is_empty() {
             // 実パスに解決できなければ「許可範囲内だと確認できなかった」として
             // 拒否する。生のパスへフォールバックすると`..`を含んだまま
@@ -164,20 +244,20 @@ impl ImageFetcher {
             // コンポーネント単位で、ファイルシステムを見ないため)。
             let canonical = full_path
                 .canonicalize()
-                .map_err(|e| FetchError(format!("{}: {e}", full_path.display())))?;
+                .map_err(|e| Self::not_found(&full_path, &also_tried, e))?;
             if !self
                 .allowed_dirs
                 .iter()
                 .any(|dir| canonical.starts_with(dir))
             {
                 return Err(FetchError(format!(
-                    "{}: --allowで許可されたディレクトリの外です",
+                    "{}: --allow-pathで許可されたディレクトリの外です",
                     full_path.display()
                 )));
             }
         }
         let metadata = std::fs::metadata(&full_path)
-            .map_err(|e| FetchError(format!("{}: {e}", full_path.display())))?;
+            .map_err(|e| Self::not_found(&full_path, &also_tried, e))?;
         self.ensure_within_limit(metadata.len()).map_err(|_| {
             FetchError(format!(
                 "{}: ファイルサイズが上限を超えています",
@@ -510,6 +590,94 @@ mod tests {
             .fetch(&ImgSrc::LocalPath("assets/../logo.png".to_string()))
             .expect("base_dir内で完結する..は許されるべき");
         assert_eq!(bytes, b"inside");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A `src` written as a filesystem path that lands inside base_dir is read
+    /// as it is: the site-root reading (`<base_dir>/<the whole path>`) does not
+    /// exist, so the reference falls back to the path itself, which is inside
+    /// base_dir and therefore needs no `--allow`.
+    #[test]
+    fn an_absolute_path_inside_base_dir_is_read_without_allow() {
+        let dir = temp_dir("absolute_inside");
+        std::fs::write(dir.join("logo.png"), b"inside").unwrap();
+        let fetcher = ImageFetcher::new(dir.clone(), false);
+
+        let src = ImgSrc::LocalPath(dir.join("logo.png").display().to_string());
+        let bytes = fetcher
+            .fetch(&src)
+            .expect("an absolute path inside base_dir should be read");
+        assert_eq!(bytes, b"inside");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// One that lands outside base_dir is judged like any other reference that
+    /// leaves it: refused by default, read once `--allow` names the directory.
+    #[test]
+    fn an_absolute_path_outside_base_dir_needs_allow() {
+        let dir = temp_dir("absolute_outside");
+        let base = dir.join("public");
+        let outside = dir.join("shared");
+        std::fs::create_dir_all(&base).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("logo.png"), b"outside").unwrap();
+        let src = ImgSrc::LocalPath(outside.join("logo.png").display().to_string());
+
+        let refused = ImageFetcher::new(base.clone(), false).fetch(&src);
+        let message = refused.expect_err("outside base_dir should be refused").0;
+        assert!(message.contains("--allow"), "{message}");
+
+        let allowed = ImageFetcher::new(base.clone(), false)
+            .with_local_access(true, vec![outside.clone()])
+            .fetch(&src)
+            .expect("--allow should let it through");
+        assert_eq!(allowed, b"outside");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `/assets/logo.png` keeps meaning `<base_dir>/assets/logo.png` even when a
+    /// file of that name exists at the root of the filesystem view: the web
+    /// spelling wins, so no document changes meaning.
+    #[test]
+    fn the_site_root_reading_wins_when_both_candidates_exist() {
+        let dir = temp_dir("site_root_wins");
+        let base = dir.join("public");
+        std::fs::create_dir_all(base.join("assets")).unwrap();
+        std::fs::write(base.join("assets/logo.png"), b"site root").unwrap();
+        // The same path spelled from the filesystem root also exists.
+        let absolute = dir.join("assets");
+        std::fs::create_dir_all(&absolute).unwrap();
+        std::fs::write(absolute.join("logo.png"), b"filesystem").unwrap();
+
+        let fetcher =
+            ImageFetcher::new(base.clone(), false).with_local_access(true, vec![dir.clone()]);
+        let src = ImgSrc::LocalPath(dir.join("assets/logo.png").display().to_string());
+        // Written from base_dir, the same reference is the site-root one.
+        let site_root = ImgSrc::LocalPath("/assets/logo.png".to_string());
+
+        assert_eq!(fetcher.fetch(&site_root).unwrap(), b"site root");
+        assert_eq!(fetcher.fetch(&src).unwrap(), b"filesystem");
+
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// When neither candidate exists, the error names both, so that a
+    /// filesystem path does not read as a nonsense join.
+    #[test]
+    fn a_missing_absolute_path_is_named_in_the_error() {
+        let dir = temp_dir("absolute_missing");
+        let fetcher =
+            ImageFetcher::new(dir.clone(), false).with_local_access(true, vec![PathBuf::from("/")]);
+
+        let message = fetcher
+            .fetch(&ImgSrc::LocalPath("/no/such/logo.png".to_string()))
+            .expect_err("a missing file is an error")
+            .0;
+        assert!(message.contains("/no/such/logo.png"), "{message}");
+        assert!(message.contains("--base-url"), "{message}");
 
         std::fs::remove_dir_all(&dir).unwrap();
     }

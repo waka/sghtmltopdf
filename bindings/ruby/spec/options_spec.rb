@@ -45,11 +45,16 @@ RSpec.describe Sghtmltopdf::Options do
     end
 
     it "配列は同じオプションの繰り返しにする" do
-      expect(argv(allow: ["/a", "/b"])).to eq(["--allow", "/a", "--allow", "/b"])
+      expect(argv(allow_path: ["/a", "/b"])).to eq(["--allow-path", "/a", "--allow-path", "/b"])
     end
 
     it "配列の中のtrue/falseにも同じ規則を使う" do
-      expect(argv(allow: ["/a", nil, "/b"])).to eq(["--allow", "/a", "--allow", "/b"])
+      expect(argv(allow_path: ["/a", nil, "/b"])).to eq(["--allow-path", "/a", "--allow-path", "/b"])
+    end
+
+    # `--allow`はwkhtmltopdf互換の別名。argvでは正規名に寄せる。
+    it "別名のキーは正規名のフラグになる" do
+      expect(argv(allow: ["/a"])).to eq(["--allow-path", "/a"])
     end
 
     it "font以外にHashを渡すとエラーにする" do

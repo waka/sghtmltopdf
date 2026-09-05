@@ -56,7 +56,7 @@ Sghtmltopdf.render(html, page_size: "A4", margin_top: "20mm", toc: true)
 | `page_size: "A4"` | 値を取るオプション |
 | `grayscale: true` | 値を取らないフラグ |
 | `grayscale: false` / `nil` | 指定なしと同じ |
-| `allow: ["/a", "/b"]` | 同じオプションの繰り返し |
+| `allow_path: ["/a", "/b"]` | 同じオプションの繰り返し |
 | `font: {path: "a.ttc", index: 1}` | `--font a.ttc --font-index 1`(順序も保つ) |
 
 キー名の妥当性はRuby側では検査しません。
@@ -105,7 +105,7 @@ Sghtmltopdf.configure do |c|
 end
 ```
 
-`font`系で渡すフォントは、後述の`allow`(ローカル参照の制限)の対象外です。
+`font`系で渡すフォントは、後述の`allow_path`(ローカル参照の制限)の対象外です。
 
 ## エラー
 
@@ -165,18 +165,36 @@ Railtieが次の既定値を入れます。
 | キー | 既定 | 意味 |
 |---|---|---|
 | `base_url` | `Rails.root/public` | 絶対パス参照の基準。precompile済みなら素の`stylesheet_link_tag`がそのまま動く |
-| `allow` | `[Rails.root]` | ローカル参照をアプリ配下に限定する |
+| `allow_path` | `public/`とアセットパイプラインのロードパス | ローカル参照をアプリのアセット配下に限定する |
 
 どちらも`Sghtmltopdf.configure`で上書きできます(イニシャライザの実行順に依存しません)。
-`allow`の既定はテンプレートにユーザー入力が混ざっても文書外のファイルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を参照している場合は明示的に足してください。
+`allow_path`の既定はテンプレートにユーザー入力が混ざっても文書外のファイルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を参照している場合は明示的に足してください。
+内訳は`public/`と`config.assets.paths`(Propshaft/Sprocketsのロードパス)で、gemやengineが提供するアセットのように`Rails.root`の外にあるものも含みます。
+`config/`や`db/`は入らないので、`Rails.root.join("tmp/chart.png")`のようにアセット以外の場所を参照している場合も足してください。
 
-開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、CSSの中身を`<style>`へ展開するヘルパがあります。
+開発環境のようにアセットがまだ`public/`へ書き出されていない場合のために、アセットの中身を文書へ埋め込むヘルパがあります。
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
 <%= sghtmltopdf_image_tag "logo.png" %>
 <%= sghtmltopdf_asset_path "logo.png" %>   <%# 見つからなければnil %>
 ```
+
+どちらもアセットの実ファイルをパイプラインのロードパスから引き当てます。
+開発環境で素の`image_tag`が使えないのはこのためです。
+`image_tag`が出す`/assets/logo-abc123.png`はダイジェストもマウント位置もパイプラインが実行時に作る仮想的なもので、対応するファイルはディスク上にありません。
+
+`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。
+
+`sghtmltopdf_image_tag`は画像をパスで指します。
+`base_url`の下にあれば相対パス、そうでなければ絶対パスです。
+エンジンは`base_url`から解決できない絶対パスをファイルシステムのパスとして読むので、開発環境で`app/assets`にあるファイルもそのまま指せます。
+
+パスで指せるのはエンジンがそこを読める場合だけなので、`allow_path`(未設定なら`base_url`)の外にあるファイルは`data:`URIとして埋め込みます。
+取得の失敗は既定で無視されるため、パスで指したまま読めないと画像が無言で消えてしまうからです。
+同じ理由で、`server_url`を設定して別プロセスへ委譲する場合も埋め込みます。委譲先が同じファイルシステムを見ているとは限りません。
+
+`inline: true`を渡すと常に埋め込みます。
 
 ## サーバへ委譲する
 
@@ -209,7 +227,7 @@ allow, enable-local-file-access, disable-local-file-access,
 allow-remote-assets, log-level, quiet
 ```
 
-Railtieが入れる`base_url`/`allow`の既定値は自動的に外れるので、Railsでそのまま`server_url`を足しても400にはなりません。
+Railtieが入れる`base_url`/`allow_path`の既定値は自動的に外れるので、Railsでそのまま`server_url`を足しても400にはなりません。
 `configure`で明示的に設定している場合は、サーバ側の起動オプションへ移してください。
 
 ## チャンクごとに受け取る

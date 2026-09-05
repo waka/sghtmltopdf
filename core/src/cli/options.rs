@@ -92,7 +92,9 @@ pub struct ServerArgs {
     pub enable_local_file_access: bool,
 
     /// ローカル参照を許可するディレクトリ(複数指定可)
-    #[arg(long, value_name = "PATH")]
+    ///
+    /// `--allow` is the wkhtmltopdf spelling, kept as an alias.
+    #[arg(long = "allow-path", visible_alias = "allow", value_name = "PATH")]
     pub allow: Vec<PathBuf>,
 
     /// http(s)のリモート取得を許可する(既定は禁止)
@@ -404,7 +406,11 @@ pub struct ConvertArgs {
     pub enable_local_file_access: bool,
 
     /// ローカル参照を許可するディレクトリ(複数指定可。指定するとその配下だけ読める)
-    #[arg(long, value_name = "PATH")]
+    ///
+    /// `--allow` is the wkhtmltopdf spelling, kept as an alias. `--allow-path`
+    /// is the primary name because `--allow` on its own says nothing about
+    /// what is allowed, and sits right next to `--allow-remote-assets`.
+    #[arg(long = "allow-path", visible_alias = "allow", value_name = "PATH")]
     pub allow: Vec<PathBuf>,
 
     /// ストリーミングモードで処理する(一部のオプション・CSSは使えず、その場合はエラーになる)
@@ -673,22 +679,22 @@ impl ConvertArgs {
 
     /// ローカルファイル参照の許可設定。
     ///
-    /// `--allow`のディレクトリはここで実パスへ解決しておく。参照のたびに
-    /// 解決すると、解決に失敗したときに生のパスでの比較へ落ちてしまい、
-    /// `..`を含んだままの判定になる。解決できないディレクトリは黙って
-    /// 無視せず、起動時にエラーにする。
+    /// The `--allow-path` directories are resolved to real paths here. Resolving
+    /// them at each reference would fall back to comparing the raw paths when
+    /// resolution fails, leaving `..` in the comparison. A directory that cannot
+    /// be resolved is an error at startup rather than a silent skip.
     pub fn local_access(&self) -> Result<LocalAccess, String> {
         let mut allowed_dirs = Vec::with_capacity(self.allow.len());
         for dir in &self.allow {
             let canonical = dir.canonicalize().map_err(|e| {
                 format!(
-                    "--allowに指定したディレクトリを解決できません: {} ({e})",
+                    "--allow-pathに指定したディレクトリを解決できません: {} ({e})",
                     dir.display()
                 )
             })?;
             if !canonical.is_dir() {
                 return Err(format!(
-                    "--allowにはディレクトリを指定してください: {}",
+                    "--allow-pathにはディレクトリを指定してください: {}",
                     dir.display()
                 ));
             }
@@ -1038,7 +1044,7 @@ mod tests {
         Cli::command().debug_assert();
     }
 
-    /// `--allow`のディレクトリは起動時に実パスへ解決される。
+    /// The `--allow-path` directories are resolved to real paths at startup.
     #[test]
     fn allow_dirs_are_resolved_to_real_paths() {
         let dir = std::env::temp_dir().join(format!(
@@ -1063,7 +1069,7 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    /// 解決できない`--allow`は黙って無視せずエラーにする
+    /// An unresolvable `--allow-path` is an error, not a silent skip.
     /// (無視すると許可範囲が意図せず変わる)。
     #[test]
     fn an_allow_dir_that_does_not_exist_is_an_error() {
@@ -1079,7 +1085,7 @@ mod tests {
         assert!(err.contains("--allow"), "got: {err}");
     }
 
-    /// ファイルを`--allow`に渡した場合もエラーにする。
+    /// Passing a file to `--allow-path` is an error too.
     #[test]
     fn an_allow_path_that_is_not_a_directory_is_an_error() {
         let dir = std::env::temp_dir().join(format!(

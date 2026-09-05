@@ -16,4 +16,7 @@ group :test do
   gem "railties", ">= 7.0"
   # `bundle exec rackup spec/dummy/config.ru` でdummyアプリを手動確認する用
   gem "webrick", "~> 1.9"
+  # アセットパイプラインを入れた場合の経路(spec/pipeline_spec.rb)。dummyアプリ
+  # 本体はパイプラインgem無しのままなので、こちらは別プロセスで読み込む。
+  gem "propshaft", "~> 1.3"
 end

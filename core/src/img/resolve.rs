@@ -200,50 +200,60 @@ fn lenient_base64() -> GeneralPurpose {
     )
 }
 
-/// [`ImgSrc::LocalPath`](や`@font-face`の`url()`・`<link href>`等、同じ
-/// 性質を持つ他のローカル資産参照)を`base_dir`基準で実際のファイルパスへ
-/// 解決する。`base_dir`の外へ出る参照は`None`を返す。
+/// Resolves an [`ImgSrc::LocalPath`] (or any other local asset reference of the
+/// same kind: the `url()` of an `@font-face`, a `<link href>`, and so on) into
+/// the file paths to try, relative to `base_dir`.
 ///
-/// `raw`の先頭が`/`(root-relative、`<link href="/stylesheets/main.css" />`
-/// のようなRailsのアセットパイプラインでよくある書き方)の場合、これを
-/// "サイトルート"の意味と解釈し`base_dir`相対として扱う。素朴に
-/// `base_dir.join(raw)`すると、`Path::join`は引数が絶対パスの場合
-/// (Unix)`base_dir`を丸ごと捨ててしまい、OSのファイルシステムルートを
-/// 読みに行ってしまう(意図しない・環境依存の挙動)ため、先頭の`/`を
-/// 明示的に取り除いてから結合する。
+/// A `raw` starting with `/` (root-relative, the spelling the Rails asset
+/// pipeline produces: `<link href="/stylesheets/main.css" />`) is read as
+/// "relative to the site root", that is, relative to `base_dir`. A plain
+/// `base_dir.join(raw)` would not do: given an absolute argument, `Path::join`
+/// throws `base_dir` away (on Unix) and reads from the root of the filesystem,
+/// which is neither intended nor portable. The leading `/` is therefore
+/// stripped before joining.
 ///
-/// # `..`の扱い
+/// # A filesystem path as `raw`
 ///
-/// `base_dir`をルートとみなし、そこから出る`..`は拒否する。信頼できない
-/// HTMLを変換したときに、`<img src="../../../../etc/passwd">`のような参照で
-/// base_dirの外を読み出せてしまうため。意図して外を参照したい場合は
-/// `--allow`で範囲を明示する。
+/// `/Users/me/app/public/logo.png` is indistinguishable from a site-root
+/// relative reference by looking at the string, so it is offered as
+/// [`ResolvedAssetPath::absolute`], a second candidate for the caller to fall
+/// back to when the site-root one does not exist. The web spelling wins where
+/// both exist, which keeps the meaning of every document that works today.
 ///
-/// 判定は字句的に行い、ファイルシステムには触れない(存在しないパスでも
-/// 同じように判定できるようにするため)。したがってbase_dir配下の
-/// シンボリックリンクは辿る。Capistranoの`public/system`のような運用を
-/// 壊さないための意図的な線引きで、シンボリックリンクまで含めて閉じたい
-/// 場合は`--allow`(実パスで判定する)を使う。
+/// # `..`
+///
+/// `base_dir` is the root: a `..` that leaves it is refused, since converting
+/// untrusted HTML would otherwise read outside `base_dir` through a reference
+/// such as `<img src="../../../../etc/passwd">`. Use `--allow` to name the
+/// directories that may be read on purpose.
+///
+/// The decision is lexical and never touches the filesystem (so that a path
+/// that does not exist is judged the same way), which means a symlink under
+/// `base_dir` is followed. That line is drawn deliberately, so as not to break
+/// a layout like Capistrano's `public/system`; use `--allow`, which compares
+/// real paths, to close symlinks off as well.
 pub fn resolve_local_asset_path(base_dir: &Path, raw: &str) -> ResolvedAssetPath {
     let mut parts = Vec::new();
-    // base_dirより上へ出た段数。`--allow`が無ければこれが1以上で拒否になる。
+    // How many levels the reference went above base_dir. Without `--allow`,
+    // anything above 0 is refused.
     let mut up = 0usize;
-    let mut absolute = false;
 
-    // 先頭の`/`を落として"サイトルート相対"にしてから、`.`/`..`を畳む。
+    // Strip the leading `/` to make it "site-root relative", then fold `.`/`..`.
     for component in Path::new(raw.trim_start_matches('/')).components() {
         match component {
             Component::Normal(part) => parts.push(part),
             Component::CurDir => {}
             Component::ParentDir => {
-                // 畳める要素が無ければbase_dirより上へ出たということ。
+                // Nothing left to fold means the reference went above base_dir.
                 if parts.pop().is_none() {
                     up += 1;
                 }
             }
-            // 絶対パスの目印(`/`やWindowsの`C:`)。先頭の`/`は落としてあるので、
-            // ここへ来るのは`raw`が別の絶対パス表記だった場合。
-            Component::RootDir | Component::Prefix(_) => absolute = true,
+            // The mark of an absolute path (`/`, or `C:` on Windows). The
+            // leading `/` is already gone, so this is reached when `raw` was
+            // written in another absolute form; it is handled as the second
+            // candidate below.
+            Component::RootDir | Component::Prefix(_) => {}
         }
     }
 
@@ -253,20 +263,28 @@ pub fn resolve_local_asset_path(base_dir: &Path, raw: &str) -> ResolvedAssetPath
     }
     path.extend(&parts);
 
+    let raw_path = Path::new(raw);
     ResolvedAssetPath {
         path,
-        escapes_base_dir: up > 0 || absolute,
+        escapes_base_dir: up > 0,
+        absolute: raw_path.is_absolute().then(|| raw_path.to_path_buf()),
     }
 }
 
-/// [`resolve_local_asset_path`]の結果。
+/// The outcome of [`resolve_local_asset_path`].
 pub struct ResolvedAssetPath {
-    /// 解決後のパス。
+    /// The first candidate: `raw` taken as site-root relative and joined onto
+    /// `base_dir`.
     pub path: PathBuf,
-    /// `..`等で`base_dir`の外へ出ているか。
-    /// 既定ではこれが`true`の参照を拒否する。`--allow`が指定されている場合は
-    /// そちらが範囲を決めるので、この値ではなく許可ディレクトリで判定する。
+    /// Whether [`path`](Self::path) went outside `base_dir` through `..`.
+    /// A reference for which this is true is refused by default; when `--allow`
+    /// is given, the allowed directories decide instead of this flag.
     pub escapes_base_dir: bool,
+    /// The second candidate: `raw` itself, when it is an absolute path. The
+    /// caller falls back to it when the first candidate does not exist, and
+    /// decides for itself whether it lies outside `base_dir` (which needs the
+    /// filesystem, since `base_dir` may be relative).
+    pub absolute: Option<PathBuf>,
 }
 
 #[cfg(test)]
@@ -518,6 +536,34 @@ mod tests {
             Some(PathBuf::from("/var/www/app/stylesheets/main.css")),
             "a root-relative href must stay inside base_dir, not escape to the OS filesystem root"
         );
+    }
+
+    /// A reference that starts with `/` is offered as a filesystem path too,
+    /// for the caller to fall back to. The two cannot be told apart by looking
+    /// at the string, so both readings are handed back.
+    #[test]
+    fn an_absolute_reference_carries_a_second_candidate() {
+        let resolved = resolve_local_asset_path(Path::new("/var/www/app"), "/home/me/logo.png");
+
+        assert_eq!(
+            resolved.path,
+            PathBuf::from("/var/www/app/home/me/logo.png"),
+            "the site-root reading stays the first candidate"
+        );
+        assert_eq!(resolved.absolute, Some(PathBuf::from("/home/me/logo.png")));
+        assert!(
+            !resolved.escapes_base_dir,
+            "the first candidate is inside base_dir, whatever the second one is"
+        );
+    }
+
+    /// A relative reference has no second candidate.
+    #[test]
+    fn a_relative_reference_has_no_second_candidate() {
+        let resolved = resolve_local_asset_path(Path::new("/var/www/app"), "assets/logo.png");
+
+        assert_eq!(resolved.path, PathBuf::from("/var/www/app/assets/logo.png"));
+        assert_eq!(resolved.absolute, None);
     }
 
     #[test]
