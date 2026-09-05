@@ -103,6 +103,50 @@ RSpec.describe "アセットパイプラインを入れたアプリ" do
     expect(lines).to eq(%w[true false true])
   end
 
+  # 開発環境ではヘルパがコンパイル前のCSSを引くので、`url()`はパイプラインに
+  # 書き換えられておらず論理パスのまま残る。エンジンは文書のbase_url基準でしか
+  # 解決できないので、ここでロードパスを引いて実体へ指し直す。
+  it "パイプラインのCSSのurl()はロードパス越しに実体を指す" do
+    lines = in_pipeline_app(<<~'RUBY')
+      html = view.sghtmltopdf_stylesheet_link_tag("pipeline")
+      src = html[/url\("([^"]+)"\)/, 1]
+      puts src == File.join(root, "app/assets/images/pipeline-logo.png")
+      puts html.include?("data:")
+      # 20x16のPNGがXObjectとして埋まる。
+      puts Sghtmltopdf.render(html + "<p>x</p>").include?("/Width 20")
+    RUBY
+
+    expect(lines).to eq(%w[true false true])
+  end
+
+  # devでは`public/assets`に何も無いので、`/assets/…`はロードパスの論理パスへ
+  # 読み替える。マウント位置(`config.assets.prefix`)は論理パスの一部ではない。
+  it "/assets/の参照はマウント位置を外してロードパスから引く" do
+    lines = in_pipeline_app(<<~'RUBY')
+      require "fileutils"
+      css = File.join(root, "public/rooted.css")
+      begin
+        File.write(css, %(body { background-image: url("/assets/pipeline-logo.png"); }))
+        html = view.sghtmltopdf_stylesheet_link_tag("rooted")
+        puts html.include?(File.join(root, "app/assets/images/pipeline-logo.png"))
+      ensure
+        FileUtils.rm_f(css)
+      end
+    RUBY
+
+    expect(lines).to eq(%w[true])
+  end
+
+  it "allow_pathを絞るとCSSのurl()も埋め込みに倒す" do
+    lines = in_pipeline_app(<<~RUBY)
+      Sghtmltopdf.configure { |c| c.allow_path = [File.join(root, "public")] }
+      html = view.sghtmltopdf_stylesheet_link_tag("pipeline")
+      puts html.include?("url(\\"data:image/png;base64,")
+    RUBY
+
+    expect(lines).to eq(%w[true])
+  end
+
   it "allow_pathを絞ると読めなくなるので埋め込みに倒す" do
     lines = in_pipeline_app(<<~RUBY)
       Sghtmltopdf.configure { |c| c.allow_path = [File.join(root, "public")] }
