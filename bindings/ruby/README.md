@@ -68,15 +68,15 @@ Converter keys are flat CLI flag names, so wicked_pdf's nested `margin: {top: 10
 
 ### Assets
 
-PDF rendering does not go through the HTTP server, so `/assets/…` URLs are resolved as local files: the Railtie defaults `base_url` to `Rails.root/public` and restricts local reads to `Rails.root` via `allow`.
-That is enough for a precompiled production app; in development, these helpers put the asset into the document itself — the CSS in a `<style>`, the image as a `data:` URI — so nothing has to be fetched and the file may live outside `public/`:
+PDF rendering does not go through the HTTP server, so `/assets/…` URLs are resolved as local files: the Railtie defaults `base_url` to `Rails.root/public` and restricts local reads to `public/` and the asset pipeline load paths via `allow_path`.
+That is enough for a precompiled production app; in development the digested `/assets/…` path names no file on disk, so these helpers look the asset up in the pipeline instead — the CSS expanded into a `<style>`, the image referenced by the path the engine can read:
 
 ```erb
 <%= sghtmltopdf_stylesheet_link_tag "pdf" %>
 <%= sghtmltopdf_image_tag "logo.png" %>
 ```
 
-Pass `inline: false` to `sghtmltopdf_image_tag` to emit a path relative to `base_url` instead, for a document where base64 would bloat the HTML.
+A file `allow_path` does not cover is embedded as a `data:` URI instead, so that it cannot silently vanish from the PDF; pass `inline: true` to embed unconditionally.
 
 ### Streaming the response
 

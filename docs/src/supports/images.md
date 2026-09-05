@@ -131,7 +131,7 @@ HTMLに直接書いた`<svg>`要素は、サブツリーごと描画対象から
   指定すると警告し、SVGだけ色のまま残ります
 * SVGの中の`<image href="...">`のような外部参照は解決しません。参照ごとに
   警告を出して無視します。SVGの中からのファイル読み出しは`<img>`側の
-  封じ込め(基準ディレクトリ・`--allow`・`--disable-local-file-access`)を
+  封じ込め(基準ディレクトリ・`--allow-path`・`--disable-local-file-access`)を
   迂回してしまうため、経路自体を塞いでいます。`data:` URIは対象外
   (SVG自身の中で完結しているため許可されます)
 
@@ -215,10 +215,10 @@ IPv4を埋め込むIPv6表記(IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible `::
 内部サービスはプライベートIP上にあり、そこは上の判定で塞がっています。
 公開IPに対する非標準ポート(CDNやAPIの`8080`など)は正当な用途があるため、塞ぐと実用を損なうわりに得るものがありません。
 
-信頼できないHTMLを変換する場合は、`--allow`でローカル参照の範囲も併せて絞ってください。
+信頼できないHTMLを変換する場合は、`--allow-path`でローカル参照の範囲も併せて絞ってください。
 
 ```sh
-sghtmltopdf untrusted.html --allow /var/app/assets
+sghtmltopdf untrusted.html --allow-path /var/app/assets
 ```
 
 ## JPEGはそのまま埋め込まれる

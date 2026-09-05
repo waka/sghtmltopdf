@@ -93,6 +93,7 @@ const SERVER_ONLY_KEYS: &[&str] = &[
     "footer-html",
     "user-style-sheet",
     "base-url",
+    "allow-path",
     "allow",
     "enable-local-file-access",
     "disable-local-file-access",
@@ -474,7 +475,7 @@ fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, S
         argv.push("--disable-local-file-access".to_string());
     }
     for dir in &server.allow {
-        argv.push("--allow".to_string());
+        argv.push("--allow-path".to_string());
         argv.push(dir.display().to_string());
     }
     if server.allow_remote_assets {
@@ -699,14 +700,21 @@ mod tests {
         );
     }
 
-    /// 分類リストに実在しないオプション名が残っていないこと
-    /// (オプションの改名・削除に追随できているかの確認)。
+    /// No name in the classification lists refers to an option that is gone
+    /// (that is, the lists have kept up with renames and removals).
+    ///
+    /// Aliases count as real names: a request can spell an option either way,
+    /// so both spellings have to be classified.
     #[test]
     fn the_classification_lists_only_name_real_options() {
         let command = Cli::command();
         let known: Vec<&str> = command
             .get_arguments()
-            .filter_map(|a| a.get_long())
+            .flat_map(|a| {
+                a.get_long()
+                    .into_iter()
+                    .chain(a.get_all_aliases().unwrap_or_default())
+            })
             .collect();
 
         let stale: Vec<&&str> = ALLOWED_QUERY_KEYS

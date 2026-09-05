@@ -40,7 +40,7 @@ impl std::error::Error for FetchError {}
 struct LocalTarget {
     /// The path to read.
     path: PathBuf,
-    /// Whether it lies outside `base_dir` (refused unless `--allow` says so).
+    /// Whether it lies outside `base_dir` (refused unless `--allow-path` says so).
     escapes_base_dir: bool,
     /// The other candidate, set only when neither existed, so that the error
     /// can name it.
@@ -67,7 +67,7 @@ pub struct ImageFetcher {
     /// ローカルファイル参照を許すか(`--disable-local-file-access`でfalse)。
     allow_local: bool,
     /// 空でなければ、ローカル参照をこのディレクトリ配下に限定する
-    /// (`--allow`)。
+    /// (`--allow-path`).
     allowed_dirs: Vec<PathBuf>,
 }
 
@@ -83,7 +83,8 @@ impl ImageFetcher {
         self
     }
 
-    /// ローカルファイルの読み込み可否と、許可ディレクトリ(`--allow`)を設定する。
+    /// Sets whether local files may be read at all, and which directories are
+    /// allowed (`--allow-path`).
     ///
     /// `allow_local`が`false`のとき、ローカルパス参照はすべて拒否する
     /// (HTTPサーバモードの既定を想定)。`allowed_dirs`が空でなければ、
@@ -152,7 +153,7 @@ impl ImageFetcher {
     /// The site-root reading of `raw` comes first, so a document that works
     /// today keeps working. Only when that file does not exist is `raw` taken
     /// as a filesystem path, which is what `<img src="/Users/me/app/logo.png">`
-    /// means. Reading it still has to get past `--allow`, exactly like any
+    /// means. Reading it still has to get past `--allow-path`, exactly like any
     /// other reference outside base_dir.
     fn choose_candidate(&self, resolved: ResolvedAssetPath) -> LocalTarget {
         if resolved.path.exists() {
@@ -182,7 +183,7 @@ impl ImageFetcher {
     /// Whether `path` is inside `base_dir`, compared as real paths (`base_dir`
     /// may be relative, as it is with the CLI default of the input's own
     /// directory). A path that cannot be resolved counts as outside, so that an
-    /// unclear case needs `--allow`.
+    /// unclear case needs `--allow-path`.
     fn is_within_base_dir(&self, path: &Path) -> bool {
         let (Ok(base), Ok(candidate)) = (self.base_dir.canonicalize(), path.canonicalize()) else {
             return false;
@@ -211,7 +212,7 @@ impl ImageFetcher {
     /// Reads a local file, relative to `base_dir`.
     /// A reference that leaves base_dir through `..` is refused by
     /// [`resolve_local_asset_path`]; name the directories to be read on purpose
-    /// with `--allow`.
+    /// with `--allow-path`.
     fn read_local(&self, path: &str) -> Result<Vec<u8>, FetchError> {
         if !self.allow_local {
             return Err(FetchError(
@@ -225,13 +226,13 @@ impl ImageFetcher {
             escapes_base_dir,
             also_tried,
         } = self.choose_candidate(resolved);
-        // Without `--allow`, base_dir is the boundary itself. With it, the
+        // Without `--allow-path`, base_dir is the boundary itself. With it, the
         // allowed directories decide, so leaving base_dir is let through here
         // and judged below.
         if escapes_base_dir && self.allowed_dirs.is_empty() {
             return Err(FetchError(format!(
                 "基準ディレクトリ({})の外を参照しています。\n  \
-                 外部のファイルを読む場合は --allow でディレクトリを明示してください",
+                 外部のファイルを読む場合は --allow-path でディレクトリを明示してください",
                 self.base_dir.display()
             )));
         }
@@ -250,7 +251,7 @@ impl ImageFetcher {
                 .any(|dir| canonical.starts_with(dir))
             {
                 return Err(FetchError(format!(
-                    "{}: --allowで許可されたディレクトリの外です",
+                    "{}: --allow-pathで許可されたディレクトリの外です",
                     full_path.display()
                 )));
             }

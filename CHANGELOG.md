@@ -16,6 +16,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against, so plain source order gives the same result, and where it differs the usual
   specificity contest decides. The bare `@layer a, b;` ordering statement is still ignored.
 
+### Changed
+
+- `--allow` is now spelled `--allow-path`, with `--allow` kept as an alias, so nothing
+  has to change. On its own `--allow` says nothing about what it allows, and it sat next
+  to `--allow-remote-assets`, which allows something else entirely. The Ruby key follows:
+  `allow_path:`, with `allow:` normalized to it — the two are folded into one key rather
+  than passed through as two, since repeating the flag means "add another directory", so
+  a default under one spelling and a call-site value under the other would have been
+  merged instead of replaced.
+
+- The Rails defaults now let the engine read under `public/` and the asset pipeline load
+  paths (`config.assets.paths`) rather than the whole of `Rails.root`. `config/`, `db/` and
+  `storage/` are no longer reachable through an `<img src>` or a `url()` in a template,
+  while the assets a gem or an engine provides — which live outside `Rails.root` and so
+  were never covered — now are. An app that references a file elsewhere, say
+  `Rails.root.join("tmp/chart.png")`, has to name that directory itself with
+  `Sghtmltopdf.configure { |c| c.allow_path += ["…"] }`. The defaults are computed in
+  `after_initialize` because the pipeline fills `config.assets.paths` in an initializer of
+  its own, which runs after the one this gem adds.
+
 ### Fixed
 
 - Read a `src` (or `url()`, or `href`) written as a filesystem path instead of joining it
@@ -24,18 +44,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Rails asset pipeline emits and what every document that works today relies on; only when
   no file is there is the same string read again as an absolute path. Whether it may be
   read is decided by the existing rules, so one inside the base directory is read as it is
-  and one outside it needs `--allow`. `<img src="/var/www/app/public/logo.png">` used to
+  and one outside it needs `--allow-path`. `<img src="/var/www/app/public/logo.png">` used to
   look for `<base directory>/var/www/app/public/logo.png` and could not be made to work by
   any flag; when neither reading finds a file, the error now names both paths.
-- `sghtmltopdf_image_tag` now embeds the image as a `data:` URI instead of handing a
-  filesystem path to `image_tag` (#44). Rails turned that path into a URL — with
-  `default_url_options[:host]` set, an `http://` one the engine refused to fetch, and
-  without it an absolute path that was resolved against `base_url` and missed — so the
-  helper documented for local images could not load one. Nothing is fetched at render
-  time now, so the helper no longer depends on `base_url` or `allow` and reads files
-  outside `public/`, which is what the development case needs. Pass `inline: false` to
-  emit a path relative to `base_url` instead. `sghtmltopdf_asset_path` also stops mapping
-  a source that is already a URL onto a same-named file under `public/`.
+- `sghtmltopdf_image_tag` no longer hands a filesystem path to `image_tag` (#44). Rails
+  turned that path into a URL — with `default_url_options[:host]` set, an `http://` one the
+  engine refused to fetch, and without it an absolute path that was resolved against
+  `base_url` and missed — so the helper documented for local images could not load one. It
+  now looks the file up in the asset pipeline and references it by path: relative to
+  `base_url` when it sits under it, and the absolute filesystem path otherwise, which the
+  engine reads as a filesystem path once it fails to resolve under `base_url`. A file that
+  `allow_path` does not cover, or a run delegated to a server that may not share this
+  filesystem, is embedded as a `data:` URI instead, so a path the engine cannot read
+  cannot silently vanish from the PDF; `inline: true` embeds unconditionally. The `size:`
+  shorthand is expanded into `width`/`height`, as `image_tag` does. `sghtmltopdf_asset_path`
+  also stops mapping a source that is already a URL onto a same-named file under `public/`,
+  and no longer gives up on a `public/`-only file in a Propshaft app, where `asset_path`
+  raises `MissingAssetError` rather than returning a path.
 - `position: relative` now moves the content of the element together with its background
   and border (#29). The offset was applied to the box's own rectangle after its lines and
   child boxes had been placed, so text, images, nested blocks and list markers were left

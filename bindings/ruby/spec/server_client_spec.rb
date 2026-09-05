@@ -67,7 +67,7 @@ RSpec.describe "server_url" do
     it "流し込まれた既定値はサーバへ送らない(サーバでは指定できないキーのため)" do
       FakeServer.run do |server|
         # Railtieが入れる既定値と同じ形。
-        Sghtmltopdf.config.apply_defaults(base_url: "/app/public", allow: ["/app"])
+        Sghtmltopdf.config.apply_defaults(base_url: "/app/public", allow_path: ["/app"])
         Sghtmltopdf.render(html, server_url: server.url, page_size: "A4")
 
         expect(server.last_request.query).to eq("page-size=A4")

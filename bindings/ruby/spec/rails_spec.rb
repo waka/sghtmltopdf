@@ -40,7 +40,7 @@ RSpec.describe "Railsのコントローラ", type: :rails do
   # 環境に依存せず、それでいて「Rails統合層がHTMLかオプションを取りこぼす」
   # 退行はきちんと捕まえられる。
   #
-  # symlinkではなく複製にしているのは、`--allow`がsymlinkを辿った先の実体
+  # symlinkではなく複製にしているのは、`--allow-path`がsymlinkを辿った先の実体
   # パスで判定するため。`Rails.root`の外を指すsymlinkはCSSごと弾かれる。
   describe "examples/receipt.htmlの再現" do
     def example(name)
@@ -117,9 +117,11 @@ RSpec.describe "Railsのコントローラ", type: :rails do
   end
 
   describe "Rails向けの既定オプション" do
-    it "Railtieがbase_urlとallowを入れる" do
+    it "Railtieがbase_urlとallow_pathを入れる" do
       expect(CONFIG_AFTER_BOOT[:base_url]).to eq(Rails.root.join("public").to_s)
-      expect(CONFIG_AFTER_BOOT[:allow]).to eq([Rails.root.to_s])
+      # allow_pathはpublic/とパイプラインのロードパス。dummyアプリはパイプライン
+      # gemを入れていないのでpublic/だけになる(gemがある場合はpipeline_spec.rb)。
+      expect(CONFIG_AFTER_BOOT[:allow_path]).to eq([Rails.root.join("public").to_s])
     end
 
     it "config/initializersなど後からの設定で上書きできる" do
@@ -138,7 +140,7 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       expect(normalize(resolved)).not_to eq(normalize(missing))
     end
 
-    it "allowの既定ではRails.rootの外のファイルを読まない" do
+    it "allow_pathの既定では許可ディレクトリの外のファイルを読まない" do
       Dir.mktmpdir do |dir|
         File.write(File.join(dir, "outside.css"), "h1 { font-size: 48px }")
         html = '<link rel="stylesheet" href="outside.css"><h1>Invoice</h1>'
@@ -193,7 +195,7 @@ RSpec.describe "Railsのコントローラ", type: :rails do
 
         expect(last_response.status).to eq(200)
         expect(last_response.body).to start_with("%PDF-")
-        # Railtieが入れる`base_url`/`allow`はサーバでは指定できないキーなので、
+        # Railtieが入れる`base_url`/`allow_path`はサーバでは指定できないキーなので、
         # 送ってしまうと400になる。
         expect(server.last_request.query).to eq("")
         expect(server.last_request.body).to include("<h1>Invoice #1234</h1>")
@@ -222,8 +224,14 @@ RSpec.describe "Railsのコントローラ", type: :rails do
     describe "sghtmltopdf_image_tag" do
       let(:view) { InvoicesController.new.view_context }
 
-      it "画像をdata URIとして埋め込む" do
+      it "public/の画像はbase_url基準の相対パスで指す" do
         html = view.sghtmltopdf_image_tag("logo.png")
+
+        expect(html).to eq(%(<img src="logo.png">))
+      end
+
+      it "inline: trueならdata URIとして埋め込む" do
+        html = view.sghtmltopdf_image_tag("logo.png", inline: true)
 
         expect(html).to include(%(src="data:image/png;base64,))
         expect(html).to include([File.binread(Rails.root.join("public/logo.png"))].pack("m0"))
@@ -234,12 +242,18 @@ RSpec.describe "Railsのコントローラ", type: :rails do
       it "default_url_optionsにホストがあってもURLにならない" do
         Rails.application.routes.default_url_options[:host] = "localhost:3000"
 
-        html = view.sghtmltopdf_image_tag("logo.png")
-
-        expect(html).to include("data:image/png;base64,")
-        expect(html).not_to include("http://")
+        expect(view.sghtmltopdf_image_tag("logo.png")).to eq(%(<img src="logo.png">))
+        expect(view.sghtmltopdf_image_tag("logo.png", inline: true)).not_to include("http://")
       ensure
         Rails.application.routes.default_url_options.delete(:host)
+      end
+
+      it "size:はwidth/heightへ展開される" do
+        html = view.sghtmltopdf_image_tag("logo.png", size: "40x30")
+
+        expect(html).to include(%(width="40"))
+        expect(html).to include(%(height="30"))
+        expect(html).not_to include("size=")
       end
 
       it "オプションはそのまま属性になる" do
@@ -249,21 +263,31 @@ RSpec.describe "Railsのコントローラ", type: :rails do
         expect(html).to include(%(alt="ロゴ"))
       end
 
-      it "inline: falseならbase_url基準の相対パスを出す" do
+      # 既定がパス形式になったので`inline: false`は既定と同じ意味になる。
+      # 旧既定(埋め込み)を明示的に外していた呼び出しのために受け続ける。
+      it "inline: falseは既定と同じくパスを出す" do
         html = view.sghtmltopdf_image_tag("logo.png", inline: false, class: "seal")
 
         expect(html).to include(%(src="logo.png"))
         expect(html).to include(%(class="seal"))
       end
 
-      # 開発環境のように`public/`の外にあるファイルは相対パスで指せないため、
-      # `inline: false`でも埋め込みへ倒す。
-      it "base_urlの外のファイルはinline: falseでも埋め込む" do
+      # allow_pathの外にあるファイルはパスで指してもエンジンが読めない。
+      # 取得失敗は既定で無視されるので、無言で消えないよう埋め込みへ倒す。
+      it "allow_pathの外のファイルは埋め込みに倒す" do
         outside = Rails.root.join("app/assets/images/pipeline-logo.png").to_s
 
-        html = view.sghtmltopdf_image_tag(outside, inline: false)
+        html = view.sghtmltopdf_image_tag(outside)
 
         expect(html).to include("data:image/png;base64,")
+      end
+
+      # サーバへ委譲する場合、ローカルのパスは相手のファイルシステムに
+      # 無いかもしれない。埋め込みならどこで描いても読める。
+      it "server_urlが設定されていれば埋め込みに倒す" do
+        Sghtmltopdf.configure { |c| c.server_url = "http://127.0.0.1:1" }
+
+        expect(view.sghtmltopdf_image_tag("logo.png")).to include("data:image/png;base64,")
       end
 
       it "アプリのアセットでないものはRailsに任せる" do
@@ -272,8 +296,8 @@ RSpec.describe "Railsのコントローラ", type: :rails do
         expect(html).to include(%(src="https://example.com/logo.png"))
       end
 
-      it "inline: falseで出したパスもエンジンが解決できる" do
-        html = view.sghtmltopdf_image_tag("logo.png", inline: false)
+      it "既定で出したパスをエンジンが解決できる" do
+        html = view.sghtmltopdf_image_tag("logo.png")
 
         # `base_url`の既定(Rails.root/public)からの相対パスとして読める。
         expect(Sghtmltopdf.render(html)).to include("/Subtype /Image")

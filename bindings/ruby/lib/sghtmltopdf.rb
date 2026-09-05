@@ -47,6 +47,7 @@ module Sghtmltopdf
     # 1回に渡すバイト数の目安は`chunk_size:`で変えられる(既定64KiB。
     # ローカル変換のみ。小さくするとGVLの取り直しが増える)。
     def render(html, **options, &block)
+      options = Options.canonicalize(options)
       client = server_client(options)
       return client.render(html.to_s, server_options(options), &block) if client
       return Native.render(html.to_s, argv_for(options)) if block.nil?
@@ -60,6 +61,7 @@ module Sghtmltopdf
     # 一時ファイルへ書いて成功時だけrenameするため、途中で失敗しても
     # 壊れたPDFが出力先に残らない(サーバへ委譲する場合も同じ)。
     def render_to_file(html, path, **options)
+      options = Options.canonicalize(options)
       client = server_client(options)
       return client.render_to_file(html.to_s, server_options(options), path.to_s) if client
 

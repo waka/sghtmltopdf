@@ -240,7 +240,8 @@ mod tests {
         );
     }
 
-    /// `--allow`で許可したディレクトリの外にあるフォントは、`..`で辿っても読めないこと。
+    /// A font outside the `--allow-path` directories must not be readable, even
+    /// by way of `..`.
     #[test]
     fn a_url_source_outside_the_allowed_dirs_is_refused() {
         let base = Path::new(DEJAVU_PATH).to_path_buf();
@@ -255,7 +256,7 @@ mod tests {
         let loaded = load_font_faces(&rules, &restricted, &no_system_fonts());
         assert!(
             loaded.is_empty(),
-            "--allowの範囲外にあるフォントは読めてはならない"
+            "--allow-pathの範囲外にあるフォントは読めてはならない"
         );
     }
 

@@ -178,10 +178,10 @@ sghtmltopdf report.html --cover cover.html --toc --footer-center "[page]"
 | オプション | CLIの既定 | サーバの既定 |
 |---|---|---|
 | `--enable-local-file-access` / `--disable-local-file-access` | 許可 | 禁止 |
-| `--allow <PATH>` | 制限なし | 制限なし |
+| `--allow-path <PATH>` | 制限なし | 制限なし |
 | `--allow-remote-assets` | 禁止 | 禁止 |
 
-`--allow`を1つ以上指定すると、ローカル参照はそのディレクトリ配下だけに限定されます。
+`--allow-path`を1つ以上指定すると、ローカル参照はそのディレクトリ配下だけに限定されます。
 `<img src>`・外部CSS・`@font-face`のすべてに効きます。
 
 判定は実パス(シンボリックリンクを辿った後のパス)で行います。
@@ -196,19 +196,19 @@ sghtmltopdf report.html --cover cover.html --toc --footer-center "[page]"
 
 `assets/../images/logo.png`のように基準ディレクトリの中で完結する`../`は従来どおり使えます。
 
-外のファイルを意図的に参照する場合は`--allow`で範囲を明示してください。
-`--allow`を指定した場合は、基準ディレクトリではなく許可したディレクトリが境界になります。
+外のファイルを意図的に参照する場合は`--allow-path`で範囲を明示してください。
+`--allow-path`を指定した場合は、基準ディレクトリではなく許可したディレクトリが境界になります。
 
 ```console
 $ sghtmltopdf pages/index.html -o out.pdf
 エラー: ../images/logo.png: 基準ディレクトリ(pages)の外を参照しています。
-  外部のファイルを読む場合は --allow でディレクトリを明示してください
+  外部のファイルを読む場合は --allow-path でディレクトリを明示してください
 
-$ sghtmltopdf pages/index.html --allow . -o out.pdf
+$ sghtmltopdf pages/index.html --allow-path . -o out.pdf
 ```
 
 判定はパス文字列に対して行うため、基準ディレクトリ配下のシンボリックリンクは辿ります。
-シンボリックリンクの先まで含めて閉じたい場合は`--allow`を使ってください(こちらは実パスで判定します)。
+シンボリックリンクの先まで含めて閉じたい場合は`--allow-path`を使ってください(こちらは実パスで判定します)。
 
 ### `/`で始まる参照
 
@@ -218,7 +218,7 @@ Railsのアセットパイプラインが出すパスがこの形なので、pre
 そこにファイルが無い場合に限り、同じ文字列をファイルシステムの絶対パスとして解釈し直します。
 `<img src="/var/www/app/public/logo.png">`のような書き方のためのフォールバックです。
 このとき読めるかどうかは他の参照と同じ規則で決まります。
-絶対パスが基準ディレクトリの中を指していればそのまま読め、外を指していれば`--allow`が要ります。
+絶対パスが基準ディレクトリの中を指していればそのまま読め、外を指していれば`--allow-path`が要ります。
 
 どちらの解釈でもファイルが見つからない場合は、両方のパスを挙げたエラーになります。
 
