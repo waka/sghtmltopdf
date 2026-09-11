@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>images</title>
+<style>
+  body { font-family: sans-serif; font-size: 10px; }
+  .row { margin-bottom: 6px; }
+  .row img { vertical-align: middle; margin-right: 4px; border: 1px solid #ccc; }
+  .cover { object-fit: cover; }
+  .contain { object-fit: contain; object-position: left top; height: 60px; }
+  .inline { height: 12px; }
+  .bg { height: 40px; margin-bottom: 4px; border: 1px solid #999; padding: 4px; }
+  .repeat { background-image: url("../../tests/fixtures/images/spike_gray.png"); background-repeat: repeat; background-size: 20px 20px; }
+  .once { background: url("../../tests/fixtures/images/spike_gradient.jpg") no-repeat right center; background-size: 60px 40px; background-color: #eef; }
+  .svgbg { background-image: url("assets/logo.svg"); background-repeat: repeat-x; background-size: 30px 30px; }
+</style>
+</head>
+<body>
+<h1>Images: PNG, JPEG, WebP, SVG, data URIs, backgrounds</h1>
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+<div class="row">
+  <img src="../../tests/fixtures/images/spike_gradient.jpg" width="120" height="80" alt="jpeg">
+  <img src="../../tests/fixtures/images/spike_opaque.png" width="80" alt="png">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.png" width="80" height="80" class="cover" alt="png alpha">
+  <img src="../../tests/fixtures/images/spike_gray.png" width="60" alt="gray png">
+  <img src="../../tests/fixtures/images/spike_opaque.webp" width="80" alt="webp">
+  <img src="../../tests/fixtures/images/spike_gradient_alpha.webp" width="80" class="contain" alt="webp alpha">
+  <img src="assets/logo.svg" width="60" height="60" alt="svg file">
+  <img src="data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2740%27 height=%2740%27><circle cx=%2720%27 cy=%2720%27 r=%2718%27 fill=%27%23c33%27/></svg>" width="40" height="40" alt="svg data uri">
+</div>
+<div class="bg repeat">background-image repeat</div>
+<div class="bg once">no-repeat, positioned, sized</div>
+<div class="bg svgbg">svg background</div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, q <img src="../../tests/fixtures/images/spike_opaque.png" class="inline" alt="inline"> inline image in text.</p>
+
+</body>
+</html>

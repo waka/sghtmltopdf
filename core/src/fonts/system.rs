@@ -169,6 +169,19 @@ impl SystemFonts {
         Self { db }
     }
 
+    /// システムフォントを一切持たないデータベース。
+    ///
+    /// `--disable-system-fonts`(=[`crate::engine::EngineOptions::disable_system_fonts`])
+    /// のための構築子。フォントの探索経路([`load_missing_system_fonts`]等)は
+    /// そのまま通るが、どれも何も見つけられなくなるため、出力は`--font`等で
+    /// 明示したフォントだけで決まる。同じHTMLから同じPDFを得たい場合
+    /// (CIやコンテナと手元とで結果を揃えたい場合)に使う。
+    pub fn none() -> Self {
+        Self {
+            db: fontdb::Database::new(),
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn from_dir(dir: &std::path::Path) -> Self {
         let mut db = fontdb::Database::new();
@@ -791,6 +804,20 @@ mod tests {
             fonts.is_empty(),
             "an unspecified font-family must not look up system fonts"
         );
+    }
+
+    #[test]
+    fn none_finds_nothing_so_the_document_is_built_from_the_given_fonts_only() {
+        let system = SystemFonts::none();
+        assert!(system
+            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .is_none());
+        assert!(system
+            .load_generic("monospace", FontWeight::Normal, FontStyle::Normal)
+            .is_none());
+        assert!(system
+            .load_covering('\u{3042}', FontWeight::Normal, FontStyle::Normal)
+            .is_none());
     }
 
     #[test]

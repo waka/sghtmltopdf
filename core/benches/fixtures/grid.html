@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>grid</title>
+<style>
+  body { font-family: sans-serif; font-size: 10px; }
+  .cell { border: 1px solid #9c6; background: #f3fbe9; padding: 3px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 3px; margin-bottom: 4px; }
+  .areas { display: grid; grid-template-columns: 80px 1fr; grid-template-rows: auto auto auto;
+            grid-template-areas: "hd hd" "sb mn" "ft ft"; gap: 2px; margin-bottom: 4px; }
+  .hd { grid-area: hd; background: #dde; padding: 2px; }
+  .sb { grid-area: sb; background: #eed; padding: 2px; }
+  .mn { grid-area: mn; background: #ded; padding: 2px; }
+  .ft { grid-area: ft; background: #edd; padding: 2px; }
+  .grid-span { display: grid; grid-template-columns: repeat(3, 1fr); grid-auto-rows: 18px; gap: 2px; margin-bottom: 4px; }
+  .span2 { grid-column: 1 / span 2; }
+  .rowspan { grid-row: 2 / 4; }
+  .grid-auto { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-flow: row; justify-items: start; align-items: center; column-gap: 6px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<h1>Grid</h1>
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 0</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 1</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 2</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 3</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 4</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 5</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 6</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 7</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 8</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 9</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 10</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 11</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 12</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 13</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 14</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 15</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 16</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 17</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 18</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+<div class="grid3"><div class="cell">c0</div><div class="cell">c1</div><div class="cell">c2</div><div class="cell">c3</div><div class="cell">c4</div><div class="cell">c5</div><div class="cell">c6</div><div class="cell">c7</div><div class="cell">c8</div><div class="cell">c9</div><div class="cell">c10</div><div class="cell">c11</div></div>
+<div class="areas"><div class="hd">header 19</div><div class="sb">sidebar</div><div class="mn">main Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</div><div class="ft">footer</div></div>
+<div class="grid-span"><div class="cell span2">span 2</div><div class="cell">x</div><div class="cell rowspan">row span</div><div class="cell">y</div><div class="cell">z</div><div class="cell">w</div></div>
+<div class="grid-auto"><div class="cell">auto 0</div><div class="cell">auto 1</div><div class="cell">auto 2</div><div class="cell">auto 3</div><div class="cell">auto 4</div><div class="cell">auto 5</div><div class="cell">auto 6</div></div>
+
+</body>
+</html>

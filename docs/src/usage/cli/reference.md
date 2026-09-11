@@ -66,6 +66,7 @@ cat invoice.html | sghtmltopdf - -o - > invoice.pdf
 | `--gothic-font <PATH>` (+`--gothic-font-index`) | `font-family: sans-serif`の実体 |
 | `--serif-font <PATH>` (+`--serif-font-index`) | `font-family: serif`の実体 |
 | `--mono-font <PATH>` (+`--mono-font-index`) | `font-family: monospace`の実体 |
+| `--disable-system-fonts` | システムフォントを探さない(渡したフォントだけで組む) |
 
 フォントの解決順は「`--font` → `@font-face` → `font-family`名でのシステム探索」。
 それでも1つも見つからない場合だけ、システムの`sans-serif`候補が既定フォントになります。
@@ -73,6 +74,11 @@ cat invoice.html | sghtmltopdf - -o - > invoice.pdf
 > `--font`を指定しないと出力が実行環境のフォントに依存します。
 > サーバ運用やCIで出力を安定させたい場合は`--font`(または`@font-face`)を明示してください。
 > 詳しくは[フォント](../../supports/fonts.md)を参照。
+
+`--font`等を明示しても、そこに無いフェース(例えば`font-family: serif`の
+イタリック)はシステムから補われるため、出力は実行環境のフォント次第で変わります。
+`--disable-system-fonts`はこの探索ごと止めるので、同じHTMLからはどのマシンでも
+同じPDFが出ます(補えなかった文字は警告のうえ描かれません)。
 
 ## PDFの出力形式・メタデータ
 

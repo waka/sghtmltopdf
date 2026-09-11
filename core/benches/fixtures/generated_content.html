@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>generated_content</title>
+<style>
+  body { font-family: sans-serif; font-size: 10px; counter-reset: section; }
+  h2 { counter-increment: section; counter-reset: sub; font-size: 14px; }
+  h2::before { content: counter(section) ". "; color: #c00; }
+  h3 { counter-increment: sub; font-size: 12px; }
+  h3::before { content: counter(section) "." counter(sub) " "; }
+  .attr::before { content: attr(data-label) ": "; font-weight: bold; }
+  .note::before { content: "[note] "; color: #060; }
+  .note::after { content: " [end]"; color: #060; }
+  ol.nested { counter-reset: item; list-style-type: none; }
+  ol.nested li { counter-increment: item; }
+  ol.nested li::before { content: counters(item, ".") " "; }
+  ol.nested ol { counter-reset: item; list-style-type: none; }
+  .disc { list-style-type: disc; }
+  .square { list-style-type: square; }
+  .circle { list-style-type: circle; }
+  .alpha { list-style-type: lower-alpha; }
+  .roman { list-style-type: upper-roman; }
+  .lz { list-style-type: decimal-leading-zero; }
+  .inside { list-style-position: inside; }
+  .none { list-style: none; }
+  q { quotes: "\201C" "\201D" "\2018" "\2019"; }
+  q::before { content: open-quote; }
+  q::after { content: close-quote; }
+  .first::first-letter { font-size: 200%; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>Generated content, counters, lists, quotes</h1>
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-0" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-1" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-2" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-3" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-4" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-5" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-6" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-7" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-8" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-9" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-10" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+<h2>Section</h2>
+<h3>Subsection</h3>
+<p data-label="label-11" class="attr">Uses attr() in ::before.</p>
+<p class="note">A note with generated prefix and suffix.</p>
+<ol class="nested"><li>Item 0<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 1<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 2<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li><li>Item 3<ol><li>Sub 0 <q>quoted</q></li><li>Sub 1 <q>quoted</q></li><li>Sub 2 <q>quoted</q></li></ol></li></ol>
+<ul class="disc"><li>disc</li><li>disc</li></ul>
+<ul class="square"><li>square</li><li>square</li></ul>
+<ul class="circle"><li>circle</li></ul>
+<ol class="alpha"><li>lower alpha</li><li>lower alpha</li></ol>
+<ol class="roman"><li>upper roman</li><li>upper roman</li></ol>
+<ol class="lz"><li>leading zero</li><li>leading zero</li></ol>
+<ul class="inside"><li>list-style-position inside Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt </li></ul>
+<ul class="none"><li>no marker</li></ul>
+<p class="quotes"><q>Outer <q>inner</q> quote</q> using open-quote and close-quote.</p>
+<p class="first">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+
+</body>
+</html>

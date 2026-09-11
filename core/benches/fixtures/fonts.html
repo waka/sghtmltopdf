@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>fonts</title>
+<style>
+  @font-face { font-family: "Bench Sans"; src: url("../../tests/fonts/DejaVuSans.ttf"); font-weight: normal; }
+  @font-face { font-family: "Bench Sans"; src: url("../../tests/fonts/DejaVuSans-Bold.ttf"); font-weight: bold; }
+  @font-face { font-family: "Bench Mono"; src: url("../../tests/fonts/DejaVuSansMono.ttf"); }
+  @font-face { font-family: "Bench CJK"; src: url("../../tests/fonts/NotoSansCJK-Regular.ttc"); unicode-range: U+3000-9FFF, U+FF00-FFEF; }
+  @font-face { font-family: "Bench Fallback"; src: url("../../tests/fonts/DejaVuSans.ttf"); unicode-range: U+0000-00FF; }
+  body { font-family: "Bench Sans", "Bench CJK", sans-serif; font-size: 10px; line-height: 1.4; }
+  h1 { font-family: "Bench Sans"; font-weight: bold; font-size: 20px; }
+  .mono { font-family: "Bench Mono", monospace; }
+  .fb { font-family: "Bench Fallback", "Bench CJK", serif; }
+  .missing { font-family: "No Such Font", "Bench Sans"; }
+  .sizes span { margin-right: 4px; }
+  .w { font-weight: 700; }
+  .i { font-style: italic; }
+  .bi { font-weight: bold; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>@font-face, weights, fallback, unicode-range, subsetting</h1>
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 0</p>
+<p>Mixed script line 混在 0: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 1</p>
+<p>Mixed script line 混在 1: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 2</p>
+<p>Mixed script line 混在 2: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 3</p>
+<p>Mixed script line 混在 3: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 4</p>
+<p>Mixed script line 混在 4: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 5</p>
+<p>Mixed script line 混在 5: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 6</p>
+<p>Mixed script line 混在 6: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 7</p>
+<p>Mixed script line 混在 7: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 8</p>
+<p>Mixed script line 混在 8: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 9</p>
+<p>Mixed script line 混在 9: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 10</p>
+<p>Mixed script line 混在 10: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 11</p>
+<p>Mixed script line 混在 11: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 12</p>
+<p>Mixed script line 混在 12: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+<p class="sizes"><span style="font-size: 6px">Aa6</span><span style="font-size: 8px">Aa8</span><span style="font-size: 10px">Aa10</span><span style="font-size: 12px">Aa12</span><span style="font-size: 14px">Aa14</span><span style="font-size: 18px">Aa18</span><span style="font-size: 24px">Aa24</span><span style="font-size: 32px">Aa32</span></p>
+<p>Regular text, <span class="w">bold via descriptor</span>, <span class="i">synthetic italic</span>, <span class="bi">bold italic</span>.</p>
+<p class="mono">monospace: 0123456789 abcdef {} [] () &lt;&gt; Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor i</p>
+<p class="fb">Latin from fallback face then 日本語はユニコードレンジで別フェイスへ then Latin again.</p>
+<p class="missing">Unknown family falls through to the next one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore </p>
+<p>Glyph coverage: ÀÉÎÕÜ àéîõü ß Ø ñ ç € £ ¥ © ® ™ — – … « » ¿ ¡ ½ ¾ ² ³ µ ÷ × ± ≠ ≤ ≥ ∞ √ ∑ ∏ ∫ ≈ Ω α β γ δ ε π σ φ ψ ω Я Ж Щ Ъ Ы Ь Э Ю ǅ ǈ ǋ 13</p>
+<p>Mixed script line 混在 13: The quick brown fox 素早い茶色の狐 jumps over the lazy dog 怠け者の犬を飛び越える.</p>
+
+</body>
+</html>

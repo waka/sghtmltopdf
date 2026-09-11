@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>table_basic</title>
+<style>
+  body { font-family: sans-serif; font-size: 9px; }
+  table { width: 100%; margin-bottom: 8px; }
+  caption { caption-side: top; font-weight: bold; text-align: left; padding: 2px; }
+  .collapse { border-collapse: collapse; }
+  .collapse th, .collapse td { border: 1px solid #666; padding: 2px 4px; }
+  .collapse thead th { background: #dde; border-bottom: 2px solid #000; }
+  .collapse tfoot td { font-weight: bold; border-top: 2px double #000; }
+  .separate { border-collapse: separate; border-spacing: 4px 2px; }
+  .separate th, .separate td { border: 1px solid #c60; padding: 2px; height: 22px; }
+  .fixed { table-layout: fixed; empty-cells: hide; }
+  .fixed td { border: 1px dotted #000; padding: 2px; }
+  .num { text-align: right; }
+  .top { vertical-align: top; }
+  .middle { vertical-align: middle; }
+  .bottom { vertical-align: bottom; }
+</style>
+</head>
+<body>
+<h1>Tables</h1>
+<table class="collapse">
+<caption>Table 0: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 1: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 2: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 3: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 4: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 5: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 6: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 7: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 8: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+<table class="collapse">
+<caption>Table 9: collapsed borders, colgroup, caption</caption>
+<colgroup><col style="width: 30px"><col><col style="width: 50px"><col style="width: 70px"><col></colgroup>
+<thead><tr><th>#</th><th>Name</th><th>Qty</th><th>Amount</th><th>Note</th></tr></thead>
+<tbody><tr><td>0</td><td>Row 0 description</td><td class="num">0</td><td class="num">0.00</td><td>note</td></tr><tr><td>1</td><td>Row 1 description</td><td class="num">7</td><td class="num">13.00</td><td></td></tr><tr><td>2</td><td>Row 2 description</td><td class="num">14</td><td class="num">26.00</td><td></td></tr><tr><td>3</td><td>Row 3 description</td><td class="num">21</td><td class="num">39.00</td><td></td></tr><tr><td>4</td><td>Row 4 description</td><td class="num">28</td><td class="num">52.00</td><td>note</td></tr><tr><td>5</td><td>Row 5 description</td><td class="num">35</td><td class="num">65.00</td><td></td></tr><tr><td>6</td><td>Row 6 description</td><td class="num">42</td><td class="num">78.00</td><td></td></tr><tr><td>7</td><td>Row 7 description</td><td class="num">49</td><td class="num">91.00</td><td></td></tr><tr><td>8</td><td>Row 8 description</td><td class="num">56</td><td class="num">104.00</td><td>note</td></tr><tr><td>9</td><td>Row 9 description</td><td class="num">63</td><td class="num">117.00</td><td></td></tr><tr><td>10</td><td>Row 10 description</td><td class="num">70</td><td class="num">130.00</td><td></td></tr><tr><td>11</td><td>Row 11 description</td><td class="num">77</td><td class="num">143.00</td><td></td></tr></tbody>
+<tfoot><tr><td colspan="3">Total</td><td class="num">1234.00</td><td></td></tr></tfoot>
+</table>
+<table class="separate">
+<tr><th rowspan="2">Group</th><th colspan="2">Pair</th><td class="top">top</td></tr>
+<tr><td>a</td><td>b</td><td class="bottom">bottom</td></tr>
+<tr><td>x</td><td colspan="2" rowspan="2">merged Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmo</td><td class="middle">middle</td></tr>
+<tr><td>y</td><td>tail</td></tr>
+</table>
+<table class="fixed">
+<tr><td>fixed layout</td><td>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliq</td><td>c</td></tr>
+<tr><td>empty cells</td><td></td><td></td></tr>
+</table>
+<table align="center" border="1" cellpadding="3" cellspacing="0" width="60%">
+<tr><td bgcolor="#ffeecc">presentational attributes</td><td align="right">right</td></tr>
+</table>
+
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>flexbox</title>
+<style>
+  body { font-family: sans-serif; font-size: 10px; }
+  .row { display: flex; flex-direction: row; gap: 4px; margin-bottom: 4px; align-items: center; }
+  .col { display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; width: 200px; }
+  .wrap { flex-wrap: wrap; row-gap: 3px; align-content: flex-start; }
+  .between { justify-content: space-between; align-items: flex-start; height: 30px; }
+  .item { border: 1px solid #69c; background: #eef5ff; padding: 3px 5px; }
+  .fixed { flex: 0 0 90px; }
+  .basis { flex-basis: 120px; flex-shrink: 0; }
+  .shrink { flex-shrink: 1; min-width: 0; }
+  .self-end { align-self: flex-end; }
+  .nested { align-items: stretch; }
+</style>
+</head>
+<body>
+<h1>Flexbox</h1>
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+<div class="row"><div class="item" style="flex-grow: 1">item 0</div><div class="item" style="flex-grow: 2">item 1</div><div class="item" style="flex-grow: 3">item 2</div><div class="item" style="flex-grow: 1">item 3</div><div class="item" style="flex-grow: 2">item 4</div><div class="item" style="flex-grow: 3">item 5</div></div>
+<div class="row wrap"><div class="item fixed">wrap 0</div><div class="item fixed">wrap 1</div><div class="item fixed">wrap 2</div><div class="item fixed">wrap 3</div><div class="item fixed">wrap 4</div><div class="item fixed">wrap 5</div><div class="item fixed">wrap 6</div><div class="item fixed">wrap 7</div><div class="item fixed">wrap 8</div><div class="item fixed">wrap 9</div></div>
+<div class="col"><div class="item">column 0</div><div class="item">column 1</div><div class="item">column 2</div></div>
+<div class="row between"><div class="item">start</div><div class="item self-end">self end</div><div class="item">end</div></div>
+<div class="row nested"><div class="item"><div class="row"><div class="item">nested a</div><div class="item shrink">nested b Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed</div></div></div><div class="item basis">basis 120px</div></div>
+
+</body>
+</html>

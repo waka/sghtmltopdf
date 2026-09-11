@@ -87,6 +87,11 @@ pub struct ServerArgs {
     #[arg(long, value_name = "PATH")]
     pub mono_font: Option<PathBuf>,
 
+    /// システムフォントを探さない(--font等で渡したフォントだけで組む。
+    /// リクエストからは変更できない)
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub disable_system_fonts: bool,
+
     /// ローカルファイルの参照を許可する(サーバモードの既定は禁止)
     #[arg(long, action = ArgAction::SetTrue)]
     pub enable_local_file_access: bool,
@@ -212,6 +217,13 @@ pub struct ConvertArgs {
     /// --mono-fontのフェイス番号
     #[arg(long, value_name = "N", requires = "mono_font")]
     pub mono_font_index: Option<u32>,
+
+    /// システムフォントを探さない(--font等で渡したフォントだけで組む)
+    ///
+    /// 同じHTMLから環境によらず同じPDFを得たいときに使う。埋められなかった
+    /// 文字は警告のうえ描かれない。
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub disable_system_fonts: bool,
 
     /// PDFのタイトル(未指定ならHTMLの<title>を使う)
     #[arg(long, value_name = "TEXT")]

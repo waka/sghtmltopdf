@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>block_layout</title>
+<style>
+  body { font-family: sans-serif; font-size: 10px; line-height: 1.4; }
+  .card { border: 1px solid #ccc; padding: 8px; margin: 0 0 10px; box-sizing: border-box; width: 100%; break-inside: avoid; }
+  .box { width: 60px; height: 40px; border: 2px solid #888; padding: 4px; margin: 4px; background: #eef; text-align: center; }
+  .float-left { float: left; }
+  .float-right { float: right; }
+  .clear { clear: both; }
+  .nested { padding: 4px; border: 1px dashed #aaa; margin-block: 4px; }
+  .inner { padding-inline-start: 10px; border-inline-start: 2px solid #c00; margin: 2px 0; min-height: 12px; max-width: 300px; }
+  .row { margin: 4px 0; }
+  .ib { display: inline-block; border: 1px solid #999; padding: 2px 6px; vertical-align: middle; }
+  .wide { min-width: 120px; max-height: 20px; }
+  .rel { position: relative; height: 30px; border: 1px solid #0a0; margin: 4px 0; }
+  .abs { position: absolute; top: 4px; right: 6px; background: #fdd; padding: 2px; }
+  .shadowed { box-shadow: 2px 2px 4px rgba(0,0,0,0.4); border-radius: 6px; border: 1px solid #333; padding: 4px; margin: 4px 0; width: 200px; }
+  .faded { opacity: 0.6; background: #36c; color: #fff; padding: 3px; width: 150px; }
+  .rotated { transform: rotate(-3deg); transform-origin: left top; width: 80px; border: 1px solid #000; padding: 2px; margin-top: 6px; }
+  .fixed { position: fixed; bottom: 4px; right: 4px; font-size: 8px; color: #999; }
+  .outlined { outline: 1px dotted #f00; margin: 6px; padding: 2px; }
+  .aspect { aspect-ratio: 16 / 9; width: 96px; background: #ddd; }
+  .overflow { overflow: hidden; height: 20px; border: 1px solid #000; }
+  .visible { visibility: hidden; }
+</style>
+</head>
+<body>
+<h1>Block layout, floats, positioning, decorations</h1>
+<div class="fixed">fixed on every page</div>
+<div class="outlined">outline</div>
+<div class="aspect"></div>
+<div class="overflow">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</div>
+<div class="visible">hidden but takes space</div>
+<section class="card">
+  <div class="float-left box">L0</div>
+  <div class="float-right box">R0</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 0 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 0</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L1</div>
+  <div class="float-right box">R1</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 1 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 1</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L2</div>
+  <div class="float-right box">R2</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 2 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 2</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L3</div>
+  <div class="float-right box">R3</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 3 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 3</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L4</div>
+  <div class="float-right box">R4</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 4 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 4</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L5</div>
+  <div class="float-right box">R5</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 5 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 5</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L6</div>
+  <div class="float-right box">R6</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 6 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 6</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L7</div>
+  <div class="float-right box">R7</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 7 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 7</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L8</div>
+  <div class="float-right box">R8</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 8 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 8</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L9</div>
+  <div class="float-right box">R9</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 9 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 9</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L10</div>
+  <div class="float-right box">R10</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 10 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 10</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L11</div>
+  <div class="float-right box">R11</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 11 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 11</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L12</div>
+  <div class="float-right box">R12</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 12 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 12</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L13</div>
+  <div class="float-right box">R13</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 13 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 13</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L14</div>
+  <div class="float-right box">R14</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 14 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 14</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L15</div>
+  <div class="float-right box">R15</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 15 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 15</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L16</div>
+  <div class="float-right box">R16</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 16 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 16</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L17</div>
+  <div class="float-right box">R17</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 17 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 17</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L18</div>
+  <div class="float-right box">R18</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 18 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 18</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L19</div>
+  <div class="float-right box">R19</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 19 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 19</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L20</div>
+  <div class="float-right box">R20</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 20 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 20</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L21</div>
+  <div class="float-right box">R21</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 21 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 21</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L22</div>
+  <div class="float-right box">R22</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 22 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 22</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+<section class="card">
+  <div class="float-left box">L23</div>
+  <div class="float-right box">R23</div>
+  <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+  <div class="clear"></div>
+  <div class="nested">
+    <div class="inner">nested 23 <div class="inner">deeper <div class="inner">deepest</div></div></div>
+  </div>
+  <div class="row">
+    <div class="ib">inline-block A</div>
+    <div class="ib wide">inline-block B with min-width</div>
+    <div class="ib">inline-block C</div>
+  </div>
+  <div class="rel">
+    relative container
+    <div class="abs">absolute 23</div>
+  </div>
+  <div class="shadowed">box-shadow and border-radius</div>
+  <div class="faded">opacity 0.6</div>
+  <div class="rotated">rotated</div>
+</section>
+</body>
+</html>

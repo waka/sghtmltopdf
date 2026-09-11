@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>text_inline</title>
+<style>
+  body { font-family: sans-serif; font-size: 11px; line-height: 1.5; color: #222; }
+  h1 { font-size: 24px; letter-spacing: 1px; }
+  h2 { font-size: 16px; text-transform: uppercase; }
+  p { margin: 0 0 6px; }
+  .justify { text-align: justify; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .indent { text-indent: 2em; }
+  .spaced { letter-spacing: 0.5px; word-spacing: 3px; }
+  .narrow { width: 120px; word-break: break-all; border: 1px solid #ccc; padding: 4px; }
+  .u { text-decoration: underline; }
+  .s { text-decoration: line-through; color: #888; }
+  .o { text-decoration: overline; }
+  .small { font-size: 8px; vertical-align: middle; }
+  .big { font-size: 15px; font-weight: bold; }
+  .shadow { text-shadow: 1px 1px 1px #999; }
+  code { font-family: monospace; background: #f4f4f4; padding: 0 2px; }
+  pre { font-family: monospace; white-space: pre; background: #f8f8f8; border-left: 3px solid #ccc; padding: 6px; font-size: 10px; }
+  blockquote { margin: 6px 24px; padding-left: 8px; border-left: 2px solid #999; font-style: italic; }
+  a { color: #0645ad; text-decoration: underline; }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 200px; }
+  .nowrap { white-space: nowrap; }
+  .prewrap { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Inline formatting and line breaking</h1>
+<h2>Paragraph variety</h2>
+<p class="ellipsis">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="nowrap">A line that never wraps, however long it is, so it overflows the content box on the right.</p>
+<p class="prewrap">Pre-wrap keeps    runs of spaces
+and explicit line breaks
+but still wraps very long lines such as this one: Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. <strong>Strong text 0</strong> and <em>emphasised text</em> with <code>inline code</code> and <a href="https://example.com/0">a link</a>.</p>
+<p class="justify">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="spaced">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="deco"><span class="u">underlined 3</span>, <span class="s">struck</span>, <span class="o">overlined</span>, H<sub>2</sub>O and E=mc<sup>2</sup>, <span class="small">small caps-ish</span>, <span class="big">bigger</span>, <span class="shadow">shadowed</span>.</p>
+<p class="narrow">Supercalifragilisticexpialidocious pneumonoultramicroscopicsilicovolcanoconiosis 4 antidisestablishmentarianism floccinaucinihilipilification.</p>
+<pre>fn main() {
+    let x = 5;
+    println!("value = {x}");
+}</pre>
+<p class="center">Centered line 6</p><p class="right">Right aligned line 6</p><p class="indent">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</blockquote>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. <strong>Strong text 8</strong> and <em>emphasised text</em> with <code>inline code</code> and <a href="https://example.com/8">a link</a>.</p>
+<p class="justify">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="spaced">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="deco"><span class="u">underlined 11</span>, <span class="s">struck</span>, <span class="o">overlined</span>, H<sub>2</sub>O and E=mc<sup>2</sup>, <span class="small">small caps-ish</span>, <span class="big">bigger</span>, <span class="shadow">shadowed</span>.</p>
+<p class="narrow">Supercalifragilisticexpialidocious pneumonoultramicroscopicsilicovolcanoconiosis 12 antidisestablishmentarianism floccinaucinihilipilification.</p>
+<pre>fn main() {
+    let x = 13;
+    println!("value = {x}");
+}</pre>
+<p class="center">Centered line 14</p><p class="right">Right aligned line 14</p><p class="indent">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</blockquote>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. <strong>Strong text 16</strong> and <em>emphasised text</em> with <code>inline code</code> and <a href="https://example.com/16">a link</a>.</p>
+<p class="justify">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="spaced">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="deco"><span class="u">underlined 19</span>, <span class="s">struck</span>, <span class="o">overlined</span>, H<sub>2</sub>O and E=mc<sup>2</sup>, <span class="small">small caps-ish</span>, <span class="big">bigger</span>, <span class="shadow">shadowed</span>.</p>
+<p class="narrow">Supercalifragilisticexpialidocious pneumonoultramicroscopicsilicovolcanoconiosis 20 antidisestablishmentarianism floccinaucinihilipilification.</p>
+<pre>fn main() {
+    let x = 21;
+    println!("value = {x}");
+}</pre>
+<p class="center">Centered line 22</p><p class="right">Right aligned line 22</p><p class="indent">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</blockquote>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. <strong>Strong text 24</strong> and <em>emphasised text</em> with <code>inline code</code> and <a href="https://example.com/24">a link</a>.</p>
+<p class="justify">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="spaced">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="deco"><span class="u">underlined 27</span>, <span class="s">struck</span>, <span class="o">overlined</span>, H<sub>2</sub>O and E=mc<sup>2</sup>, <span class="small">small caps-ish</span>, <span class="big">bigger</span>, <span class="shadow">shadowed</span>.</p>
+<p class="narrow">Supercalifragilisticexpialidocious pneumonoultramicroscopicsilicovolcanoconiosis 28 antidisestablishmentarianism floccinaucinihilipilification.</p>
+<pre>fn main() {
+    let x = 29;
+    println!("value = {x}");
+}</pre>
+<p class="center">Centered line 30</p><p class="right">Right aligned line 30</p><p class="indent">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</blockquote>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. <strong>Strong text 32</strong> and <em>emphasised text</em> with <code>inline code</code> and <a href="https://example.com/32">a link</a>.</p>
+<p class="justify">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="spaced">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p class="deco"><span class="u">underlined 35</span>, <span class="s">struck</span>, <span class="o">overlined</span>, H<sub>2</sub>O and E=mc<sup>2</sup>, <span class="small">small caps-ish</span>, <span class="big">bigger</span>, <span class="shadow">shadowed</span>.</p>
+<p class="narrow">Supercalifragilisticexpialidocious pneumonoultramicroscopicsilicovolcanoconiosis 36 antidisestablishmentarianism floccinaucinihilipilification.</p>
+<pre>fn main() {
+    let x = 37;
+    println!("value = {x}");
+}</pre>
+<p class="center">Centered line 38</p><p class="right">Right aligned line 38</p><p class="indent">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</blockquote>
+</body>
+</html>

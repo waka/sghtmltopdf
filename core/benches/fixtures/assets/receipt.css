@@ -1,0 +1,370 @@
+/* 領収書サンプルのスタイルシート。
+   sghtmltopdfが対応しているCSSだけで組んである。 */
+
+:root {
+  --ink: #1c2530;
+  --muted: #6b7785;
+  --line: #d4dae1;
+  --line-strong: #9aa5b1;
+  --accent: #1f4e79;
+  --seal: #c0392b;
+  --band: #f2f5f8;
+}
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm;
+
+  @bottom-center {
+    content: counter(page) " / " counter(pages);
+    font-size: 9px;
+    color: #8b949e;
+  }
+
+  @bottom-right {
+    content: "R-2026-0142";
+    font-size: 9px;
+    color: #b0b8c1;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: "Noto Sans JP", "Noto Sans CJK JP", "BIZ UDPGothic",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+/* ===== 見出し ===== */
+
+.doc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 2px solid var(--accent);
+  padding-bottom: 10px;
+}
+
+.doc-title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: bold;
+  letter-spacing: 10px;
+  color: var(--accent);
+}
+
+.doc-meta {
+  min-width: 190px;
+}
+
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  line-height: 1.9;
+}
+
+.meta-key {
+  color: var(--muted);
+}
+
+.meta-value {
+  font-weight: bold;
+}
+
+/* ===== 宛名と発行元 ===== */
+
+.parties {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.payer {
+  flex-grow: 1;
+  padding-right: 24px;
+}
+
+.payer-name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: bold;
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 6px;
+}
+
+.honorific {
+  font-size: 13px;
+  font-weight: normal;
+  margin-left: 10px;
+}
+
+.payer-address {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.issuer {
+  display: flex;
+  align-items: flex-start;
+  min-width: 292px;
+}
+
+.issuer-body {
+  flex-grow: 1;
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--muted);
+}
+
+.issuer-name {
+  margin: 0 0 2px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--ink);
+}
+
+.issuer-line {
+  margin: 0;
+}
+
+/* 角印。4辺の太さ・スタイル・色が揃っているので角丸が有効になる。 */
+.seal {
+  box-sizing: border-box;
+  width: 58px;
+  height: 58px;
+  margin-left: 14px;
+  padding-top: 14px;
+  border: 2px solid var(--seal);
+  border-radius: 29px;
+  color: var(--seal);
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  transform: rotate(-7deg);
+}
+
+/* ===== 金額 ===== */
+
+.amount {
+  display: flex;
+  align-items: center;
+  margin-top: 20px;
+  border: 1px solid var(--line-strong);
+  background-color: var(--band);
+}
+
+.amount-label {
+  width: 92px;
+  padding: 14px 0;
+  border-right: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 4px;
+  text-align: center;
+}
+
+.amount-value {
+  flex-grow: 1;
+  padding: 10px 20px;
+  font-size: 30px;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.amount-tax {
+  margin-left: 12px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.purpose {
+  margin: 14px 0 0;
+  font-size: 13px;
+}
+
+.purpose-label {
+  display: inline-block;
+  min-width: 42px;
+  color: var(--muted);
+}
+
+.statement {
+  margin: 2px 0 0 42px;
+  font-size: 13px;
+}
+
+/* ===== 明細 ===== */
+
+.section-title {
+  margin: 22px 0 8px;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: var(--accent);
+  border-left: 3px solid var(--accent);
+  padding-left: 8px;
+}
+
+.items {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  counter-reset: item;
+}
+
+.items th,
+.items td {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 10px;
+  vertical-align: top;
+}
+
+.items thead th {
+  background-color: var(--accent);
+  border-bottom: 1px solid var(--accent);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 1px;
+  text-align: left;
+}
+
+.items tbody tr {
+  counter-increment: item;
+}
+
+/* 行番号はCSSカウンタで振る。 */
+.col-no {
+  width: 34px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.items tbody .col-no::before {
+  content: counter(item, decimal-leading-zero);
+}
+
+.col-qty {
+  width: 62px;
+  text-align: right;
+}
+
+.col-price,
+.col-amount {
+  width: 96px;
+  text-align: right;
+}
+
+.item-note {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+/* ===== 合計 ===== */
+
+.summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-top: 18px;
+}
+
+.remittance {
+  flex-grow: 1;
+  margin-right: 28px;
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+.remittance-title {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: bold;
+  color: var(--ink);
+}
+
+.remittance-line {
+  margin: 0;
+}
+
+.totals {
+  width: 268px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.totals th {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: normal;
+  text-align: left;
+}
+
+.totals td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.totals .grand th,
+.totals .grand td {
+  border-top: 2px solid var(--accent);
+  border-bottom: 2px solid var(--accent);
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 16px;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* ===== 収入印紙と注記 ===== */
+
+.footnote {
+  display: flex;
+  align-items: flex-start;
+  margin-top: 18px;
+}
+
+.stamp-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 92px;
+  margin-right: 20px;
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-align: center;
+}
+
+.notes {
+  flex-grow: 1;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 10px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+.sample-mark {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  font-size: 9px;
+  color: #b0b8c1;
+  text-align: center;
+  letter-spacing: 1px;
+}

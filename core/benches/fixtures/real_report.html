@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Annual Report 2026</title>
+<base href="https://example.org/reports/2026/">
+<style>
+  @page { size: A4; margin: 22mm 20mm 24mm 20mm;
+    @top-right { content: "Annual Report 2026"; font-size: 8px; color: #888; }
+    @bottom-center { content: counter(page); font-size: 9px; } }
+  body { font-family: serif; font-size: 10.5px; line-height: 1.5; color: #1a1a1a; orphans: 2; widows: 2; }
+  h1 { font-family: sans-serif; font-size: 22px; break-before: page; color: #1a365d; border-bottom: 1px solid #1a365d; padding-bottom: 4px; }
+  h1:first-child { break-before: auto; }
+  h2 { font-family: sans-serif; font-size: 14px; margin-top: 14px; break-after: avoid; }
+  h3 { font-family: sans-serif; font-size: 11px; margin: 8px 0 2px; break-after: avoid; }
+  .lead { font-size: 12px; color: #444; }
+  p { margin: 0 0 6px; text-align: justify; }
+  a { color: #2b6cb0; }
+  ul { margin: 0 0 6px; }
+  figure { margin: 8px 0; text-align: center; break-inside: avoid; }
+  figcaption { font-size: 8.5px; color: #666; }
+  table.data { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 9px; break-inside: avoid; }
+  table.data th, table.data td { border: 1px solid #ccc; padding: 2px 4px; }
+  table.data th { background: #eef2f7; }
+  .r { text-align: right; }
+  pre.code { font-family: monospace; font-size: 8.5px; background: #f7f7f7; border: 1px solid #ddd; padding: 4px; white-space: pre; }
+  blockquote { margin: 6px 20px; padding-left: 8px; border-left: 3px solid #cbd5e0; color: #444; font-style: italic; }
+  .summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .kpi { border: 1px solid #ddd; border-radius: 6px; padding: 6px; text-align: center; }
+  .kpi .v { font-size: 18px; font-weight: bold; color: #2b6cb0; }
+  .kpi .l { font-size: 8px; text-transform: uppercase; color: #777; }
+</style>
+</head>
+<body>
+<h1 id="summary">Executive summary</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<div class="summary"><div class="kpi"><div class="v">42%</div><div class="l">growth</div></div><div class="kpi"><div class="v">1,204</div><div class="l">customers</div></div><div class="kpi"><div class="v">99.98%</div><div class="l">uptime</div></div><div class="kpi"><div class="v">¥3.2B</div><div class="l">revenue</div></div><div class="kpi"><div class="v">17</div><div class="l">regions</div></div><div class="kpi"><div class="v">4.8</div><div class="l">satisfaction</div></div></div>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h1 id="s1">1. Section 1</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s1-1">1.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s2-1">section 2.1</a> and <a href="https://example.org/ref/1/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 1.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">7</td><td class="r">11</td><td class="r">13</td><td class="r">17</td></tr><tr><td>Metric 2</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 3</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 4</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 5</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 6</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 7</td><td class="r">49</td><td class="r">77</td><td class="r">91</td><td class="r">119</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 1 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s1-2">1.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s2-1">section 2.1</a> and <a href="https://example.org/ref/1/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 1.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">7</td><td class="r">11</td><td class="r">13</td><td class="r">17</td></tr><tr><td>Metric 2</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 3</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 4</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 5</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 6</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 7</td><td class="r">49</td><td class="r">77</td><td class="r">91</td><td class="r">119</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 1 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s1-3">1.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s2-1">section 2.1</a> and <a href="https://example.org/ref/1/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 1.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">7</td><td class="r">11</td><td class="r">13</td><td class="r">17</td></tr><tr><td>Metric 2</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 3</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 4</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 5</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 6</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 7</td><td class="r">49</td><td class="r">77</td><td class="r">91</td><td class="r">119</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 1 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="s2">2. Section 2</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s2-1">2.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s3-1">section 3.1</a> and <a href="https://example.org/ref/2/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 2.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 2</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 3</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 4</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 5</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 6</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 7</td><td class="r">98</td><td class="r">154</td><td class="r">182</td><td class="r">238</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 2 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s2-2">2.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s3-1">section 3.1</a> and <a href="https://example.org/ref/2/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 2.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 2</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 3</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 4</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 5</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 6</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 7</td><td class="r">98</td><td class="r">154</td><td class="r">182</td><td class="r">238</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 2 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s2-3">2.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s3-1">section 3.1</a> and <a href="https://example.org/ref/2/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 2.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">14</td><td class="r">22</td><td class="r">26</td><td class="r">34</td></tr><tr><td>Metric 2</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 3</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 4</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 5</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 6</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 7</td><td class="r">98</td><td class="r">154</td><td class="r">182</td><td class="r">238</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 2 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="s3">3. Section 3</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s3-1">3.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s4-1">section 4.1</a> and <a href="https://example.org/ref/3/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 3.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 2</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 3</td><td class="r">63</td><td class="r">99</td><td class="r">117</td><td class="r">153</td></tr><tr><td>Metric 4</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 5</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 6</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 7</td><td class="r">147</td><td class="r">231</td><td class="r">273</td><td class="r">357</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 3 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s3-2">3.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s4-1">section 4.1</a> and <a href="https://example.org/ref/3/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 3.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 2</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 3</td><td class="r">63</td><td class="r">99</td><td class="r">117</td><td class="r">153</td></tr><tr><td>Metric 4</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 5</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 6</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 7</td><td class="r">147</td><td class="r">231</td><td class="r">273</td><td class="r">357</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 3 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s3-3">3.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s4-1">section 4.1</a> and <a href="https://example.org/ref/3/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 3.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">21</td><td class="r">33</td><td class="r">39</td><td class="r">51</td></tr><tr><td>Metric 2</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 3</td><td class="r">63</td><td class="r">99</td><td class="r">117</td><td class="r">153</td></tr><tr><td>Metric 4</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 5</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 6</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 7</td><td class="r">147</td><td class="r">231</td><td class="r">273</td><td class="r">357</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 3 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="s4">4. Section 4</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s4-1">4.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s5-1">section 5.1</a> and <a href="https://example.org/ref/4/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 4.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 2</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 3</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 4</td><td class="r">112</td><td class="r">176</td><td class="r">208</td><td class="r">272</td></tr><tr><td>Metric 5</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 6</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 7</td><td class="r">196</td><td class="r">308</td><td class="r">364</td><td class="r">476</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 4 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s4-2">4.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s5-1">section 5.1</a> and <a href="https://example.org/ref/4/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 4.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 2</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 3</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 4</td><td class="r">112</td><td class="r">176</td><td class="r">208</td><td class="r">272</td></tr><tr><td>Metric 5</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 6</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 7</td><td class="r">196</td><td class="r">308</td><td class="r">364</td><td class="r">476</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 4 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s4-3">4.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s5-1">section 5.1</a> and <a href="https://example.org/ref/4/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 4.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">28</td><td class="r">44</td><td class="r">52</td><td class="r">68</td></tr><tr><td>Metric 2</td><td class="r">56</td><td class="r">88</td><td class="r">104</td><td class="r">136</td></tr><tr><td>Metric 3</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 4</td><td class="r">112</td><td class="r">176</td><td class="r">208</td><td class="r">272</td></tr><tr><td>Metric 5</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 6</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 7</td><td class="r">196</td><td class="r">308</td><td class="r">364</td><td class="r">476</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 4 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="s5">5. Section 5</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s5-1">5.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s6-1">section 6.1</a> and <a href="https://example.org/ref/5/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 5.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 2</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 3</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 4</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 5</td><td class="r">175</td><td class="r">275</td><td class="r">325</td><td class="r">425</td></tr><tr><td>Metric 6</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 7</td><td class="r">245</td><td class="r">385</td><td class="r">455</td><td class="r">595</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 5 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s5-2">5.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s6-1">section 6.1</a> and <a href="https://example.org/ref/5/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 5.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 2</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 3</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 4</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 5</td><td class="r">175</td><td class="r">275</td><td class="r">325</td><td class="r">425</td></tr><tr><td>Metric 6</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 7</td><td class="r">245</td><td class="r">385</td><td class="r">455</td><td class="r">595</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 5 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s5-3">5.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s6-1">section 6.1</a> and <a href="https://example.org/ref/5/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 5.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">35</td><td class="r">55</td><td class="r">65</td><td class="r">85</td></tr><tr><td>Metric 2</td><td class="r">70</td><td class="r">110</td><td class="r">130</td><td class="r">170</td></tr><tr><td>Metric 3</td><td class="r">105</td><td class="r">165</td><td class="r">195</td><td class="r">255</td></tr><tr><td>Metric 4</td><td class="r">140</td><td class="r">220</td><td class="r">260</td><td class="r">340</td></tr><tr><td>Metric 5</td><td class="r">175</td><td class="r">275</td><td class="r">325</td><td class="r">425</td></tr><tr><td>Metric 6</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 7</td><td class="r">245</td><td class="r">385</td><td class="r">455</td><td class="r">595</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 5 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="s6">6. Section 6</h1>
+<p class="lead">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<h2 id="s6-1">6.1 Subsection 1</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s1-1">section 1.1</a> and <a href="https://example.org/ref/6/1">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 6.1: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 2</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 3</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 4</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 5</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 6</td><td class="r">252</td><td class="r">396</td><td class="r">468</td><td class="r">612</td></tr><tr><td>Metric 7</td><td class="r">294</td><td class="r">462</td><td class="r">546</td><td class="r">714</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 6 AND sub = 1
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s6-2">6.2 Subsection 2</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s1-1">section 1.1</a> and <a href="https://example.org/ref/6/2">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 6.2: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 2</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 3</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 4</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 5</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 6</td><td class="r">252</td><td class="r">396</td><td class="r">468</td><td class="r">612</td></tr><tr><td>Metric 7</td><td class="r">294</td><td class="r">462</td><td class="r">546</td><td class="r">714</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 6 AND sub = 2
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+<h2 id="s6-3">6.3 Subsection 3</h2>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut a See <a href="#s1-1">section 1.1</a> and <a href="https://example.org/ref/6/3">the external reference</a>.</p>
+<h3>Findings</h3>
+<ul><li>First finding with <em>emphasis</em>.</li><li>Second finding<ul><li>nested detail</li><li>another detail</li></ul></li><li>Third finding.</li></ul>
+<figure><img src="../../tests/fixtures/images/spike_gradient.jpg" width="240" height="160" alt="chart"><figcaption>Figure 6.3: an embedded JPEG.</figcaption></figure>
+<table class="data"><thead><tr><th>Metric</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr></thead>
+<tbody><tr><td>Metric 0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td><td class="r">0</td></tr><tr><td>Metric 1</td><td class="r">42</td><td class="r">66</td><td class="r">78</td><td class="r">102</td></tr><tr><td>Metric 2</td><td class="r">84</td><td class="r">132</td><td class="r">156</td><td class="r">204</td></tr><tr><td>Metric 3</td><td class="r">126</td><td class="r">198</td><td class="r">234</td><td class="r">306</td></tr><tr><td>Metric 4</td><td class="r">168</td><td class="r">264</td><td class="r">312</td><td class="r">408</td></tr><tr><td>Metric 5</td><td class="r">210</td><td class="r">330</td><td class="r">390</td><td class="r">510</td></tr><tr><td>Metric 6</td><td class="r">252</td><td class="r">396</td><td class="r">468</td><td class="r">612</td></tr><tr><td>Metric 7</td><td class="r">294</td><td class="r">462</td><td class="r">546</td><td class="r">714</td></tr></tbody></table>
+<pre class="code">SELECT metric, SUM(value)
+  FROM results
+ WHERE section = 6 AND sub = 3
+ GROUP BY metric;</pre>
+<blockquote>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullam</blockquote>
+
+<h1 id="appendix">Appendix</h1>
+<p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.</p>
+<ol><li>Reference 0: <a href="papers/0.pdf">relative link resolved through base href</a></li><li>Reference 1: <a href="papers/1.pdf">relative link resolved through base href</a></li><li>Reference 2: <a href="papers/2.pdf">relative link resolved through base href</a></li><li>Reference 3: <a href="papers/3.pdf">relative link resolved through base href</a></li><li>Reference 4: <a href="papers/4.pdf">relative link resolved through base href</a></li><li>Reference 5: <a href="papers/5.pdf">relative link resolved through base href</a></li><li>Reference 6: <a href="papers/6.pdf">relative link resolved through base href</a></li><li>Reference 7: <a href="papers/7.pdf">relative link resolved through base href</a></li><li>Reference 8: <a href="papers/8.pdf">relative link resolved through base href</a></li><li>Reference 9: <a href="papers/9.pdf">relative link resolved through base href</a></li><li>Reference 10: <a href="papers/10.pdf">relative link resolved through base href</a></li><li>Reference 11: <a href="papers/11.pdf">relative link resolved through base href</a></li><li>Reference 12: <a href="papers/12.pdf">relative link resolved through base href</a></li><li>Reference 13: <a href="papers/13.pdf">relative link resolved through base href</a></li><li>Reference 14: <a href="papers/14.pdf">relative link resolved through base href</a></li><li>Reference 15: <a href="papers/15.pdf">relative link resolved through base href</a></li><li>Reference 16: <a href="papers/16.pdf">relative link resolved through base href</a></li><li>Reference 17: <a href="papers/17.pdf">relative link resolved through base href</a></li><li>Reference 18: <a href="papers/18.pdf">relative link resolved through base href</a></li><li>Reference 19: <a href="papers/19.pdf">relative link resolved through base href</a></li></ol>
+</body>
+</html>

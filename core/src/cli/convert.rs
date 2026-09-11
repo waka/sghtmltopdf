@@ -192,6 +192,7 @@ fn render_from_reader<S: Sink<Error = io::Error>>(
         base_dir,
         base_href,
         allow_remote_assets: args.allow_remote_assets,
+        disable_system_fonts: args.disable_system_fonts,
         output: args.pdf_output_options(),
         content: content_options,
         local_access: args.local_access().map_err(CliError::Input)?,

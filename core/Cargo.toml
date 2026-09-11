@@ -116,6 +116,33 @@ taffy = "0.12.2"
 tiny_http = { version = "0.12", optional = true }
 ureq = "3.3.0"
 
+# ベンチマーク(benches/)。時間はcriterionが統計的に測り、割り当て数・
+# ページ数・PDFサイズ・ピークRSSといった決定的な指標はbenches/metrics.rsが
+# 自前で集めてbaseline.jsonと比較する。詳細はbenches/README.md。
+[[bench]]
+name = "phases"
+harness = false
+
+[[bench]]
+name = "end_to_end"
+harness = false
+# CLIバイナリとHTTPサーバを起動するので両featureが要る
+required-features = ["cli", "server"]
+
+[[bench]]
+name = "scale"
+harness = false
+
+[[bench]]
+name = "metrics"
+harness = false
+required-features = ["cli"]
+
 [dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
 dhat = "0.3.3"
+# ピークRSS(getrusage)の取得用
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 ureq = "3.3.0"

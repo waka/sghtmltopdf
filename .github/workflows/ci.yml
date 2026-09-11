@@ -76,3 +76,29 @@ jobs:
       - name: rake (compile → spec)
         working-directory: bindings/ruby
         run: bundle exec rake
+
+  # ベンチマーク(core/benches)。使い方はBENCHMARK.md。
+  #
+  # ベンチは`--disable-system-fonts`で走らせるので、ページ数・PDFサイズ・
+  # 割り当て数といった決定的な指標は開発機(macOS aarch64)とrunner
+  # (Linux x86_64)で一致する。commit済みの`baseline.json`をそのまま基準に
+  # できるのはこのため。時間はrunnerのブレが大きい(共有マシンで数百%動く
+  # ことがある)ので`--no-time`で判定から外す。ピークRSSはbaselineと
+  # OS/アーキテクチャが違う場合は元々比較されない。
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # ページ数やPDFサイズが動くのが意図した変更なら、BENCHMARK.mdの通り
+      # `--save-baseline`で撮り直した`baseline.json`を同じPRに入れる。
+      - name: metricsゲート
+        run: |
+          cargo bench -p sghtmltopdf-core --bench metrics -- --runs 1 --no-time
+      # criterion側は数値を判定に使わない(runnerでは測れない)が、動かなく
+      # なっていることには気付けるよう、各ベンチを1回ずつ流す。
+      - name: criterionのbenchを1回ずつ流す
+        run: |
+          cargo bench -p sghtmltopdf-core \
+            --bench phases --bench end_to_end --bench scale -- --test
