@@ -397,6 +397,14 @@ pub struct ConvertArgs {
     #[arg(long, value_name = "PATH")]
     pub footer_html: Option<PathBuf>,
 
+    /// HTML markup to compose at the top of each page, without a file
+    #[arg(long, value_name = "HTML", conflicts_with = "header_html")]
+    pub header_html_content: Option<String>,
+
+    /// HTML markup to compose at the bottom of each page, without a file
+    #[arg(long, value_name = "HTML", conflicts_with = "footer_html")]
+    pub footer_html_content: Option<String>,
+
     /// Character encoding of the input (BOM, then <meta charset>, then UTF-8, if unset)
     #[arg(long, value_name = "NAME")]
     pub encoding: Option<String>,
@@ -665,10 +673,10 @@ impl ConvertArgs {
         }
 
         // If HTML was given for the same side, it wins (to avoid drawing twice).
-        if self.header_html.is_some() {
+        if self.header_html.is_some() || self.header_html_content.is_some() {
             boxes.retain(|b| !b.area.starts_with("top"));
         }
-        if self.footer_html.is_some() {
+        if self.footer_html.is_some() || self.footer_html_content.is_some() {
             boxes.retain(|b| !b.area.starts_with("bottom"));
         }
 

@@ -272,3 +272,19 @@ fn a_too_large_body_is_rejected_in_stream_mode_too() {
         413
     );
 }
+
+#[test]
+fn inline_html_headers_and_footers_are_allowed_per_request() {
+    let server = TestServer::start(&[]);
+    for option in ["header-html-content", "footer-html-content"] {
+        let url = server.url(&format!(
+            "/pdf?no-pdf-compression&{option}=%3Cdiv%3E%5Btopage%5D%3C%2Fdiv%3E"
+        ));
+        let mut response = ureq::post(url)
+            .send("<p>First</p><p style=\"break-before:page\">Second</p>")
+            .unwrap();
+        let bytes = response.body_mut().read_to_vec().unwrap();
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
+        assert!(count_occurrences(&bytes, b"<0032>") > 0);
+    }
+}

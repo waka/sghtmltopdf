@@ -38,6 +38,31 @@ Sghtmltopdf.render_to_file(html, "invoice.pdf", page_size: "A4")
 Sghtmltopdf.render(html) { |bytes| io.write(bytes) }
 ```
 
+## Header and footer HTML
+
+Pass markup directly without creating temporary files:
+
+```ruby
+Sghtmltopdf.render(html,
+  header_html_content: '<div>Invoice [title]</div>',
+  footer_html_content: '<div>Page [page] of [topage]</div>')
+```
+
+These options work with `render`, block output, `render_to_file`, global
+configuration, and server delegation. The shared CLI options are
+`--header-html-content` and `--footer-html-content`.
+
+`header_html` and `footer_html` still accept file paths. Supplying both a path
+and content for the same side raises `Sghtmltopdf::UsageError`, including when
+one comes from global configuration. `nil` or `false` disables a configured
+option; an empty string is an explicitly empty header or footer. Either HTML
+form takes precedence over simple text options for that side.
+
+Content uses the same placeholder expansion and margin clipping as file input.
+Embedded `data:` images are supported; external resources remain blocked.
+With server delegation, markup travels in URL query parameters, so URL length
+limits may apply and request logs may contain the markup.
+
 ## Rails
 
 Adding the gem is enough; the Railtie wires everything up, and nothing is loaded when Rails is absent.

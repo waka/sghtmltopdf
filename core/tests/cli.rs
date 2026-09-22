@@ -1153,6 +1153,60 @@ fn html_header_footer_totals_do_not_require_css_page_counters() {
 }
 
 #[test]
+fn inline_header_footer_html_matches_file_input() {
+    let dir = std::env::temp_dir().join(format!("sghtmltopdf-inline-hf-{}", std::process::id()));
+    let html = r#"<html><body style="margin:0;color:red">[title] [custom] [page]/[topage]<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSJyZWQiLz48L3N2Zz4="></body></html>"#;
+    let path = write_temp_html(&dir, "overlay.html", html);
+    for (file_option, content_option, simple_option) in [
+        ("--header-html", "--header-html-content", "--header-center"),
+        ("--footer-html", "--footer-html-content", "--footer-center"),
+    ] {
+        let render = |option: &str, value: &str| {
+            run_cli_with(
+                TWO_PAGE_HTML,
+                &[
+                    "--no-pdf-compression",
+                    "--title",
+                    "Invoice",
+                    "--replace",
+                    "custom=Test",
+                    simple_option,
+                    "SHOULD NOT APPEAR",
+                    option,
+                    value,
+                ],
+                "inline-hf",
+            )
+        };
+        let file = render(file_option, path.to_str().unwrap());
+        let inline = render(content_option, html);
+        assert_eq!(count_occurrences(&inline, b"/MediaBox"), 2);
+        // Compare streams only: CreationDate and the trailer ID vary over time.
+        let streams = |pdf: &[u8]| -> Vec<Vec<u8>> {
+            let mut rest = pdf;
+            let mut result = Vec::new();
+            while let Some(start) = rest.windows(7).position(|w| w == b"stream\n") {
+                rest = &rest[start + 7..];
+                let end = rest.windows(9).position(|w| w == b"endstream").unwrap();
+                result.push(rest[..end].to_vec());
+                rest = &rest[end + 9..];
+            }
+            result
+        };
+        assert_eq!(streams(&inline), streams(&file), "{content_option}");
+
+        let output = Command::new(BIN)
+            .arg(SAMPLE_HTML)
+            .args([file_option, path.to_str().unwrap(), content_option, html])
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "path and content must conflict");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn header_html_takes_precedence_over_the_simple_option() {
     let dir = std::env::temp_dir().join(format!("sghtmltopdf-e2e-hf-both-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

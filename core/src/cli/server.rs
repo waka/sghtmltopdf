@@ -41,7 +41,9 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "author",
     "subject",
     "keywords",
-    // Header/footer (text and its styling only; HTML files cannot be specified)
+    // Header/footer (text, styling, and inline HTML; HTML files cannot be specified)
+    "header-html-content",
+    "footer-html-content",
     "default-header",
     "header-left",
     "header-center",
@@ -451,6 +453,7 @@ fn render_request(
 
 /// Turn the query string into a CLI argument list and run it through the same clap parser.
 fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, String> {
+    let command = Cli::command();
     let mut argv: Vec<String> = vec!["sghtmltopdf".to_string()];
     // The input is the body, so the positional argument is `-` for stdin (never actually read).
     argv.push("-".to_string());
@@ -500,12 +503,23 @@ fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, S
         if !ALLOWED_QUERY_KEYS.contains(&key.as_str()) {
             return Err(format!("{key} cannot be set in a request"));
         }
+        let is_boolean = command.get_arguments().any(|arg| {
+            (arg.get_long() == Some(key.as_str())
+                || arg
+                    .get_all_aliases()
+                    .unwrap_or_default()
+                    .contains(&key.as_str()))
+                && matches!(
+                    arg.get_action(),
+                    clap::ArgAction::SetTrue | clap::ArgAction::SetFalse
+                )
+        });
         match value {
             // No value, or a value meaning true, is passed as a flag.
             None => argv.push(format!("--{key}")),
-            Some(v) if is_true(&v) => argv.push(format!("--{key}")),
+            Some(v) if is_boolean && is_true(&v) => argv.push(format!("--{key}")),
             // A value meaning false is the same as not specifying the option.
-            Some(v) if is_false(&v) => {}
+            Some(v) if is_boolean && is_false(&v) => {}
             // A value is always folded into a single `--key=value` token. Pushing `--key`
             // and the value as separate tokens would let a value such as
             // `--allow-remote-assets` be read by clap as an independent flag, slipping
@@ -514,7 +528,7 @@ fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, S
         }
     }
 
-    let matches = Cli::command()
+    let matches = command
         .try_get_matches_from(&argv)
         .map_err(|e| e.to_string())?;
     let cli = Cli::from_arg_matches(&matches).map_err(|e| e.to_string())?;
@@ -643,6 +657,10 @@ mod tests {
 
     #[test]
     fn boolean_values_are_understood() {
+        let empty = build_convert_args("grayscale=&no-images=", &server_args()).unwrap();
+        assert!(empty.grayscale);
+        assert!(empty.no_images);
+
         let truthy = build_convert_args("grayscale=1&no-images=true", &server_args()).unwrap();
         assert!(truthy.grayscale);
         assert!(truthy.no_images);
@@ -650,6 +668,22 @@ mod tests {
         let falsy = build_convert_args("grayscale=0&no-images=false", &server_args()).unwrap();
         assert!(!falsy.grayscale);
         assert!(!falsy.no_images);
+    }
+
+    #[test]
+    fn inline_html_content_preserves_empty_and_boolean_like_strings() {
+        for value in ["", "1", "true", "yes", "on", "0", "false", "no", "off"] {
+            let args = build_convert_args(
+                &format!("header-html-content={value}&footer-html-content={value}"),
+                &server_args(),
+            )
+            .unwrap();
+            assert_eq!(args.header_html_content.as_deref(), Some(value));
+            assert_eq!(args.footer_html_content.as_deref(), Some(value));
+        }
+        for option in ["header-html-content", "footer-html-content"] {
+            assert!(build_convert_args(option, &server_args()).is_err());
+        }
     }
 
     #[test]

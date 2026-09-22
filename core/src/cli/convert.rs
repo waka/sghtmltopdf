@@ -157,8 +157,14 @@ fn render_from_reader<S: Sink<Error = io::Error>>(
     };
 
     let header_footer_html = HeaderFooterHtml {
-        header: read_optional_html(args.header_html.as_deref(), &placeholders)?,
-        footer: read_optional_html(args.footer_html.as_deref(), &placeholders)?,
+        header: match &args.header_html_content {
+            Some(html) => Some(placeholders.expand_keeping_page_tokens(html)),
+            None => read_optional_html(args.header_html.as_deref(), &placeholders)?,
+        },
+        footer: match &args.footer_html_content {
+            Some(html) => Some(placeholders.expand_keeping_page_tokens(html)),
+            None => read_optional_html(args.footer_html.as_deref(), &placeholders)?,
+        },
         placeholders: HeaderFooterPlaceholders {
             page_token: "[page]".to_string(),
             total_pages_token: "[topage]".to_string(),

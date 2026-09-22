@@ -66,6 +66,13 @@ wicked_pdfのような入れ子のHash(`margin: {top: 10}`)は受け付けませ
 wicked_pdf/wkhtmltopdfの数値はmm、こちらのCLIはpx解釈なので、機械的に平坦化すると黙って別の余白になるためです。
 `margin_top: "10mm"`と書いてください。
 
+HTML文字列は`header_html_content:` / `footer_html_content:`で直接渡せます
+(CLI: `--header-html-content` / `--footer-html-content`)。一時ファイルは不要です。
+既存の`header_html:` / `footer_html:`は引き続きファイルパスを受け付けます。
+同じ側のパスと文字列を同時に指定するとエラーになります。
+プレースホルダ・画像・余白の扱いはファイル指定と同じです。
+HTTPサーバでも使用できますが、HTMLはクエリ文字列に含まれるためURLの長さ制限とアクセスログに注意してください。
+
 ### Ruby側だけのオプション
 
 CLIには無い、gemが解釈するキーです。

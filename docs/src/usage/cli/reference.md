@@ -142,6 +142,13 @@ sghtmltopdf report.html \
 
 ### 2. HTMLで指定する
 
+HTML文字列は`header_html_content:` / `footer_html_content:`で直接渡せます
+(CLI: `--header-html-content` / `--footer-html-content`)。一時ファイルは不要です。
+既存の`header_html:` / `footer_html:`は引き続きファイルパスを受け付けます。
+同じ側のパスと文字列を同時に指定するとエラーになります。
+プレースホルダ・画像・余白の扱いはファイル指定と同じです。
+HTTPサーバでも使用できますが、HTMLはクエリ文字列に含まれるためURLの長さ制限とアクセスログに注意してください。
+
 ```sh
 sghtmltopdf report.html --header-html header.html --footer-html footer.html
 ```
