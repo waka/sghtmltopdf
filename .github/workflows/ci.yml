@@ -31,6 +31,18 @@ jobs:
       - name: cargo test (svg-text)
         run: cargo test -p sghtmltopdf --features svg-text
 
+  # The oldest toolchain the published crate claims to build with (`rust-version` in
+  # core/Cargo.toml; keep the two in step). Only the lib and the bin count: the tests and
+  # benches are not published, and their dev-dependencies may need a newer toolchain.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check (MSRV)
+        run: cargo check -p sghtmltopdf --all-features --lib --bins --locked
+
   # Check dependency crates against advisories (RustSec)
   audit:
     runs-on: ubuntu-latest

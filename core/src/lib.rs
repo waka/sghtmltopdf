@@ -57,3 +57,8 @@ pub mod render_stack;
 pub mod sink;
 #[doc(hidden)]
 pub mod style;
+
+// Compile the Rust examples in the crates.io README along with the other doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
