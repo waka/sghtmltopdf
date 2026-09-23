@@ -8,21 +8,31 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+/// Where the [`Engine`](crate::Engine) writes the PDF bytes.
+///
+/// The engine calls [`write`](Self::write) with the bytes in order, possibly many times as
+/// pages are completed, and [`finish`](Self::finish) exactly once at the end. Implement it
+/// to stream the PDF somewhere of your own, such as an HTTP response or an upload.
 pub trait Sink {
+    /// What [`finish`](Self::finish) returns, such as the collected bytes.
     type Output;
+    /// The error type of the destination.
     type Error;
 
+    /// Append `bytes` to the output.
     fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error>;
+    /// Called after the last `write`. Flush, close or hand over the result.
     fn finish(self) -> Result<Self::Output, Self::Error>;
 }
 
-/// In-memory buffer Sink, for tests and the synchronous-return mode.
+/// A Sink that collects the PDF in memory. [`Sink::finish`] returns the bytes.
 #[derive(Debug, Default)]
 pub struct MemorySink {
     buf: Vec<u8>,
 }
 
 impl MemorySink {
+    /// Create an empty sink.
     pub fn new() -> Self {
         Self::default()
     }
@@ -42,7 +52,7 @@ impl Sink for MemorySink {
     }
 }
 
-/// Sink that writes to a file (for the CLI).
+/// A Sink that writes the PDF to a file.
 ///
 /// It writes to a temporary file (`<output>.tmp-<pid>`) and only renames it onto the
 /// final output when [`Sink::finish`] succeeds, so a failure part-way through rendering
@@ -57,6 +67,8 @@ pub struct FileSink {
 }
 
 impl FileSink {
+    /// Create the temporary file next to `path`. `path` itself is only written by
+    /// [`Sink::finish`].
     pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
         let final_path = path.as_ref().to_path_buf();
         let mut temp_name = final_path
@@ -112,7 +124,7 @@ impl Drop for FileSink {
     }
 }
 
-/// Sink that writes to standard output (for `-o -`).
+/// A Sink that writes the PDF to standard output.
 ///
 /// Bytes already written cannot be taken back, so on a mid-way failure the caller
 /// reports it through stderr and the exit code.
@@ -122,6 +134,7 @@ pub struct StdoutSink {
 }
 
 impl StdoutSink {
+    /// Write to this process's standard output.
     pub fn new() -> Self {
         Self { out: io::stdout() }
     }

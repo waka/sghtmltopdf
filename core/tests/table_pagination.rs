@@ -6,13 +6,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, LaidOutContent, PageSettings};
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, LaidOutContent, PageSettings};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -37,7 +37,7 @@ fn rows_per_page(html_src: &str) -> Vec<usize> {
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
 
-    fn count(b: &sghtmltopdf_core::layout::LaidOutBox) -> usize {
+    fn count(b: &sghtmltopdf::layout::LaidOutBox) -> usize {
         match &b.content {
             LaidOutContent::Table(table) => table.rows.len(),
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -99,7 +99,7 @@ fn content_after_a_split_table_continues_on_the_last_page() {
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
 
-    fn has_inline_text(b: &sghtmltopdf_core::layout::LaidOutBox) -> bool {
+    fn has_inline_text(b: &sghtmltopdf::layout::LaidOutBox) -> bool {
         match &b.content {
             LaidOutContent::Inline(lines) => lines.iter().any(|l| !l.runs.is_empty()),
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -129,7 +129,7 @@ fn a_caption_stays_with_the_first_fragment() {
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
 
-    fn captions(b: &sghtmltopdf_core::layout::LaidOutBox) -> usize {
+    fn captions(b: &sghtmltopdf::layout::LaidOutBox) -> usize {
         match &b.content {
             LaidOutContent::Table(table) => usize::from(table.caption.is_some()),
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -168,14 +168,12 @@ fn a_split_table_encodes_to_a_valid_pdf() {
 
 #[test]
 fn a_long_table_also_splits_in_streaming_mode() {
-    let options = EngineOptions {
-        mode: Mode::Streaming,
-        fonts: vec![FontSpec {
-            path: PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Streaming;
+    options.fonts = vec![FontSpec {
+        path: PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
     let mut engine = Engine::new(options, MemorySink::new());
     engine
         .feed(format!("<html><body>{}</body></html>", table_html(80)).as_bytes())
@@ -213,7 +211,7 @@ fn first_cell_texts_per_page(html_src: &str) -> Vec<Vec<String>> {
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
 
-    fn text_of(b: &sghtmltopdf_core::layout::LaidOutBox) -> String {
+    fn text_of(b: &sghtmltopdf::layout::LaidOutBox) -> String {
         match &b.content {
             LaidOutContent::Inline(lines) => lines
                 .iter()
@@ -226,7 +224,7 @@ fn first_cell_texts_per_page(html_src: &str) -> Vec<Vec<String>> {
             _ => String::new(),
         }
     }
-    fn rows_of(b: &sghtmltopdf_core::layout::LaidOutBox, out: &mut Vec<String>) {
+    fn rows_of(b: &sghtmltopdf::layout::LaidOutBox, out: &mut Vec<String>) {
         match &b.content {
             LaidOutContent::Table(table) => {
                 for row in &table.rows {
@@ -317,10 +315,10 @@ fn a_document_with_a_repeated_header_encodes_to_a_valid_pdf() {
 /// Checks that every box on a page (down to the table cells) stays between the
 /// top and the bottom of it. Returns the ones that do not, as
 /// `(page index, top, bottom)`.
-fn boxes_outside_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<(usize, f32, f32)> {
+fn boxes_outside_pages(pages: &[sghtmltopdf::layout::Page]) -> Vec<(usize, f32, f32)> {
     fn walk(
         page_index: usize,
-        b: &sghtmltopdf_core::layout::LaidOutBox,
+        b: &sghtmltopdf::layout::LaidOutBox,
         page_height: f32,
         out: &mut Vec<(usize, f32, f32)>,
     ) {
@@ -383,8 +381,8 @@ fn a_table_whose_first_row_does_not_fit_starts_on_the_next_page() {
     );
 }
 
-fn rows_on_page(page: &sghtmltopdf_core::layout::Page) -> usize {
-    fn count(b: &sghtmltopdf_core::layout::LaidOutBox) -> usize {
+fn rows_on_page(page: &sghtmltopdf::layout::Page) -> usize {
+    fn count(b: &sghtmltopdf::layout::LaidOutBox) -> usize {
         match &b.content {
             LaidOutContent::Table(table) => table.rows.len(),
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {

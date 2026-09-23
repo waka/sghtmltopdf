@@ -20,7 +20,7 @@ use std::time::Duration;
 use criterion::{
     criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
-use sghtmltopdf_core::engine::Mode;
+use sghtmltopdf::engine::Mode;
 
 use support::{cli_font_args, fixture, fixtures_dir, page_count, render, FIXTURES, MANIFEST_DIR};
 

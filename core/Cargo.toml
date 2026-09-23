@@ -1,18 +1,33 @@
 [package]
-name = "sghtmltopdf-core"
+name = "sghtmltopdf"
 version = "0.5.0"
 edition = "2021"
-description = "PDF rendering engine that is not depend on Chromium/WebKit/Gecko"
+description = "HTML to PDF renderer that does not depend on Chromium, WebKit or Gecko"
 license = "MIT"
+# Floor set by font-types (a dependency of skrifa and harfrust). Checked in CI (`msrv` job).
+rust-version = "1.89"
+repository = "https://github.com/waka/sghtmltopdf"
+homepage = "https://waka.github.io/sghtmltopdf/"
+readme = "README.md"
+keywords = ["pdf", "html", "html-to-pdf", "wkhtmltopdf", "renderer"]
+categories = ["command-line-utilities", "rendering"]
+# An allow list, so that nothing new under core/ is published by accident. The tests,
+# benches and examples stay out: the test fonts alone would take the package past the
+# 10MB crates.io limit. The unit tests that load them therefore do not run from the
+# published package.
+include = ["/src/**/*", "/Cargo.toml", "/LICENSE", "/README.md"]
 
 [lib]
-name = "sghtmltopdf_core"
+name = "sghtmltopdf"
 path = "src/lib.rs"
 
 [[bin]]
 name = "sghtmltopdf"
 path = "src/main.rs"
 required-features = ["cli"]
+# The lib and the bin share a name, so `cargo doc` would write both into the same
+# file. Documenting the bin adds nothing here, so it is turned off.
+doc = false
 
 # The HTTP server mode E2E tests need the `server` feature
 # (so they are excluded from a `--no-default-features --features cli` test run).

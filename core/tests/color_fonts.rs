@@ -15,13 +15,13 @@
 use std::collections::HashMap;
 use std::io::Read;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::fonts::{ColorGlyph, Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, PageSettings};
-use sghtmltopdf_core::pdf::{encode_pdf_with_options, LinkSettings, PdfOutputOptions};
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::fonts::{ColorGlyph, Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, PageSettings};
+use sghtmltopdf::pdf::{encode_pdf_with_options, LinkSettings, PdfOutputOptions};
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const DEJAVU: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const NOTO_COLOR_EMOJI: &str = concat!(
@@ -205,6 +205,10 @@ fn pdf_bytes(html_src: &str, fonts: FontCollection) -> Vec<u8> {
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
+    // With compression off the content streams can be inspected as
+    // plain bytes.
+    let mut uncompressed = PdfOutputOptions::default();
+    uncompressed.compress = false;
     encode_pdf_with_options(
         &pages,
         &styles,
@@ -212,12 +216,7 @@ fn pdf_bytes(html_src: &str, fonts: FontCollection) -> Vec<u8> {
         &fonts,
         &settings,
         &LinkSettings::default(),
-        // With compression off the content streams can be inspected as
-        // plain bytes.
-        &PdfOutputOptions {
-            compress: false,
-            ..PdfOutputOptions::default()
-        },
+        &uncompressed,
     )
 }
 
@@ -318,7 +317,7 @@ fn a_word_space_after_an_emoji_is_measured_with_the_text_font() {
 }
 
 fn text_width(html_src: &str, fonts: FontCollection) -> f32 {
-    use sghtmltopdf_core::layout::{LaidOutBox, LaidOutContent};
+    use sghtmltopdf::layout::{LaidOutBox, LaidOutContent};
 
     fn walk(b: &LaidOutBox, out: &mut f32) {
         match &b.content {
@@ -378,24 +377,19 @@ fn a_colr_v0_glyph_is_painted_with_its_palette_colours() {
 #[test]
 fn streaming_output_also_writes_the_colour_font() {
     for mode in [Mode::Batch, Mode::Streaming] {
-        let options = EngineOptions {
-            mode,
-            fonts: vec![
-                FontSpec {
-                    path: DEJAVU.into(),
-                    index: 0,
-                },
-                FontSpec {
-                    path: NOTO_COLOR_EMOJI.into(),
-                    index: 0,
-                },
-            ],
-            output: PdfOutputOptions {
-                compress: false,
-                ..PdfOutputOptions::default()
+        let mut options = EngineOptions::default();
+        options.mode = mode;
+        options.fonts = vec![
+            FontSpec {
+                path: DEJAVU.into(),
+                index: 0,
             },
-            ..EngineOptions::default()
-        };
+            FontSpec {
+                path: NOTO_COLOR_EMOJI.into(),
+                index: 0,
+            },
+        ];
+        options.output.compress = false;
         let mut engine = Engine::new(options, MemorySink::new());
         engine
             .feed("<p>A \u{1F389} B</p>".as_bytes())

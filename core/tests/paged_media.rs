@@ -8,8 +8,8 @@
 //! the total pages are all the `Engine` layer's job), so unlike the other E2E test files it
 //! uses the `Engine` API directly.
 
-use sghtmltopdf_core::engine::{Engine, EngineError, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::MemorySink;
+use sghtmltopdf::engine::{Engine, EngineError, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -32,8 +32,8 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
 fn media_box(width_px: f32, height_px: f32) -> String {
     format!(
         "/MediaBox [0 0 {} {}]",
-        width_px * sghtmltopdf_core::pdf::DEFAULT_SCALE,
-        height_px * sghtmltopdf_core::pdf::DEFAULT_SCALE
+        width_px * sghtmltopdf::pdf::DEFAULT_SCALE,
+        height_px * sghtmltopdf::pdf::DEFAULT_SCALE
     )
 }
 
@@ -86,11 +86,9 @@ fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
 }
 
 fn build_pdf_batch(html: &str) -> Vec<u8> {
-    let options = EngineOptions {
-        mode: Mode::Batch,
-        fonts: vec![font_spec()],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Batch;
+    options.fonts = vec![font_spec()];
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();
@@ -208,11 +206,9 @@ fn at_page_first_selects_different_margin_box_content_than_other_pages() {
 
 #[test]
 fn counter_pages_in_a_margin_box_is_rejected_in_streaming_mode() {
-    let options = EngineOptions {
-        mode: Mode::Streaming,
-        fonts: vec![font_spec()],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Streaming;
+    options.fonts = vec![font_spec()];
     let mut engine = Engine::new(options, MemorySink::new());
     let result = engine.feed(
         br#"<html><head><style>
@@ -227,11 +223,9 @@ fn counter_pages_in_a_margin_box_is_rejected_in_streaming_mode() {
 
 #[test]
 fn counter_page_alone_works_in_streaming_mode() {
-    let options = EngineOptions {
-        mode: Mode::Streaming,
-        fonts: vec![font_spec()],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Streaming;
+    options.fonts = vec![font_spec()];
     let mut engine = Engine::new(options, MemorySink::new());
     engine
         .feed(

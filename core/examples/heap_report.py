@@ -15,7 +15,7 @@ import sys
 from collections import defaultdict
 
 # Only frames from our own code are used as headings (never cut inside the standard library).
-OWN = re.compile(r'sghtmltopdf_core::([\w:]+)')
+OWN = re.compile(r'sghtmltopdf::([\w:]+)')
 
 
 def main(path: str, top: int = 15) -> None:

@@ -9,7 +9,7 @@
 //! so rather than the process dying the thread hangs.
 //!
 //! So rendering runs on a dedicated thread with a
-//! [`sghtmltopdf_core::render_stack::STACK_SIZE`] stack allocated explicitly, and the settled
+//! [`sghtmltopdf_core::STACK_SIZE`] stack allocated explicitly, and the settled
 //! chunks are passed back to the original thread over a channel. Only the original thread ever touches Ruby.
 //!
 //! ```text
@@ -30,7 +30,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use magnus::rb_sys::{AsRawValue, FromRawValue};
 use magnus::{block::Proc, Error, ExceptionClass, RString, Ruby, Value};
 use rb_sys::VALUE;
-use sghtmltopdf_core::sink::Sink;
+use sghtmltopdf_core::Sink;
 
 use crate::gvl;
 
@@ -287,12 +287,12 @@ pub fn pump_to_block<F>(
     pending: &mut PendingUnwind,
     chunk_size: usize,
     render: F,
-) -> Result<(), sghtmltopdf_core::cli::CliError>
+) -> Result<(), sghtmltopdf_core::ConvertError>
 where
-    F: FnOnce(ChannelSink) -> Result<(), sghtmltopdf_core::cli::CliError> + Send + 'static,
+    F: FnOnce(ChannelSink) -> Result<(), sghtmltopdf_core::ConvertError> + Send + 'static,
 {
-    use sghtmltopdf_core::cli::CliError;
-    use sghtmltopdf_core::render_stack::STACK_SIZE;
+    use sghtmltopdf_core::ConvertError;
+    use sghtmltopdf_core::STACK_SIZE;
 
     // Both are zero-capacity rendezvous channels. The rendering side waits for the block to
     // finish after every chunk.
@@ -303,7 +303,7 @@ where
         .name("sghtmltopdf-render".to_string())
         .stack_size(STACK_SIZE)
         .spawn(move || render(ChannelSink::new(chunk_tx, ack_rx, chunk_size)))
-        .map_err(|e| CliError::Input(format!("cannot create the rendering thread: {e}")))?;
+        .map_err(|e| ConvertError::Input(format!("cannot create the rendering thread: {e}")))?;
 
     while let Ok(chunk) = chunk_rx.recv() {
         let ok = call_block(block, pending, chunk);

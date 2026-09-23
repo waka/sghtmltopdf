@@ -29,7 +29,7 @@ use std::process::{Command, Stdio};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use sghtmltopdf_core::engine::Mode;
+use sghtmltopdf::engine::Mode;
 
 use support::alloc::{self, CountingAlloc};
 use support::{

@@ -15,13 +15,13 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -264,7 +264,7 @@ fn widows_forces_lines_forward_end_to_end() {
 }
 
 /// Every text line on the page as (text, in-page y), in document order.
-fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32)> {
+fn text_lines_on_page(page: &sghtmltopdf::layout::Page) -> Vec<(String, f32)> {
     fn walk(b: &LaidOutBox, out: &mut Vec<(String, f32)>) {
         match &b.content {
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -295,7 +295,7 @@ fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32
     out
 }
 
-fn paginate(html_src: &str, css: &str) -> Vec<sghtmltopdf_core::layout::Page> {
+fn paginate(html_src: &str, css: &str) -> Vec<sghtmltopdf::layout::Page> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
     paginate_document(&dom, &styles, &test_fonts(), &PageSettings::default())

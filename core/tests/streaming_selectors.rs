@@ -9,8 +9,8 @@
 //! merely a question of where the chunk boundaries happen to fall; the engine's contract is
 //! "the same result however it is chopped up", so the finest chopping is used).
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::MemorySink;
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 /// The colour applied to a matched element. Counted as a PDF fill colour operator.
@@ -18,19 +18,15 @@ const MARK_CSS: &str = "color: #cc0000";
 const MARK_OP: &[u8] = b"0.8 0 0 rg";
 
 fn options(mode: Mode) -> EngineOptions {
-    EngineOptions {
-        mode,
-        fonts: vec![FontSpec {
-            path: std::path::PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        output: sghtmltopdf_core::pdf::PdfOutputOptions {
-            // Left uncompressed so the fill colour operators can be counted.
-            compress: false,
-            ..Default::default()
-        },
-        ..EngineOptions::default()
-    }
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    options.fonts = vec![FontSpec {
+        path: std::path::PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
+    // Left uncompressed so the fill colour operators can be counted.
+    options.output.compress = false;
+    options
 }
 
 /// Return the number of elements matched by `selector`. `body` is the contents of `<body>`.

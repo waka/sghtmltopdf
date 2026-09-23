@@ -8,10 +8,6 @@ module Sghtmltopdf
   # * the CLI argument list (argv) passed to the native extension ... [.to_argv]
   # * the query string passed to HTTP server mode                 ... [.to_query]
   module Options
-    # The input is always `-`, meaning standard input (the real bytes are passed directly over
-    # FFI and never read). The destination is decided by the Rust-side Sink, so that is a
-    # dummy `-` too. With a `-` input the CLI requires `--output`, so it cannot be omitted.
-    ARGV_PREFIX = ["sghtmltopdf", "-", "--output", "-"].freeze
 
     # The keys interpreted on the Ruby side alone. They are not conversion options, so they
     # appear in neither the argv nor the query.
@@ -38,9 +34,11 @@ module Sghtmltopdf
     end
 
     # @param options [Hash] the Ruby options hash
-    # @return [Array<String>] the argument list passed to clap
+    # @return [Array<String>] the conversion options passed to the core's `Converter`.
+    #   The HTML and the destination travel over FFI, so there is no program name, input
+    #   path or `--output` here.
     def to_argv(options)
-      argv = ARGV_PREFIX.dup
+      argv = []
       each_pair(options) do |name, value|
         argv.push("--#{name}")
         argv.push(value) unless value.nil?

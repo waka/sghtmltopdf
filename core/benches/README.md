@@ -18,11 +18,11 @@ and Linux x86_64.
 ## Running
 
 ```sh
-cargo bench -p sghtmltopdf-core                 # everything (10 minutes or so)
-cargo bench -p sghtmltopdf-core --bench phases  # one target
-cargo bench -p sghtmltopdf-core --bench phases -- 'phase/flexbox/'   # regex filter
-cargo bench -p sghtmltopdf-core --bench scale -- '/20000$'
-cargo bench -p sghtmltopdf-core --bench end_to_end -- '^cli/'
+cargo bench -p sghtmltopdf                 # everything (10 minutes or so)
+cargo bench -p sghtmltopdf --bench phases  # one target
+cargo bench -p sghtmltopdf --bench phases -- 'phase/flexbox/'   # regex filter
+cargo bench -p sghtmltopdf --bench scale -- '/20000$'
+cargo bench -p sghtmltopdf --bench end_to_end -- '^cli/'
 ```
 
 Criterion keeps its history under `target/criterion` and prints the change
@@ -31,9 +31,9 @@ against the previous run of the same benchmark. To compare a branch against
 
 ```sh
 git switch main
-cargo bench -p sghtmltopdf-core -- --save-baseline main
+cargo bench -p sghtmltopdf -- --save-baseline main
 git switch my-branch
-cargo bench -p sghtmltopdf-core -- --baseline main
+cargo bench -p sghtmltopdf -- --baseline main
 ```
 
 HTML reports land in `target/criterion/report/index.html`.
@@ -45,13 +45,13 @@ numbers that are not, runs every case in a fresh child process, and compares
 the result with `benches/baseline.json`:
 
 ```sh
-cargo bench -p sghtmltopdf-core --bench metrics                    # compare, exit 1 on regression
-cargo bench -p sghtmltopdf-core --bench metrics -- --save-baseline # rewrite the baseline
-cargo bench -p sghtmltopdf-core --bench metrics -- --filter scale/ # subset (a filtered --save-baseline only replaces those cases)
-cargo bench -p sghtmltopdf-core --bench metrics -- --json out.json # keep this run
-cargo bench -p sghtmltopdf-core --bench metrics -- --markdown      # pipe table, for a PR comment
-cargo bench -p sghtmltopdf-core --bench metrics -- --no-time       # time measured but not judged
-cargo bench -p sghtmltopdf-core --bench metrics -- --runs 5 --list --no-fail
+cargo bench -p sghtmltopdf --bench metrics                    # compare, exit 1 on regression
+cargo bench -p sghtmltopdf --bench metrics -- --save-baseline # rewrite the baseline
+cargo bench -p sghtmltopdf --bench metrics -- --filter scale/ # subset (a filtered --save-baseline only replaces those cases)
+cargo bench -p sghtmltopdf --bench metrics -- --json out.json # keep this run
+cargo bench -p sghtmltopdf --bench metrics -- --markdown      # pipe table, for a PR comment
+cargo bench -p sghtmltopdf --bench metrics -- --no-time       # time measured but not judged
+cargo bench -p sghtmltopdf --bench metrics -- --runs 5 --list --no-fail
 ```
 
 | Metric | Gate |

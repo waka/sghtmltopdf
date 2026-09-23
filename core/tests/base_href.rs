@@ -5,8 +5,8 @@
 
 use std::path::PathBuf;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::MemorySink;
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const IMAGE_PATH: &str = concat!(
@@ -38,12 +38,10 @@ fn fixture_dir(name: &str) -> PathBuf {
 }
 
 fn build_pdf(html: &str, base_dir: PathBuf) -> Vec<u8> {
-    let options = EngineOptions {
-        mode: Mode::Batch,
-        fonts: vec![font_spec()],
-        base_dir: Some(base_dir),
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Batch;
+    options.fonts = vec![font_spec()];
+    options.base_dir = Some(base_dir);
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();
@@ -99,12 +97,10 @@ fn an_absolute_reference_ignores_the_base_href() {
 #[test]
 fn base_href_also_applies_in_streaming_mode() {
     let dir = fixture_dir("streaming");
-    let options = EngineOptions {
-        mode: Mode::Streaming,
-        fonts: vec![font_spec()],
-        base_dir: Some(dir),
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Streaming;
+    options.fonts = vec![font_spec()];
+    options.base_dir = Some(dir);
     let mut engine = Engine::new(options, MemorySink::new());
     engine
         .feed(

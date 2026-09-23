@@ -10,11 +10,11 @@ use std::path::PathBuf;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, resolve_background_images, PageSettings};
-use sghtmltopdf_core::pdf::{encode_pdf, ImageAssetCache};
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, resolve_background_images, PageSettings};
+use sghtmltopdf::pdf::{encode_pdf, ImageAssetCache};
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const PNG_PATH: &str = concat!(

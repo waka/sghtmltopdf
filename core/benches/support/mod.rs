@@ -17,13 +17,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, GenericFamily, Mode};
-use sghtmltopdf_core::fonts::{load_font_faces, Font, FontCollection, SystemFonts};
-use sghtmltopdf_core::html::{self, Dom, NodeId};
-use sghtmltopdf_core::img::{DocumentImageCache, ImageFetcher};
-use sghtmltopdf_core::layout::PageSettings;
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, GenericFamily, Mode};
+use sghtmltopdf::fonts::{load_font_faces, Font, FontCollection, SystemFonts};
+use sghtmltopdf::html::{self, Dom, NodeId};
+use sghtmltopdf::img::{DocumentImageCache, ImageFetcher};
+use sghtmltopdf::layout::PageSettings;
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{
     compute_styles, extract_author_stylesheet, user_agent_stylesheet, ComputedStyle, Stylesheet,
 };
 
@@ -206,25 +206,24 @@ pub fn fixture(name: &str) -> &'static Fixture {
 // ---------------------------------------------------------------------------
 
 pub fn engine_options(mode: Mode) -> EngineOptions {
-    EngineOptions {
-        mode,
-        fonts: EXPLICIT_FONTS
-            .iter()
-            .map(|f| font_spec(f.file, f.index))
-            .collect(),
-        generic_fonts: GENERIC_FONTS
-            .iter()
-            .map(|(family, file)| (*family, font_spec(file, 0)))
-            .collect(),
-        base_dir: Some(fixtures_dir()),
-        // Without this the engine fills gaps in the bundled set (there is no
-        // italic face, and `serif` is bound to a regular one) from whatever is
-        // installed on the machine, so the same fixture embeds Times New Roman
-        // here and DejaVu Serif on a Linux runner. Numbers are only comparable
-        // across machines with the search switched off.
-        disable_system_fonts: true,
-        ..EngineOptions::default()
-    }
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    options.fonts = EXPLICIT_FONTS
+        .iter()
+        .map(|f| font_spec(f.file, f.index))
+        .collect();
+    options.generic_fonts = GENERIC_FONTS
+        .iter()
+        .map(|(family, file)| (*family, font_spec(file, 0)))
+        .collect();
+    options.base_dir = Some(fixtures_dir());
+    // Without this the engine fills gaps in the bundled set (there is no
+    // italic face, and `serif` is bound to a regular one) from whatever is
+    // installed on the machine, so the same fixture embeds Times New Roman
+    // here and DejaVu Serif on a Linux runner. Numbers are only comparable
+    // across machines with the search switched off.
+    options.disable_system_fonts = true;
+    options
 }
 
 /// Renders `html` to PDF bytes through the public engine API, feeding it in

@@ -6,8 +6,9 @@
 
 /// Stack size allocated for the thread that runs rendering.
 ///
-/// How much is needed follows from [`crate::html::MAX_ELEMENT_DEPTH`]. Its cap of 256
-/// levels is about 2.8MiB in debug-build terms, so this value leaves over 5x headroom.
+/// How much is needed follows from the element nesting limit ([`EngineError::DepthLimitExceeded`](crate::EngineError::DepthLimitExceeded)).
+/// Its cap of 256 levels is about 2.8MiB in debug-build terms, so this value leaves over
+/// 5x headroom.
 ///
 /// We do not rely on the default because a thread's default stack varies widely by
 /// environment (2MiB for threads Rust spawns; main can be smaller depending on

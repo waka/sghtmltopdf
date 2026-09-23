@@ -27,9 +27,21 @@ jobs:
       # Testing only the default features would never exercise `<text>` inside SVG,
       # so we also run a combination with that feature on (most of tests/svg_fonts.rs lives there).
       - name: cargo clippy (svg-text)
-        run: cargo clippy -p sghtmltopdf-core --features svg-text --all-targets -- -D warnings
+        run: cargo clippy -p sghtmltopdf --features svg-text --all-targets -- -D warnings
       - name: cargo test (svg-text)
-        run: cargo test -p sghtmltopdf-core --features svg-text
+        run: cargo test -p sghtmltopdf --features svg-text
+
+  # The oldest toolchain the published crate claims to build with (`rust-version` in
+  # core/Cargo.toml; keep the two in step). Only the lib and the bin count: the tests and
+  # benches are not published, and their dev-dependencies may need a newer toolchain.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo check (MSRV)
+        run: cargo check -p sghtmltopdf --all-features --lib --bins --locked
 
   # Check dependency crates against advisories (RustSec)
   audit:
@@ -97,11 +109,11 @@ jobs:
       # and include it in the same PR.
       - name: metricsゲート
         run: |
-          cargo bench -p sghtmltopdf-core --bench metrics -- --runs 1 --no-time
+          cargo bench -p sghtmltopdf --bench metrics -- --runs 1 --no-time
       # The criterion numbers are not used for the check (they cannot be
       # measured on a runner), but each bench runs once so that breakage is
       # still noticed.
       - name: criterionのbenchを1回ずつ流す
         run: |
-          cargo bench -p sghtmltopdf-core \
+          cargo bench -p sghtmltopdf \
             --bench phases --bench end_to_end --bench scale -- --test

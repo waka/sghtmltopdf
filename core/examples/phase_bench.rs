@@ -11,11 +11,11 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Instant;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{build_box_tree, layout_document, paginate_document, PageSettings};
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{build_box_tree, layout_document, paginate_document, PageSettings};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 /// An allocator that merely counts allocations, to see which size class dominates the memory.
 struct CountingAlloc;
@@ -124,8 +124,8 @@ fn dump_live_allocations(label: &str) {
 
 fn main() {
     {
-        use sghtmltopdf_core::layout::{LaidOutBox, LayoutBox};
-        use sghtmltopdf_core::style::ComputedStyle;
+        use sghtmltopdf::layout::{LaidOutBox, LayoutBox};
+        use sghtmltopdf::style::ComputedStyle;
         use std::mem::size_of;
         println!(
             "type sizes: ComputedStyle {}B / LayoutBox {}B / LaidOutBox {}B",
@@ -133,9 +133,9 @@ fn main() {
             size_of::<LayoutBox>(),
             size_of::<LaidOutBox>(),
         );
-        use sghtmltopdf_core::fonts::ShapedGlyph;
-        use sghtmltopdf_core::layout::{LaidOutContent, Layout};
-        use sghtmltopdf_core::layout::{LineBox, TextRun};
+        use sghtmltopdf::fonts::ShapedGlyph;
+        use sghtmltopdf::layout::{LaidOutContent, Layout};
+        use sghtmltopdf::layout::{LineBox, TextRun};
         println!(
             "          Layout {}B / LaidOutContent {}B / Option<LineBox> {}B",
             size_of::<Layout>(),
@@ -203,8 +203,8 @@ fn main() {
         c.glyphs as f64 / count as f64
     );
     {
-        use sghtmltopdf_core::fonts::ShapedGlyph;
-        use sghtmltopdf_core::layout::{LaidOutBox, LineBox, TextRun};
+        use sghtmltopdf::fonts::ShapedGlyph;
+        use sghtmltopdf::layout::{LaidOutBox, LineBox, TextRun};
         use std::mem::size_of;
         let real = c.boxes * size_of::<LaidOutBox>()
             + c.lines * size_of::<LineBox>()
@@ -328,8 +328,8 @@ struct Counts {
 }
 
 /// Walk the layout result and count the elements it holds.
-fn count_boxes(b: &sghtmltopdf_core::layout::LaidOutBox, c: &mut Counts) {
-    use sghtmltopdf_core::layout::LaidOutContent;
+fn count_boxes(b: &sghtmltopdf::layout::LaidOutBox, c: &mut Counts) {
+    use sghtmltopdf::layout::LaidOutContent;
     c.boxes += 1;
     match &b.content {
         LaidOutContent::Blocks(children) => {
@@ -346,16 +346,16 @@ fn count_boxes(b: &sghtmltopdf_core::layout::LaidOutBox, c: &mut Counts) {
         }
         LaidOutContent::Inline(lines) => {
             c.slack += (lines.capacity() - lines.len())
-                * std::mem::size_of::<sghtmltopdf_core::layout::LineBox>();
+                * std::mem::size_of::<sghtmltopdf::layout::LineBox>();
             for line in lines {
                 c.lines += 1;
                 c.runs += line.runs.len();
                 c.slack += (line.runs.capacity() - line.runs.len())
-                    * std::mem::size_of::<sghtmltopdf_core::layout::TextRun>();
+                    * std::mem::size_of::<sghtmltopdf::layout::TextRun>();
                 for run in &line.runs {
                     c.glyphs += run.glyphs.len();
                     c.slack += (run.glyphs.capacity() - run.glyphs.len())
-                        * std::mem::size_of::<sghtmltopdf_core::fonts::ShapedGlyph>();
+                        * std::mem::size_of::<sghtmltopdf::fonts::ShapedGlyph>();
                     c.slack += run.text.capacity() - run.text.len();
                 }
             }

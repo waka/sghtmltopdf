@@ -8,11 +8,16 @@ pub struct Rect {
     pub height: f32,
 }
 
+/// A length for each of the four sides, such as a margin, in CSS px.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct EdgeSizes {
+    /// The top side.
     pub top: f32,
+    /// The right side.
     pub right: f32,
+    /// The bottom side.
     pub bottom: f32,
+    /// The left side.
     pub left: f32,
 }
 

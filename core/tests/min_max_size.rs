@@ -5,13 +5,13 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -82,12 +82,7 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
 }
 
 /// Look up the content box of an element carrying an `id` attribute.
-fn content_box(
-    dom: &Dom,
-    laid: &LaidOutBox,
-    tag: &str,
-    index: usize,
-) -> sghtmltopdf_core::layout::Rect {
+fn content_box(dom: &Dom, laid: &LaidOutBox, tag: &str, index: usize) -> sghtmltopdf::layout::Rect {
     let mut nodes = Vec::new();
     find_all_tags(dom, dom.document(), tag, &mut nodes);
     let node = nodes[index];

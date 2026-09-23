@@ -4,8 +4,8 @@
 //! itself are in `core/src/style/color_mix.rs`; here we look at the path from CSS syntax
 //! through the cascade down to the computed style.
 
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 fn first_div(dom: &Dom, id: NodeId) -> Option<NodeId> {
     if let NodeData::Element { name, .. } = &dom.node(id).data {

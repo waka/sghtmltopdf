@@ -1426,7 +1426,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sghtmltopdf-core"
+name = "sghtmltopdf"
 version = "0.5.0"
 dependencies = [
  "base64",

@@ -1052,15 +1052,6 @@ dependencies = [
 name = "sghtmltopdf"
 version = "0.5.0"
 dependencies = [
- "magnus",
- "rb-sys",
- "sghtmltopdf-core",
-]
-
-[[package]]
-name = "sghtmltopdf-core"
-version = "0.5.0"
-dependencies = [
  "base64",
  "clap",
  "cssparser",
@@ -1082,6 +1073,15 @@ dependencies = [
  "svg2pdf",
  "taffy",
  "ureq",
+]
+
+[[package]]
+name = "sghtmltopdf-ruby"
+version = "0.5.0"
+dependencies = [
+ "magnus",
+ "rb-sys",
+ "sghtmltopdf",
 ]
 
 [[package]]

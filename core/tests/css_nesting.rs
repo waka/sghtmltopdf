@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::style::{
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::style::{
     compute_styles, parse_stylesheet, user_agent_stylesheet, ComputedStyle, LengthPercentage,
     LengthPercentageOrAuto,
 };

@@ -6,10 +6,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::style::{
-    compute_styles, parse_stylesheet, user_agent_stylesheet, ComputedStyle,
-};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet, ComputedStyle};
 
 /// Find an element by its `id` attribute.
 fn find_by_id(dom: &Dom, from: NodeId, id: &str) -> Option<NodeId> {

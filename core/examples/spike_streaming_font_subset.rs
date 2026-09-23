@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 use pdf_writer::types::{CidFontType, FontFlags, SystemInfo};
 use pdf_writer::writers::Catalog;
 use pdf_writer::{Chunk, Content, Filter, Finish, Name, Rect as PdfRect, Ref, Str};
-use sghtmltopdf_core::fonts::{shape_text, Font};
+use sghtmltopdf::fonts::{shape_text, Font};
 use subsetter::GlyphRemapper;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");

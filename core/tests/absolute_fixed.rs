@@ -3,12 +3,12 @@
 //! Absolute positioning only works under `Mode::Batch`. The overlays are added once every
 //! page is settled, so they are checked against the pagination result (`paginate_document`) and the layout result.
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, LaidOutBox, LaidOutContent, PageSettings};
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, LaidOutBox, LaidOutContent, PageSettings};
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -70,7 +70,7 @@ fn pages_of(html_src: &str) -> Vec<Vec<String>> {
 }
 
 /// Find, across every page, the border box of the box containing the given text.
-fn find_box_rect(html_src: &str, needle: &str) -> (usize, sghtmltopdf_core::layout::Rect) {
+fn find_box_rect(html_src: &str, needle: &str) -> (usize, sghtmltopdf::layout::Rect) {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
     let fonts = test_fonts();
@@ -223,14 +223,12 @@ fn a_document_with_absolute_and_fixed_encodes_to_a_valid_pdf_in_batch_mode() {
           body
         </div>
       </body></html>"#;
-    let options = EngineOptions {
-        mode: Mode::Batch,
-        fonts: vec![FontSpec {
-            path: std::path::PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Batch;
+    options.fonts = vec![FontSpec {
+        path: std::path::PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html_src.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();

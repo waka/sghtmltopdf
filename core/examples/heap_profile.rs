@@ -15,11 +15,11 @@ use std::env;
 use std::fmt::Write as _;
 use std::path::Path;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, PageSettings};
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, PageSettings};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
