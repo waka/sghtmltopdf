@@ -1,5 +1,10 @@
 # sghtmltopdf
 
+[![Gem Version](https://img.shields.io/gem/v/sghtmltopdf)](https://rubygems.org/gems/sghtmltopdf)
+[![Crates.io Version](https://img.shields.io/crates/v/sghtmltopdf)](https://crates.io/crates/sghtmltopdf)
+[![docs.rs](https://img.shields.io/docsrs/sghtmltopdf)](https://docs.rs/sghtmltopdf)
+[![CI](https://github.com/waka/sghtmltopdf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/waka/sghtmltopdf/actions/workflows/ci.yml?query=branch%3Amain)
+
 An HTML-to-PDF renderer like wkhtmltopdf written in Rust that does not depend on Chromium, WebKit, or Gecko.
 
 [Documentation](https://waka.github.io/sghtmltopdf/) ([English](https://waka.github.io/sghtmltopdf/en/))
@@ -49,7 +54,7 @@ I want the next programmer who is handed "make this print to PDF" to feel what I
 
 ## Usage
 
-Three entry points share the same engine and the same options.
+The command line, an HTTP server, a Ruby gem and a [Rust crate](#rust) all share the same engine and the same options.
 
 ```sh
 # CLI
@@ -144,7 +149,7 @@ If the gem cannot run where your app runs (Windows) or you would rather not spen
 Sghtmltopdf.configure { |c| c.server_url = "http://{REMOTE_SERVER_URL}:8080" }
 ```
 
-Everything else the full option reference, the HTTP API, CSS support tables, and migration guides from wkhtmltopdf and wicked_pdf lives in the [documentation site](https://waka.github.io/sghtmltopdf/) ([Ruby / Rails](https://waka.github.io/sghtmltopdf/usage/ruby_rails.html)).
+Everything else the full option reference, the HTTP API, CSS support tables, and migration guides from wkhtmltopdf and wicked_pdf lives in the [documentation site](https://waka.github.io/sghtmltopdf/) ([Ruby / Rails](https://waka.github.io/sghtmltopdf/usage/ruby_rails.html), [Rust](https://waka.github.io/sghtmltopdf/usage/rust.html)).
 
 The Docker image (`linux/amd64` and `linux/arm64`) bundles BIZ UDPGothic and BIZ UDPMincho, so Japanese documents render without supplying a font, and the same HTML always produces the same PDF regardless of the host's fonts.
 `ENTRYPOINT` is the binary itself: no arguments starts the server, arguments run the CLI.
@@ -168,6 +173,70 @@ services:
 
 `curl` is not in the image, so the health check uses `--version`; hit `GET /healthz` from the outside (a load balancer, say) if you want the server itself checked.
 Point the Ruby side at it with `Sghtmltopdf.configure { |c| c.server_url = "http://pdf:8080" }`, and add `--font` and a mounted volume to the service's `command` if you need fonts other than the bundled ones.
+
+### Rust
+
+The engine is published on crates.io as [`sghtmltopdf`](https://crates.io/crates/sghtmltopdf), the same crate that builds the binary ([API docs](https://docs.rs/sghtmltopdf)).
+
+```sh
+cargo add sghtmltopdf
+```
+
+`Converter` takes the same options as the command, so everything in the option reference works unchanged:
+
+```rust
+use sghtmltopdf::{with_render_stack, Converter};
+
+let converter = Converter::from_args(["--page-size", "A4", "--margin-top", "20mm"])?;
+let html = std::fs::File::open("invoice.html")?;
+let pdf = with_render_stack(|| converter.render_to_vec(html))?;
+std::fs::write("invoice.pdf", pdf)?;
+```
+
+Options are validated once by `from_args`, and the same `Converter` can render any number of documents.
+Errors come back as `ConvertError` — `Usage`, `Input`, `Render` or `Timeout`, the same classes as the command's exit codes.
+Rendering recurses as deep as the document, so run it on a thread with a large enough stack; `with_render_stack` does that for you.
+
+To stream pages out as soon as their layout is final, pass your own `Sink` to `render` instead of collecting into memory.
+The engine calls `write` in order, once or more per completed page, and `finish` exactly once at the end:
+
+```rust
+use std::io::{self, Write};
+use sghtmltopdf::{with_render_stack, Converter, Sink};
+
+struct WriterSink<W: Write>(W);
+
+impl<W: Write> Sink for WriterSink<W> {
+    type Output = W;
+    type Error = io::Error;
+
+    fn write(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.0.write_all(bytes)
+    }
+
+    fn finish(mut self) -> io::Result<W> {
+        self.0.flush()?;
+        Ok(self.0)
+    }
+}
+
+let converter = Converter::from_args(["--page-size", "A4"])?;
+let html = std::fs::File::open("invoice.html")?;
+let socket = std::net::TcpStream::connect("127.0.0.1:9000")?;
+with_render_stack(|| converter.render(html, WriterSink(socket)))?;
+```
+
+`FileSink` (writes to a temporary file and renames it on success), `StdoutSink`, `MemorySink` and `BufferedSink` (hands over fixed-size parts, for S3 multipart uploads) are provided.
+The lower-level `Engine` takes `EngineOptions` and HTML fed in chunks (`feed`, then `finish`); prefer `Converter` unless you need to assemble the options yourself.
+
+| Feature | Default | |
+|---|---|---|
+| `cli` | yes | The `sghtmltopdf` binary and `Converter` (clap) |
+| `server` | yes | `sghtmltopdf server` (tiny_http) |
+| `svg` | yes | SVG images embedded as vectors (svg2pdf) |
+| `svg-text` | no | `<text>` inside SVG images |
+
+For library use, `default-features = false, features = ["cli", "svg"]` drops the HTTP server and keeps everything else.
 
 ## Architecture
 

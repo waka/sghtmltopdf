@@ -14,6 +14,7 @@
   - [ストリーミングモード](usage/cli/streaming.md)
 - [HTTPサーバから](usage/server.md)
 - [Ruby / Railsから](usage/ruby_rails.md)
+- [Rustから](usage/rust.md)
 
 # サポート状況
 

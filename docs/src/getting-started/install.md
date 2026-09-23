@@ -1,16 +1,21 @@
 # インストール
 
-使い方に応じて3通りあります。
+使い方に応じて4通りあります。
 
 | 使い方 | 入れるもの |
 |---|---|
 | [HTTPサーバ](../usage/server.md)を常駐させる | Dockerイメージ`ghcr.io/waka/sghtmltopdf` |
 | Ruby・Railsから使う | gem `sghtmltopdf` |
-| 手元のコマンドラインで変換する | 実行ファイル`sghtmltopdf`(ソースからビルド) |
+| 手元のコマンドラインで変換する | 実行ファイル`sghtmltopdf`(`cargo install`かソースからビルド) |
+| Rustのプログラムに組み込む | クレート`sghtmltopdf` |
 
 素の実行ファイル(GitHub Releasesのtarballやhomebrew)は配布していません。
 サーバはイメージの中に、FFIから使う場合はgemの中にそれぞれ実行ファイル相当が入っているためです。
-CLIを手元で試したい場合は下のソースビルドを使ってください。
+CLIを手元で試したい場合は、`cargo install`か下のソースビルドを使ってください。
+
+```sh
+cargo install sghtmltopdf
+```
 
 ## Docker
 
@@ -60,6 +65,14 @@ gem "sghtmltopdf"
 重い処理の間はGVLを解放するので、Pumaの他のスレッドは止まりません。
 
 使い方は[Ruby / Rails](../usage/ruby_rails.md)を参照してください。
+
+## Rust
+
+```sh
+cargo add sghtmltopdf
+```
+
+使い方は[Rustから](../usage/rust.md)を参照してください。
 
 ## フォントについて
 
