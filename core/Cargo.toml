@@ -1,6 +1,6 @@
 [package]
 name = "sghtmltopdf"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 description = "HTML to PDF renderer that does not depend on Chromium, WebKit or Gecko"
 license = "MIT"
