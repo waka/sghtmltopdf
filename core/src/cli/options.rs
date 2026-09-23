@@ -144,7 +144,7 @@ impl ServerArgs {
 }
 
 /// Options for HTML-to-PDF conversion.
-#[derive(Debug, Args)]
+#[derive(Debug, Clone, Args)]
 pub struct ConvertArgs {
     /// Input HTML file (`-` for standard input)
     #[arg(value_name = "INPUT.HTML", required = true)]
@@ -445,7 +445,7 @@ pub struct ConvertArgs {
     /// derives it from `--timeout` and injects it (`#[arg(skip)]`).
     ///
     /// It lives here so it reaches the engine without changing the signature of
-    /// `render`/`render_to_memory`. It stays `None` for the CLI and the Ruby extension.
+    /// `render_with`. It stays `None` for the CLI and the Ruby extension.
     #[arg(skip)]
     pub deadline: Option<std::time::Instant>,
 }

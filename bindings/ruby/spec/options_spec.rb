@@ -1,13 +1,12 @@
 # frozen_string_literal: true
 
 RSpec.describe Sghtmltopdf::Options do
-  # The first entries of argv are always fixed, so they are dropped to make comparison easier.
   def argv(options)
-    described_class.to_argv(options).drop(Sghtmltopdf::Options::ARGV_PREFIX.size)
+    described_class.to_argv(options)
   end
 
-  it "always prefixes the standard streams for input and output" do
-    expect(described_class.to_argv({})).to eq(["sghtmltopdf", "-", "--output", "-"])
+  it "adds nothing when there are no options" do
+    expect(described_class.to_argv({})).to eq([])
   end
 
   describe "key conversion" do

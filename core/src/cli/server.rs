@@ -14,7 +14,7 @@ use tiny_http::{Header, Request, Response, Server, StatusCode};
 use crate::sink::{MemorySink, Sink};
 
 use super::options::{Cli, ConvertArgs, ServerArgs};
-use super::CliError;
+use super::ConvertError;
 
 /// Options allowed in the query string.
 const ALLOWED_QUERY_KEYS: &[&str] = &[
@@ -103,7 +103,7 @@ const SERVER_ONLY_KEYS: &[&str] = &[
     "quiet",
 ];
 
-pub fn run(args: &ServerArgs) -> Result<(), CliError> {
+pub fn run(args: &ServerArgs) -> Result<(), ConvertError> {
     let workers = args
         .workers
         .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()))
@@ -111,7 +111,7 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
     let max_queue = args.max_queue.unwrap_or(workers * 4).max(1);
 
     let server = Server::http(&args.listen)
-        .map_err(|e| CliError::Input(format!("cannot listen on {}: {e}", args.listen)))?;
+        .map_err(|e| ConvertError::Input(format!("cannot listen on {}: {e}", args.listen)))?;
     let addr = server
         .server_addr()
         .to_ip()
@@ -159,7 +159,8 @@ pub fn run(args: &ServerArgs) -> Result<(), CliError> {
             handle_request(request, &shared, queued_at + timeout);
         });
         handles.push(
-            handle.map_err(|e| CliError::Input(format!("cannot create a worker thread: {e}")))?,
+            handle
+                .map_err(|e| ConvertError::Input(format!("cannot create a worker thread: {e}")))?,
         );
     }
 
@@ -325,7 +326,7 @@ fn respond_chunked(
         .name("render-stream".to_string())
         .stack_size(crate::render_stack::STACK_SIZE)
         .spawn(move || {
-            if let Err(e) = super::convert::render(
+            if let Err(e) = super::convert::render_with(
                 &args,
                 &fonts,
                 std::io::Cursor::new(html),
@@ -432,7 +433,7 @@ fn render_request(
     };
 
     let sink = MemorySink::new();
-    let result = super::convert::render_to_memory(&args, &fonts, &mut reader, sink);
+    let result = super::convert::render_with(&args, &fonts, &mut reader, sink);
 
     if reader.exceeded {
         return Err(too_large());
@@ -442,10 +443,10 @@ fn render_request(
     }
 
     result.map_err(|e| match e {
-        CliError::Usage(msg) => (400, msg),
-        CliError::Input(msg) => (400, msg),
-        CliError::Render(msg) => (500, msg),
-        CliError::Timeout(msg) => (504, msg),
+        ConvertError::Usage(msg) => (400, msg),
+        ConvertError::Input(msg) => (400, msg),
+        ConvertError::Render(msg) => (500, msg),
+        ConvertError::Timeout(msg) => (504, msg),
     })
 }
 

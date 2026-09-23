@@ -1,9 +1,9 @@
-//! The Ruby exception classes, and the mapping from the core's [`CliError`].
+//! The Ruby exception classes, and the mapping from the core's [`ConvertError`].
 
 use std::panic::AssertUnwindSafe;
 
 use magnus::{prelude::*, ExceptionClass, RModule, Ruby};
-use sghtmltopdf_core::cli::CliError;
+use sghtmltopdf_core::ConvertError;
 
 pub fn define(ruby: &Ruby, module: RModule) -> Result<(), magnus::Error> {
     let base = module.define_error("Error", ruby.exception_standard_error())?;
@@ -55,12 +55,14 @@ fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 /// Convert a core error into the corresponding Ruby exception.
 ///
 /// The message is the wording the core returns, verbatim (the same wording as the CLI).
-pub fn to_ruby(ruby: &Ruby, error: CliError) -> magnus::Error {
+pub fn to_ruby(ruby: &Ruby, error: ConvertError) -> magnus::Error {
     let (class_name, message) = match error {
-        CliError::Usage(message) => ("UsageError", message),
-        CliError::Input(message) => ("InputError", message),
-        CliError::Render(message) => ("RenderError", message),
-        CliError::Timeout(message) => ("TimeoutError", message),
+        ConvertError::Usage(message) => ("UsageError", message),
+        ConvertError::Input(message) => ("InputError", message),
+        ConvertError::Render(message) => ("RenderError", message),
+        ConvertError::Timeout(message) => ("TimeoutError", message),
+        // A classification added in a later core release. Surface it rather than hide it.
+        other => ("Error", other.to_string()),
     };
     magnus::Error::new(class(ruby, class_name), message)
 }

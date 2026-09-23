@@ -10,6 +10,10 @@
 //! let pdf: Vec<u8> = engine.finish().unwrap();
 //! ```
 //!
+//! With the `cli` feature (on by default), [`Converter`] runs a conversion configured by the
+//! same options as the `sghtmltopdf` command, which is the simplest entry point for language
+//! bindings.
+//!
 //! Rendering recurses as deep as the document, so run it on a thread with enough stack,
 //! for example through [`with_render_stack`].
 //!
@@ -19,6 +23,8 @@
 //! The modules are reachable only so that the CLI, the tests and the Ruby binding can use
 //! the internals; they are hidden from the documentation and may change in any release.
 
+#[cfg(feature = "cli")]
+pub use cli::{ConvertError, Converter};
 pub use engine::{
     ContentOptions, Engine, EngineError, EngineOptions, FontSpec, GenericFamily, HeaderFooterHtml,
     HeaderFooterPlaceholders, LocalAccess, Mode, TocHeading, TocHtmlBuilder, TocSettings,
