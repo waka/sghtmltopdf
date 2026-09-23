@@ -29,6 +29,8 @@ use super::{convert, unsupported, ConvertError};
 ///
 /// Rendering recurses as deep as the document, so run it on a thread with enough stack,
 /// for example through [`with_render_stack`](crate::with_render_stack).
+///
+/// Available with the `cli` feature (on by default).
 #[derive(Debug, Clone)]
 pub struct Converter {
     args: ConvertArgs,

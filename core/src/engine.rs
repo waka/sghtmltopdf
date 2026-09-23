@@ -54,8 +54,17 @@ use crate::style::{FontStyle, FontWeight};
 /// Selects batch or streaming processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Mode {
+    /// Build the whole DOM first and lay it out in one pass when [`Engine::finish`] is called.
+    ///
+    /// Every CSS feature the engine supports is available.
     #[default]
     Batch,
+    /// Lay out and write each top-level element under `<body>` as soon as it has been
+    /// parsed, then release it, so memory does not grow with the document.
+    ///
+    /// Features that need the whole document are rejected with
+    /// [`EngineError::UnsupportedInStreamingMode`]: `counter(pages)`, a `<style>` after
+    /// `<body>` has started, and the like.
     Streaming,
 }
 
@@ -63,8 +72,11 @@ pub enum Mode {
 /// `cursive`/`fantasy` are not covered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenericFamily {
+    /// `sans-serif`
     SansSerif,
+    /// `serif`
     Serif,
+    /// `monospace`
     Monospace,
 }
 
@@ -80,7 +92,9 @@ impl GenericFamily {
 }
 
 /// An explicit font specification, the equivalent of `--font`.
+#[derive(Debug, Clone)]
 pub struct FontSpec {
+    /// A TrueType or OpenType font file (`.ttf`, `.otf`, `.ttc`).
     pub path: PathBuf,
     /// The face index in a file containing several faces, such as a TrueType Collection (`.ttc`).
     pub index: u32,
@@ -129,27 +143,40 @@ impl Default for ContentOptions {
     }
 }
 
-/// The initialisation options for `Engine`.
-#[derive(Default)]
+/// The initialisation options for [`Engine`].
+///
+/// The struct is `#[non_exhaustive]`: start from [`Default`] and assign the fields you need.
+///
+/// ```
+/// use sghtmltopdf::{EngineOptions, FontSpec, Mode, PageSize};
+///
+/// let mut options = EngineOptions::default();
+/// options.mode = Mode::Streaming;
+/// options.settings.size = PageSize::LETTER;
+/// options.fonts = vec![FontSpec { path: "fonts/NotoSansJP-Regular.ttf".into(), index: 0 }];
+/// ```
+#[derive(Debug, Default)]
 #[non_exhaustive]
 pub struct EngineOptions {
+    /// Batch or streaming processing. Batch by default.
     pub mode: Mode,
+    /// The initial page size and margins. An `@page` rule in the document overrides them
+    /// property by property.
     pub settings: PageSettings,
     /// Explicit font specifications, the equivalent of `--font` (repeatable).
     pub fonts: Vec<FontSpec>,
     /// Give the concrete font for a CSS generic family name (`sans-serif`/`serif`/`monospace`)
     /// explicitly (the equivalent of `--gothic-font`/`--serif-font`/`--mono-font`). A generic
     /// name given here resolves to that font first, and one left unset resolves through the
-    /// system font candidate list ([`crate::fonts`]). The default `font-family` (unset) falls
-    /// back to the `--font` font regardless.
+    /// system font candidate list. The default `font-family` (unset) falls back to the
+    /// `--font` font regardless.
     pub generic_fonts: Vec<(GenericFamily, FontSpec)>,
     /// Stop looking up system fonts (the equivalent of `--disable-system-fonts`).
     ///
     /// Defaults to `false`. When `true`, text is composed only from the fonts given via
-    /// `fonts`, `generic_fonts` and `@font-face`. The lookups that fill gaps in family names
-    /// and glyph coverage ([`crate::fonts::load_missing_system_fonts`] and the like) still
-    /// run, but the database they consult is empty, so nothing is added. Characters that
-    /// cannot be drawn are dropped with a warning.
+    /// `fonts`, `generic_fonts` and `@font-face`. Nothing is added to fill gaps in family
+    /// names or glyph coverage either. Characters that cannot be drawn are dropped with a
+    /// warning.
     ///
     /// Use this to get the same PDF from the same HTML regardless of environment (to make
     /// local, CI and container output match). A combination with no matching face among
@@ -207,6 +234,7 @@ pub struct EngineOptions {
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct LocalAccess {
+    /// Whether local files may be read at all. `false` is `--disable-local-file-access`.
     pub allow: bool,
     /// If non-empty, only files under these directories may be read.
     pub allowed_dirs: Vec<PathBuf>,
@@ -228,32 +256,38 @@ impl Default for LocalAccess {
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct HeaderFooterHtml {
+    /// The HTML drawn in the top margin of every page.
     pub header: Option<String>,
+    /// The HTML drawn in the bottom margin of every page.
     pub footer: Option<String>,
     /// The document-level values used to fill in the placeholders whose value changes per
     /// page (`[page]`/`[topage]`).
     pub placeholders: HeaderFooterPlaceholders,
 }
 
-/// The placeholder expansion values (transferred from the CLI layer's `PlaceholderValues`).
-/// It is a plain type holding only what is needed, so the core does not depend on the CLI layer.
+/// The text that stands for a page number in [`HeaderFooterHtml`] templates.
+///
+/// Any other placeholder is expected to be expanded by the caller before the templates are
+/// passed in; only the page numbers change from page to page. The command uses `[page]` and
+/// `[topage]`.
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct HeaderFooterPlaceholders {
-    /// Rather than a function producing text with everything but `[page]`/`[topage]` already
-    /// expanded, the already-expanded template is received as-is.
-    /// This holds only the material needed to substitute the page numbers.
+    /// Replaced with the current page number.
     pub page_token: String,
+    /// Replaced with the total number of pages. Not available in [`Mode::Streaming`].
     pub total_pages_token: String,
 }
 
 impl HeaderFooterHtml {
+    #[doc(hidden)]
     pub fn is_empty(&self) -> bool {
         self.header.is_none() && self.footer.is_none()
     }
 
     /// Whether it contains a page number placeholder (if not, the layout result can be reused
     /// across pages).
+    #[doc(hidden)]
     pub fn depends_on_page(&self) -> bool {
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
@@ -266,6 +300,7 @@ impl HeaderFooterHtml {
 
     /// Whether it uses `[topage]` (the total page count). It cannot be determined under
     /// `Mode::Streaming`, so it is an error there.
+    #[doc(hidden)]
     pub fn uses_total_pages(&self) -> bool {
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
@@ -430,19 +465,21 @@ fn build_page_overlays(
     overlays
 }
 
-/// The function building the table-of-contents HTML from the list of headings (implemented
-/// and supplied by the CLI layer, `cli::toc`).
+/// The function building the table-of-contents HTML from the list of headings.
+///
+/// The command supplies one that follows wkhtmltopdf's default table of contents.
 pub type TocHtmlBuilder = Rc<dyn Fn(&[TocHeading]) -> String>;
 
 /// The table-of-contents (`--toc`) settings.
 ///
-/// Everything affecting its appearance is reflected in the CSS/HTML the CLI layer
-/// (`cli::toc::TocOptions`) builds, so the core holds only "is it enabled" and the HTML builder function.
+/// The appearance is entirely up to the HTML that `build_html` returns, so the engine holds
+/// only whether it is enabled and the builder.
 #[derive(Clone)]
 #[non_exhaustive]
 pub struct TocSettings {
+    /// Whether to insert a table of contents before the body.
     pub enabled: bool,
-    /// The function building the TOC's HTML from the list of headings. The CLI layer's implementation is passed in.
+    /// The function building the table of contents' HTML from the list of headings.
     pub build_html: TocHtmlBuilder,
     /// Whether to link headings back to the table of contents (`--enable-toc-back-links`).
     pub back_links: bool,
@@ -473,6 +510,7 @@ impl std::fmt::Debug for TocSettings {
 pub struct TocHeading {
     /// `h1` = 1 ... `h6` = 6.
     pub level: u8,
+    /// The heading's text.
     pub title: String,
     /// The 0-based page number within the body. The displayed number is
     /// `body_page + 1 + the TOC page count + page_offset`.
@@ -779,29 +817,37 @@ fn apply_content_options(
     }
 }
 
-/// The errors `Engine` returns. It distinguishes an error from the `Sink` (`Io`), a
-/// structural error the core decides itself (`UnsupportedInStreamingMode`), and a font
-/// loading error (`Font`).
+/// The errors [`Engine`] returns. `E` is the error type of the [`Sink`].
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum EngineError<E> {
+    /// The sink failed to write.
     Io(E),
+    /// The document uses something [`Mode::Streaming`] cannot handle. The message names it
+    /// and suggests an alternative.
     UnsupportedInStreamingMode(&'static str),
+    /// A font given in [`EngineOptions`] could not be loaded, or no usable font was found
+    /// at all (no explicit font and no system font).
     Font(String),
-    /// The DOM nesting exceeded [`crate::html::MAX_ELEMENT_DEPTH`].
+    /// The DOM nesting exceeded the limit (256 levels).
     ///
     /// Style computation, layout and drawing all recurse as deep as that, so without stopping
     /// here a stack overflow would take the whole process down.
     DepthLimitExceeded {
+        /// The depth reached.
         depth: u32,
+        /// The limit.
         limit: u32,
     },
-    /// The number of nodes held exceeded [`crate::html::MAX_NODES`].
+    /// The number of nodes held exceeded the limit (500,000). In [`Mode::Streaming`] only
+    /// the nodes not yet written count.
     ///
     /// Styles, the box tree and the layout result all pile up in proportion to the node
     /// count, so without stopping here memory would be exhausted.
     NodeLimitExceeded {
+        /// The number of nodes held.
         nodes: usize,
+        /// The limit.
         limit: usize,
     },
     /// Abandoned because [`EngineOptions::deadline`] passed.
@@ -961,6 +1007,25 @@ fn register_generic_fonts<E>(
     Ok(())
 }
 
+/// The rendering engine: feed it HTML and it writes the PDF into a [`Sink`].
+///
+/// ```no_run
+/// use sghtmltopdf::{Engine, EngineOptions, MemorySink};
+///
+/// let mut engine = Engine::new(EngineOptions::default(), MemorySink::new());
+/// for chunk in [&b"<!DOCTYPE html><h1>Title</h1>"[..], b"<p>Body</p>"] {
+///     engine.feed(chunk)?;
+/// }
+/// let pdf: Vec<u8> = engine.finish()?;
+/// # Ok::<(), sghtmltopdf::EngineError<std::io::Error>>(())
+/// ```
+///
+/// In [`Mode::Batch`] the PDF is written during [`finish`](Self::finish). In
+/// [`Mode::Streaming`] each page is written into the sink as soon as its layout is final,
+/// during [`feed`](Self::feed).
+///
+/// Rendering recurses as deep as the document, so run it on a thread with a large enough
+/// stack, for example through [`with_render_stack`](crate::with_render_stack).
 pub struct Engine<S: Sink> {
     options: EngineOptions,
     parser: StreamingParser,
@@ -972,6 +1037,8 @@ pub struct Engine<S: Sink> {
 }
 
 impl<S: Sink> Engine<S> {
+    /// Create an engine that writes into `sink`. Nothing is read or written until the first
+    /// [`feed`](Self::feed).
     pub fn new(options: EngineOptions, sink: S) -> Self {
         Self {
             options,
@@ -1001,7 +1068,7 @@ impl<S: Sink> Engine<S> {
     /// Feed one chunk of HTML bytes. May be called any number of times.
     ///
     /// Under `Mode::Streaming` it returns an error if a `<style>` tag after `<body>` is
-    /// detected once fed (see the module docs). `Mode::Batch` does no such check, merely
+    /// detected once fed. `Mode::Batch` does no such check, merely
     /// accumulating the DOM and doing no real work until `finish`. Under `Mode::Streaming`,
     /// the top-level elements directly under `<body>` that have become final are processed
     /// here.

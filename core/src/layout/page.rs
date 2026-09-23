@@ -2,9 +2,12 @@
 
 use super::geometry::EdgeSizes;
 
+/// A page size in CSS px (1px = 1/96in), as `@page { size }` gives it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageSize {
+    /// The width in CSS px.
     pub width: f32,
+    /// The height in CSS px.
     pub height: f32,
 }
 
@@ -44,10 +47,13 @@ impl PageSize {
     }
 }
 
+/// The page size and margins. The default is A4 with a 1in (96px) margin on every side.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub struct PageSettings {
+    /// The page size.
     pub size: PageSize,
+    /// The page margins in CSS px. Headers, footers and `@page` margin boxes are drawn here.
     pub margin: EdgeSizes,
 }
 
@@ -67,10 +73,12 @@ impl Default for PageSettings {
 }
 
 impl PageSettings {
+    /// The width of the page area inside the margins, in CSS px.
     pub fn content_width(&self) -> f32 {
         self.size.width - self.margin.left - self.margin.right
     }
 
+    /// The height of the page area inside the margins, in CSS px.
     pub fn content_height(&self) -> f32 {
         self.size.height - self.margin.top - self.margin.bottom
     }

@@ -29,6 +29,8 @@ use options::Command;
 ///
 /// The command exits with the code noted on each variant. Bindings map the variants to their
 /// own error types, so the classification is part of the public API; the messages are not.
+///
+/// Available with the `cli` feature (on by default).
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ConvertError {

@@ -10,8 +10,11 @@
 pub struct DocumentMetadata {
     /// `--title`. With none given, the HTML `<title>` goes here (resolved by the caller).
     pub title: Option<String>,
+    /// `/Author`.
     pub author: Option<String>,
+    /// `/Subject`.
     pub subject: Option<String>,
+    /// `/Keywords`.
     pub keywords: Option<String>,
 }
 
@@ -31,6 +34,7 @@ pub const DEFAULT_SCALE: f32 = 72.0 / 96.0;
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct PdfOutputOptions {
+    /// The document information written to the PDF.
     pub metadata: DocumentMetadata,
     /// Flate compression of the PDF objects (content streams, fonts, CMaps).
     /// Image data is not covered by this flag.
