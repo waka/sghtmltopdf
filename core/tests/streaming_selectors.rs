@@ -18,19 +18,15 @@ const MARK_CSS: &str = "color: #cc0000";
 const MARK_OP: &[u8] = b"0.8 0 0 rg";
 
 fn options(mode: Mode) -> EngineOptions {
-    EngineOptions {
-        mode,
-        fonts: vec![FontSpec {
-            path: std::path::PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        output: sghtmltopdf::pdf::PdfOutputOptions {
-            // Left uncompressed so the fill colour operators can be counted.
-            compress: false,
-            ..Default::default()
-        },
-        ..EngineOptions::default()
-    }
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    options.fonts = vec![FontSpec {
+        path: std::path::PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
+    // Left uncompressed so the fill colour operators can be counted.
+    options.output.compress = false;
+    options
 }
 
 /// Return the number of elements matched by `selector`. `body` is the contents of `<body>`.

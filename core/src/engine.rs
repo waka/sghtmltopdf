@@ -91,6 +91,7 @@ pub struct FontSpec {
 /// The "what is drawn" counterpart of [`crate::pdf::PdfOutputOptions`], which changes only
 /// how the PDF is written.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct ContentOptions {
     /// Whether to load `<img>` and CSS `background-image` (false with `--no-images`).
     pub load_images: bool,
@@ -130,6 +131,7 @@ impl Default for ContentOptions {
 
 /// The initialisation options for `Engine`.
 #[derive(Default)]
+#[non_exhaustive]
 pub struct EngineOptions {
     pub mode: Mode,
     pub settings: PageSettings,
@@ -185,10 +187,12 @@ pub struct EngineOptions {
     pub toc: TocSettings,
     /// `--page-offset`. Shifts the starting page number of the TOC and the body.
     pub page_offset: usize,
-    /// The `@page` rules composed from the CLI's simple header/footer options. They are
-    /// placed before the author CSS's page rules, so an author declaration of the same margin
-    /// box wins.
-    pub extra_page_rules: Vec<PageRule>,
+    /// Extra CSS whose `@page` rules are placed before the author CSS's page rules, so an
+    /// author declaration of the same property or margin box wins. Only the `@page` rules in
+    /// it are used; other rules are ignored.
+    ///
+    /// The CLI composes its simple header/footer options (`--header-center` and friends) into this.
+    pub extra_page_css: Option<String>,
     /// The time at which the conversion is abandoned. `None` means unlimited (the CLI default).
     ///
     /// HTTP server mode supplies it from `--timeout`, to stop one request occupying a worker
@@ -201,6 +205,7 @@ pub struct EngineOptions {
 
 /// The permission settings for local file references.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct LocalAccess {
     pub allow: bool,
     /// If non-empty, only files under these directories may be read.
@@ -221,6 +226,7 @@ impl Default for LocalAccess {
 /// The contents are the HTML text before placeholder expansion. Where it contains a page
 /// number, it is expanded and laid out again per page.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct HeaderFooterHtml {
     pub header: Option<String>,
     pub footer: Option<String>,
@@ -232,6 +238,7 @@ pub struct HeaderFooterHtml {
 /// The placeholder expansion values (transferred from the CLI layer's `PlaceholderValues`).
 /// It is a plain type holding only what is needed, so the core does not depend on the CLI layer.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct HeaderFooterPlaceholders {
     /// Rather than a function producing text with everything but `[page]`/`[topage]` already
     /// expanded, the already-expanded template is received as-is.
@@ -432,6 +439,7 @@ pub type TocHtmlBuilder = Rc<dyn Fn(&[TocHeading]) -> String>;
 /// Everything affecting its appearance is reflected in the CSS/HTML the CLI layer
 /// (`cli::toc::TocOptions`) builds, so the core holds only "is it enabled" and the HTML builder function.
 #[derive(Clone)]
+#[non_exhaustive]
 pub struct TocSettings {
     pub enabled: bool,
     /// The function building the TOC's HTML from the list of headings. The CLI layer's implementation is passed in.
@@ -461,6 +469,7 @@ impl std::fmt::Debug for TocSettings {
 
 /// One heading listed in the table of contents.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct TocHeading {
     /// `h1` = 1 ... `h6` = 6.
     pub level: u8,
@@ -728,9 +737,11 @@ fn warn_unresolved_font_families(
     }
 }
 
-/// Return the CLI-derived `@page` rules placed before the author's rules.
-fn page_rules_with_cli(extra: &[PageRule], author: &[PageRule]) -> Vec<PageRule> {
-    let mut rules = extra.to_vec();
+/// Return the `@page` rules of `EngineOptions::extra_page_css` placed before the author's rules.
+fn page_rules_with_extra(extra_css: Option<&str>, author: &[PageRule]) -> Vec<PageRule> {
+    let mut rules = extra_css
+        .map(|css| crate::style::parse_stylesheet(css).page_rules)
+        .unwrap_or_default();
     rules.extend_from_slice(author);
     rules
 }
@@ -772,6 +783,7 @@ fn apply_content_options(
 /// structural error the core decides itself (`UnsupportedInStreamingMode`), and a font
 /// loading error (`Font`).
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum EngineError<E> {
     Io(E),
     UnsupportedInStreamingMode(&'static str),
@@ -1073,7 +1085,8 @@ impl<S: Sink> Engine<S> {
             let dom = self.parser.dom();
             extract_author_stylesheet(&dom, &css_fetcher, &css_cache)
         };
-        let page_rules = page_rules_with_cli(&self.options.extra_page_rules, &author.page_rules);
+        let page_rules =
+            page_rules_with_extra(self.options.extra_page_css.as_deref(), &author.page_rules);
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
         if rules_use_page_count(&page_rules) {
             return Err(EngineError::UnsupportedInStreamingMode(
@@ -1551,7 +1564,8 @@ impl<S: Sink> Engine<S> {
             .into_iter()
             .map(|(node, id)| (node, anchor_destination_name(&id)))
             .collect();
-        let page_rules = page_rules_with_cli(&options.extra_page_rules, &author.page_rules);
+        let page_rules =
+            page_rules_with_extra(options.extra_page_css.as_deref(), &author.page_rules);
         let page_settings = apply_page_rule_settings_override(options.settings, &page_rules);
 
         register_generic_fonts(&mut fonts, &options.generic_fonts)?;

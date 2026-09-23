@@ -122,10 +122,7 @@ fn render_from_reader<S: Sink<Error = io::Error>>(
     let replacements = args.replacements().map_err(CliError::Usage)?;
     let placeholders =
         crate::cli::header_footer::PlaceholderValues::new(args.title.clone(), replacements);
-    let extra_page_rules = match args.simple_header_footer().to_page_css(&placeholders) {
-        Some(css) => crate::style::parse_stylesheet(&css).page_rules,
-        None => Vec::new(),
-    };
+    let extra_page_css = args.simple_header_footer().to_page_css(&placeholders);
 
     // For `--header-html`/`--footer-html`, expand every placeholder except the page
     // numbers at read time; the engine fills the remaining `[page]`/`[topage]` in per page.
@@ -195,7 +192,7 @@ fn render_from_reader<S: Sink<Error = io::Error>>(
         output: args.pdf_output_options(),
         content: content_options,
         local_access: args.local_access().map_err(CliError::Input)?,
-        extra_page_rules,
+        extra_page_css,
         deadline: args.deadline,
         header_footer_html,
         cover_html,

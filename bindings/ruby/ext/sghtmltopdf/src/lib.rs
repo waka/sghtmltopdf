@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use magnus::rb_sys::AsRawValue;
 use magnus::{block::Proc, function, prelude::*, Error, RString, Ruby};
 use sghtmltopdf_core::cli::{self, convert};
-use sghtmltopdf_core::render_stack;
-use sghtmltopdf_core::sink::{FileSink, MemorySink};
+use sghtmltopdf_core::with_render_stack;
+use sghtmltopdf_core::{FileSink, MemorySink};
 
 use callback_sink::{pump_to_block, BlockSlot, PendingUnwind, ValueSlot};
 
@@ -37,7 +37,7 @@ fn render_inner(html: Vec<u8>, argv: Vec<String>) -> Result<RString, Error> {
     // recursion of layout and drawing (see the module docs of `callback_sink`).
     // This path never calls back into Ruby, so it can be moved as-is.
     let pdf = gvl::without_gvl(move || {
-        render_stack::with_render_stack(move || {
+        with_render_stack(move || {
             convert::render_to_memory(&args, &fonts, Cursor::new(html), MemorySink::new())
         })
     })
@@ -70,9 +70,7 @@ fn render_to_file_inner(html: Vec<u8>, argv: Vec<String>, path: String) -> Resul
     })?;
 
     gvl::without_gvl(move || {
-        render_stack::with_render_stack(move || {
-            convert::render(&args, &fonts, Cursor::new(html), sink)
-        })
+        with_render_stack(move || convert::render(&args, &fonts, Cursor::new(html), sink))
     })
     .map_err(|e| errors::to_ruby(&ruby, e))?;
     Ok(())
@@ -144,7 +142,7 @@ fn core_version() -> String {
 
 /// Really call one of the core's symbols to confirm the link.
 fn default_page_size() -> String {
-    let settings = sghtmltopdf_core::layout::PageSettings::default();
+    let settings = sghtmltopdf_core::PageSettings::default();
     format!("{}x{}", settings.size.width, settings.size.height)
 }
 

@@ -6,6 +6,7 @@
 
 /// The document metadata written to the PDF Info dictionary.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct DocumentMetadata {
     /// `--title`. With none given, the HTML `<title>` goes here (resolved by the caller).
     pub title: Option<String>,
@@ -28,6 +29,7 @@ pub const DEFAULT_SCALE: f32 = 72.0 / 96.0;
 
 /// PDF output options.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct PdfOutputOptions {
     pub metadata: DocumentMetadata,
     /// Flate compression of the PDF objects (content streams, fonts, CMaps).

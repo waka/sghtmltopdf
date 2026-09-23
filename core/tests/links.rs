@@ -26,11 +26,9 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
 }
 
 fn build_pdf(html: &str, mode: Mode) -> Vec<u8> {
-    let options = EngineOptions {
-        mode,
-        fonts: vec![font_spec()],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    options.fonts = vec![font_spec()];
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();

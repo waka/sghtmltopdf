@@ -9,7 +9,7 @@
 //! so rather than the process dying the thread hangs.
 //!
 //! So rendering runs on a dedicated thread with a
-//! [`sghtmltopdf_core::render_stack::STACK_SIZE`] stack allocated explicitly, and the settled
+//! [`sghtmltopdf_core::STACK_SIZE`] stack allocated explicitly, and the settled
 //! chunks are passed back to the original thread over a channel. Only the original thread ever touches Ruby.
 //!
 //! ```text
@@ -30,7 +30,7 @@ use std::sync::mpsc::{Receiver, SyncSender};
 use magnus::rb_sys::{AsRawValue, FromRawValue};
 use magnus::{block::Proc, Error, ExceptionClass, RString, Ruby, Value};
 use rb_sys::VALUE;
-use sghtmltopdf_core::sink::Sink;
+use sghtmltopdf_core::Sink;
 
 use crate::gvl;
 
@@ -292,7 +292,7 @@ where
     F: FnOnce(ChannelSink) -> Result<(), sghtmltopdf_core::cli::CliError> + Send + 'static,
 {
     use sghtmltopdf_core::cli::CliError;
-    use sghtmltopdf_core::render_stack::STACK_SIZE;
+    use sghtmltopdf_core::STACK_SIZE;
 
     // Both are zero-capacity rendezvous channels. The rendering side waits for the block to
     // finish after every chunk.

@@ -474,14 +474,12 @@ fn an_inline_image_is_embedded_in_the_pdf() {
         r#"<html><body><p>logo <img src="{}" width="32" height="24"> here</p></body></html>"#,
         jpeg_data_uri()
     );
-    let options = EngineOptions {
-        mode: Mode::Batch,
-        fonts: vec![FontSpec {
-            path: std::path::PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Batch;
+    options.fonts = vec![FontSpec {
+        path: std::path::PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html_src.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();

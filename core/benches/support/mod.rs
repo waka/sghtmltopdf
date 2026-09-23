@@ -206,25 +206,24 @@ pub fn fixture(name: &str) -> &'static Fixture {
 // ---------------------------------------------------------------------------
 
 pub fn engine_options(mode: Mode) -> EngineOptions {
-    EngineOptions {
-        mode,
-        fonts: EXPLICIT_FONTS
-            .iter()
-            .map(|f| font_spec(f.file, f.index))
-            .collect(),
-        generic_fonts: GENERIC_FONTS
-            .iter()
-            .map(|(family, file)| (*family, font_spec(file, 0)))
-            .collect(),
-        base_dir: Some(fixtures_dir()),
-        // Without this the engine fills gaps in the bundled set (there is no
-        // italic face, and `serif` is bound to a regular one) from whatever is
-        // installed on the machine, so the same fixture embeds Times New Roman
-        // here and DejaVu Serif on a Linux runner. Numbers are only comparable
-        // across machines with the search switched off.
-        disable_system_fonts: true,
-        ..EngineOptions::default()
-    }
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    options.fonts = EXPLICIT_FONTS
+        .iter()
+        .map(|f| font_spec(f.file, f.index))
+        .collect();
+    options.generic_fonts = GENERIC_FONTS
+        .iter()
+        .map(|(family, file)| (*family, font_spec(file, 0)))
+        .collect();
+    options.base_dir = Some(fixtures_dir());
+    // Without this the engine fills gaps in the bundled set (there is no
+    // italic face, and `serif` is bound to a regular one) from whatever is
+    // installed on the machine, so the same fixture embeds Times New Roman
+    // here and DejaVu Serif on a Linux runner. Numbers are only comparable
+    // across machines with the search switched off.
+    options.disable_system_fonts = true;
+    options
 }
 
 /// Renders `html` to PDF bytes through the public engine API, feeding it in

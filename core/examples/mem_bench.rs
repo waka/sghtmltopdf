@@ -118,15 +118,13 @@ fn run_one_case(case: &str) {
 /// the whole PDF would stay in memory and inflate the streaming mode's numbers by the size
 /// of the PDF.
 fn convert(html: &str, mode: Mode) {
-    let options = EngineOptions {
-        mode,
-        // The font is given explicitly so system font discovery cannot skew the numbers.
-        fonts: vec![FontSpec {
-            path: font_path(),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = mode;
+    // The font is given explicitly so system font discovery cannot skew the numbers.
+    options.fonts = vec![FontSpec {
+        path: font_path(),
+        index: 0,
+    }];
     let out_path =
         env::temp_dir().join(format!("sghtmltopdf-mem-bench-{}.pdf", std::process::id()));
     let sink = FileSink::create(&out_path).expect("cannot create the output");

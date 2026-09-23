@@ -45,6 +45,7 @@ impl PageSize {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct PageSettings {
     pub size: PageSize,
     pub margin: EdgeSizes,

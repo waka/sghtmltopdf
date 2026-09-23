@@ -168,14 +168,12 @@ fn a_split_table_encodes_to_a_valid_pdf() {
 
 #[test]
 fn a_long_table_also_splits_in_streaming_mode() {
-    let options = EngineOptions {
-        mode: Mode::Streaming,
-        fonts: vec![FontSpec {
-            path: PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Streaming;
+    options.fonts = vec![FontSpec {
+        path: PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
     let mut engine = Engine::new(options, MemorySink::new());
     engine
         .feed(format!("<html><body>{}</body></html>", table_html(80)).as_bytes())

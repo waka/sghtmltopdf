@@ -223,14 +223,12 @@ fn a_document_with_absolute_and_fixed_encodes_to_a_valid_pdf_in_batch_mode() {
           body
         </div>
       </body></html>"#;
-    let options = EngineOptions {
-        mode: Mode::Batch,
-        fonts: vec![FontSpec {
-            path: std::path::PathBuf::from(FONT_PATH),
-            index: 0,
-        }],
-        ..EngineOptions::default()
-    };
+    let mut options = EngineOptions::default();
+    options.mode = Mode::Batch;
+    options.fonts = vec![FontSpec {
+        path: std::path::PathBuf::from(FONT_PATH),
+        index: 0,
+    }];
     let mut engine = Engine::new(options, MemorySink::new());
     engine.feed(html_src.as_bytes()).unwrap();
     let bytes = engine.finish().unwrap();

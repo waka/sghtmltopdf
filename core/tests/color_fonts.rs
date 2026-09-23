@@ -205,6 +205,10 @@ fn pdf_bytes(html_src: &str, fonts: FontCollection) -> Vec<u8> {
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
     let settings = PageSettings::default();
     let pages = paginate_document(&dom, &styles, &fonts, &settings);
+    // With compression off the content streams can be inspected as
+    // plain bytes.
+    let mut uncompressed = PdfOutputOptions::default();
+    uncompressed.compress = false;
     encode_pdf_with_options(
         &pages,
         &styles,
@@ -212,12 +216,7 @@ fn pdf_bytes(html_src: &str, fonts: FontCollection) -> Vec<u8> {
         &fonts,
         &settings,
         &LinkSettings::default(),
-        // With compression off the content streams can be inspected as
-        // plain bytes.
-        &PdfOutputOptions {
-            compress: false,
-            ..PdfOutputOptions::default()
-        },
+        &uncompressed,
     )
 }
 
@@ -378,24 +377,19 @@ fn a_colr_v0_glyph_is_painted_with_its_palette_colours() {
 #[test]
 fn streaming_output_also_writes_the_colour_font() {
     for mode in [Mode::Batch, Mode::Streaming] {
-        let options = EngineOptions {
-            mode,
-            fonts: vec![
-                FontSpec {
-                    path: DEJAVU.into(),
-                    index: 0,
-                },
-                FontSpec {
-                    path: NOTO_COLOR_EMOJI.into(),
-                    index: 0,
-                },
-            ],
-            output: PdfOutputOptions {
-                compress: false,
-                ..PdfOutputOptions::default()
+        let mut options = EngineOptions::default();
+        options.mode = mode;
+        options.fonts = vec![
+            FontSpec {
+                path: DEJAVU.into(),
+                index: 0,
             },
-            ..EngineOptions::default()
-        };
+            FontSpec {
+                path: NOTO_COLOR_EMOJI.into(),
+                index: 0,
+            },
+        ];
+        options.output.compress = false;
         let mut engine = Engine::new(options, MemorySink::new());
         engine
             .feed("<p>A \u{1F389} B</p>".as_bytes())
