@@ -6,14 +6,14 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, LineBox,
     PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 

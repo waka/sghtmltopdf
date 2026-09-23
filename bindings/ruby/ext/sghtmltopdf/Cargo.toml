@@ -1,12 +1,17 @@
 [package]
-name = "sghtmltopdf"
+# The package name differs from the library name on purpose: the core crate is published as
+# `sghtmltopdf`, and two packages with the same name cannot be written to one lockfile.
+name = "sghtmltopdf-ruby"
 version = "0.5.0"
 edition = "2021"
 publish = false
 description = "Ruby binding for sghtmltopdf (see bindings/ruby)"
 
 [lib]
-# Loaded as a Ruby extension library (.so/.bundle).
+# Loaded as a Ruby extension library (.so/.bundle). The name has to stay `sghtmltopdf`:
+# rb_sys looks for `libsghtmltopdf.so` (it derives that from the gem name) and
+# `Init_sghtmltopdf` is the entry point Ruby calls.
+name = "sghtmltopdf"
 crate-type = ["cdylib"]
 
 [dependencies]
@@ -16,7 +21,8 @@ magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
 # The HTTP server (tiny_http) is not needed here, so the `server` feature is left out.
 # `svg` matches the CLI default, so the gem can render SVG too.
-sghtmltopdf-core = { path = "../../../../core", default-features = false, features = [
+# Renamed on import so that the `sghtmltopdf_core::` paths in the source stay as they are.
+sghtmltopdf_core = { package = "sghtmltopdf", path = "../../../../core", default-features = false, features = [
     "cli",
     "svg",
 ] }

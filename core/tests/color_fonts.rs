@@ -15,13 +15,13 @@
 use std::collections::HashMap;
 use std::io::Read;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::fonts::{ColorGlyph, Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{paginate_document, PageSettings};
-use sghtmltopdf_core::pdf::{encode_pdf_with_options, LinkSettings, PdfOutputOptions};
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::fonts::{ColorGlyph, Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{paginate_document, PageSettings};
+use sghtmltopdf::pdf::{encode_pdf_with_options, LinkSettings, PdfOutputOptions};
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const DEJAVU: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const NOTO_COLOR_EMOJI: &str = concat!(
@@ -318,7 +318,7 @@ fn a_word_space_after_an_emoji_is_measured_with_the_text_font() {
 }
 
 fn text_width(html_src: &str, fonts: FontCollection) -> f32 {
-    use sghtmltopdf_core::layout::{LaidOutBox, LaidOutContent};
+    use sghtmltopdf::layout::{LaidOutBox, LaidOutContent};
 
     fn walk(b: &LaidOutBox, out: &mut f32) {
         match &b.content {

@@ -6,14 +6,14 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, LineBox,
     PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -212,9 +212,7 @@ fn first_letter_splits_only_the_first_character_into_its_own_styled_run() {
         r#"<p class="dropcap">Hello world</p>"#,
         "p.dropcap::first-letter { font-size: 2.5em; }",
     );
-    let base_font_size = sghtmltopdf_core::style::ComputedStyle::default()
-        .font_size
-        .0;
+    let base_font_size = sghtmltopdf::style::ComputedStyle::default().font_size.0;
 
     fn first_line(b: &LaidOutBox) -> Option<&LineBox> {
         match &b.content {

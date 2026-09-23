@@ -171,7 +171,7 @@ Point the Ruby side at it with `Sghtmltopdf.configure { |c| c.server_url = "http
 
 ## Architecture
 
-CLI, HTTP server mode, and the Ruby binding (native extension, or delegating to an HTTP server) are four different doors into the same option parser (`cli/options.rs`) and the same engine (`sghtmltopdf-core`). What differs is how the call comes in, and where the resulting PDF bytes are written (the `Sink`).
+CLI, HTTP server mode, and the Ruby binding (native extension, or delegating to an HTTP server) are four different doors into the same option parser (`cli/options.rs`) and the same engine (`sghtmltopdf`). What differs is how the call comes in, and where the resulting PDF bytes are written (the `Sink`).
 
 ```mermaid
 flowchart TD
@@ -192,7 +192,7 @@ flowchart TD
     Server --> Options
     FFI --> Options
 
-    Engine["sghtmltopdf-core Engine<br/>parse HTML → cascade styles → layout → paginate → write PDF"]
+    Engine["sghtmltopdf Engine<br/>parse HTML → cascade styles → layout → paginate → write PDF"]
     Options --> Engine
 
     Engine -->|"FileSink / StdoutSink"| OutCLI["PDF file / stdout"]

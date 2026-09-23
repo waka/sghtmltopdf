@@ -9,13 +9,13 @@
 
 use std::path::PathBuf;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::img::{DocumentImageCache, ImageFetcher};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::img::{DocumentImageCache, ImageFetcher};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, LaidOutBox, LaidOutContent, PageSettings,
 };
-use sghtmltopdf_core::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 

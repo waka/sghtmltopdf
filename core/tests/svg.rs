@@ -23,13 +23,13 @@ use std::process::Command;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{
     paginate_document_with_absolutes, resolve_background_images, PageSettings,
 };
-use sghtmltopdf_core::pdf::{encode_pdf, ImageAssetCache};
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::{encode_pdf, ImageAssetCache};
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const BIN: &str = env!("CARGO_BIN_EXE_sghtmltopdf");

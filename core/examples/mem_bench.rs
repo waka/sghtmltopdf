@@ -20,8 +20,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::FileSink;
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::FileSink;
 
 /// The document sizes measured (the number of `<p>` elements).
 const ELEMENT_COUNTS: &[usize] = &[1_000, 5_000, 20_000, 60_000];

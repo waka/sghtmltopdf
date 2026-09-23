@@ -5,13 +5,13 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -301,7 +301,7 @@ fn a_flex_container_is_treated_as_an_atomic_unit_across_page_breaks() {
     find_all_tags(&dom, dom.document(), "div", &mut container_ids);
     let container_node = container_ids[1]; // in the order filler, container, a
 
-    fn found_on_page(page: &sghtmltopdf_core::layout::Page, target: NodeId) -> Option<&LaidOutBox> {
+    fn found_on_page(page: &sghtmltopdf::layout::Page, target: NodeId) -> Option<&LaidOutBox> {
         page.boxes.iter().find_map(|b| find_laid_out(b, target))
     }
     assert!(
@@ -545,7 +545,7 @@ fn flex_item_widths_keep_their_fractional_part() {
 
 // ===== Paginating a flex container that does not fit on one page (#18) =====
 
-fn paginate_pages(html_src: &str, css: &str) -> Vec<sghtmltopdf_core::layout::Page> {
+fn paginate_pages(html_src: &str, css: &str) -> Vec<sghtmltopdf::layout::Page> {
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
     let fonts = test_fonts();
@@ -553,7 +553,7 @@ fn paginate_pages(html_src: &str, css: &str) -> Vec<sghtmltopdf_core::layout::Pa
 }
 
 /// Every text line on the page as (text, in-page y, height), in document order.
-fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32, f32)> {
+fn text_lines_on_page(page: &sghtmltopdf::layout::Page) -> Vec<(String, f32, f32)> {
     fn walk(b: &LaidOutBox, out: &mut Vec<(String, f32, f32)>) {
         match &b.content {
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
@@ -585,7 +585,7 @@ fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32
 }
 
 /// Collects the text lines of every page and checks each one lands inside its page.
-fn all_lines_within_pages(pages: &[sghtmltopdf_core::layout::Page]) -> Vec<Vec<String>> {
+fn all_lines_within_pages(pages: &[sghtmltopdf::layout::Page]) -> Vec<Vec<String>> {
     let page_height = PageSettings::default().content_height();
     pages
         .iter()

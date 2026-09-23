@@ -10,7 +10,7 @@ Linux runner.
 ## Quick check before opening a PR
 
 ```sh
-cargo bench -p sghtmltopdf-core --bench metrics
+cargo bench -p sghtmltopdf --bench metrics
 ```
 
 This takes about 30 seconds. It renders every fixture and prints one row per
@@ -34,7 +34,7 @@ gate on purpose. Re-record the baseline and commit it with your change so the
 diff documents what moved:
 
 ```sh
-cargo bench -p sghtmltopdf-core --bench metrics -- --save-baseline
+cargo bench -p sghtmltopdf --bench metrics -- --save-baseline
 ```
 
 ## In CI
@@ -58,27 +58,27 @@ The three criterion targets measure wall-clock time statistically and print
 the change against the previous run:
 
 ```sh
-cargo bench -p sghtmltopdf-core --bench phases      # each pipeline stage, per fixture
-cargo bench -p sghtmltopdf-core --bench end_to_end  # Engine API, CLI binary, HTTP server
-cargo bench -p sghtmltopdf-core --bench scale       # 1k to 60k elements, batch and streaming
+cargo bench -p sghtmltopdf --bench phases      # each pipeline stage, per fixture
+cargo bench -p sghtmltopdf --bench end_to_end  # Engine API, CLI binary, HTTP server
+cargo bench -p sghtmltopdf --bench scale       # 1k to 60k elements, batch and streaming
 ```
 
 A full run of all three takes around ten minutes. Narrow it down with a
 regex on the benchmark name:
 
 ```sh
-cargo bench -p sghtmltopdf-core --bench phases -- 'phase/table_pagination/'
-cargo bench -p sghtmltopdf-core --bench phases -- '/layout$'
-cargo bench -p sghtmltopdf-core --bench end_to_end -- '^cli/'
+cargo bench -p sghtmltopdf --bench phases -- 'phase/table_pagination/'
+cargo bench -p sghtmltopdf --bench phases -- '/layout$'
+cargo bench -p sghtmltopdf --bench end_to_end -- '^cli/'
 ```
 
 To compare a branch against `main` rather than against your last run:
 
 ```sh
 git switch main
-cargo bench -p sghtmltopdf-core -- --save-baseline main
+cargo bench -p sghtmltopdf -- --save-baseline main
 git switch my-branch
-cargo bench -p sghtmltopdf-core -- --baseline main
+cargo bench -p sghtmltopdf -- --baseline main
 ```
 
 HTML reports with plots are written to `target/criterion/report/index.html`.

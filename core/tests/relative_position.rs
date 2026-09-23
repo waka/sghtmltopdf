@@ -8,11 +8,11 @@
 
 use std::path::PathBuf;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::img::{DocumentImageCache, ImageFetcher};
-use sghtmltopdf_core::layout::{paginate_document, LaidOutBox, LaidOutContent, PageSettings};
-use sghtmltopdf_core::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::img::{DocumentImageCache, ImageFetcher};
+use sghtmltopdf::layout::{paginate_document, LaidOutBox, LaidOutContent, PageSettings};
+use sghtmltopdf::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -69,7 +69,7 @@ fn with_probe<T>(css: &str, body: &str, tag: &str, f: impl FnOnce(&LaidOutBox) -
     f(b)
 }
 
-fn first_line(b: &LaidOutBox) -> &sghtmltopdf_core::layout::LineBox {
+fn first_line(b: &LaidOutBox) -> &sghtmltopdf::layout::LineBox {
     let LaidOutContent::Inline(lines) = &b.content else {
         panic!("expected inline content");
     };

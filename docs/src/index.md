@@ -81,7 +81,7 @@ wkhtmltopdf に特有のもの:
 
 ## 全体の構成
 
-CLI・HTTPサーバモード・Ruby（ネイティブ拡張 / HTTPサーバへの委譲）の4つの経路は、すべて同じオプション定義（`cli/options.rs`）と同じエンジン（`sghtmltopdf-core`）を通ります。
+CLI・HTTPサーバモード・Ruby（ネイティブ拡張 / HTTPサーバへの委譲）の4つの経路は、すべて同じオプション定義（`cli/options.rs`）と同じエンジン（`sghtmltopdf`）を通ります。
 違うのは呼び出し方と、変換後のPDFバイト列をどこへ書き出すか（Sink）だけです。
 
 ```mermaid
@@ -103,7 +103,7 @@ flowchart TD
     Server --> Options
     FFI --> Options
 
-    Engine["sghtmltopdf-core Engine<br/>HTML解析 → スタイル計算 → レイアウト → ページ分割 → PDF書き出し"]
+    Engine["sghtmltopdf Engine<br/>HTML解析 → スタイル計算 → レイアウト → ページ分割 → PDF書き出し"]
     Options --> Engine
 
     Engine -->|"FileSink / StdoutSink"| OutCLI["PDFファイル / 標準出力"]

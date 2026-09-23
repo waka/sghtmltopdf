@@ -36,8 +36,8 @@ fn count_occurrences(haystack: &[u8], needle: &[u8]) -> usize {
 fn media_box(width_px: f32, height_px: f32) -> String {
     format!(
         "/MediaBox [0 0 {} {}]",
-        width_px * sghtmltopdf_core::pdf::DEFAULT_SCALE,
-        height_px * sghtmltopdf_core::pdf::DEFAULT_SCALE
+        width_px * sghtmltopdf::pdf::DEFAULT_SCALE,
+        height_px * sghtmltopdf::pdf::DEFAULT_SCALE
     )
 }
 

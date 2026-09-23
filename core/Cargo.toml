@@ -1,18 +1,21 @@
 [package]
-name = "sghtmltopdf-core"
+name = "sghtmltopdf"
 version = "0.5.0"
 edition = "2021"
 description = "PDF rendering engine that is not depend on Chromium/WebKit/Gecko"
 license = "MIT"
 
 [lib]
-name = "sghtmltopdf_core"
+name = "sghtmltopdf"
 path = "src/lib.rs"
 
 [[bin]]
 name = "sghtmltopdf"
 path = "src/main.rs"
 required-features = ["cli"]
+# The lib and the bin share a name, so `cargo doc` would write both into the same
+# file. Documenting the bin adds nothing here, so it is turned off.
+doc = false
 
 # The HTTP server mode E2E tests need the `server` feature
 # (so they are excluded from a `--no-default-features --features cli` test run).

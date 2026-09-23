@@ -2,14 +2,14 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, LineBox,
     PageSettings,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -377,8 +377,8 @@ fn jpeg_data_uri() -> String {
 }
 
 fn layout_with_images(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
-    use sghtmltopdf_core::layout::{build_box_tree, resolve_images};
-    use sghtmltopdf_core::pdf::ImageAssetCache;
+    use sghtmltopdf::layout::{build_box_tree, resolve_images};
+    use sghtmltopdf::pdf::ImageAssetCache;
     let dom = html::parse(html_src.as_bytes());
     let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
     let fonts = test_fonts();
@@ -467,8 +467,8 @@ fn a_vertical_align_applies_to_an_inline_image() {
 fn an_inline_image_is_embedded_in_the_pdf() {
     // Image resolution goes through the whole `Engine` pipeline (`paginate_document` rebuilds
     // the box tree internally, so calling `resolve_images` from the test has no effect).
-    use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-    use sghtmltopdf_core::sink::MemorySink;
+    use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+    use sghtmltopdf::sink::MemorySink;
 
     let html_src = format!(
         r#"<html><body><p>logo <img src="{}" width="32" height="24"> here</p></body></html>"#,

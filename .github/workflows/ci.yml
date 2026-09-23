@@ -27,9 +27,9 @@ jobs:
       # Testing only the default features would never exercise `<text>` inside SVG,
       # so we also run a combination with that feature on (most of tests/svg_fonts.rs lives there).
       - name: cargo clippy (svg-text)
-        run: cargo clippy -p sghtmltopdf-core --features svg-text --all-targets -- -D warnings
+        run: cargo clippy -p sghtmltopdf --features svg-text --all-targets -- -D warnings
       - name: cargo test (svg-text)
-        run: cargo test -p sghtmltopdf-core --features svg-text
+        run: cargo test -p sghtmltopdf --features svg-text
 
   # Check dependency crates against advisories (RustSec)
   audit:
@@ -97,11 +97,11 @@ jobs:
       # and include it in the same PR.
       - name: metricsゲート
         run: |
-          cargo bench -p sghtmltopdf-core --bench metrics -- --runs 1 --no-time
+          cargo bench -p sghtmltopdf --bench metrics -- --runs 1 --no-time
       # The criterion numbers are not used for the check (they cannot be
       # measured on a runner), but each bench runs once so that breakage is
       # still noticed.
       - name: criterionのbenchを1回ずつ流す
         run: |
-          cargo bench -p sghtmltopdf-core \
+          cargo bench -p sghtmltopdf \
             --bench phases --bench end_to_end --bench scale -- --test

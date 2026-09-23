@@ -5,14 +5,14 @@
 
 use std::collections::HashMap;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::layout::{
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, PageSettings,
     Rect,
 };
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -488,7 +488,7 @@ fn auto_tracks_absorb_the_free_space_unless_justify_content_says_otherwise() {
 }
 
 /// Every text line on the page as (text, in-page y, height), in document order.
-fn text_lines_on_page(page: &sghtmltopdf_core::layout::Page) -> Vec<(String, f32, f32)> {
+fn text_lines_on_page(page: &sghtmltopdf::layout::Page) -> Vec<(String, f32, f32)> {
     fn walk(b: &LaidOutBox, out: &mut Vec<(String, f32, f32)>) {
         match &b.content {
             LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {

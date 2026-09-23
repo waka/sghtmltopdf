@@ -14,10 +14,10 @@ use std::hint::black_box;
 use std::time::Duration;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion, SamplingMode, Throughput};
-use sghtmltopdf_core::html;
-use sghtmltopdf_core::layout::{build_box_tree, layout_document, paginate, PageSettings};
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, user_agent_stylesheet};
+use sghtmltopdf::html;
+use sghtmltopdf::layout::{build_box_tree, layout_document, paginate, PageSettings};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, user_agent_stylesheet};
 
 use support::{author_stylesheet, font_collection, FIXTURES};
 
@@ -26,7 +26,7 @@ fn startup(c: &mut Criterion) {
     let mut group = c.benchmark_group("startup");
     group.sampling_mode(SamplingMode::Flat);
     group.bench_function("ua_stylesheet", |b| b.iter(user_agent_stylesheet));
-    let empty = sghtmltopdf_core::style::parse_stylesheet("");
+    let empty = sghtmltopdf::style::parse_stylesheet("");
     group.bench_function("load_fonts", |b| {
         b.iter(|| font_collection(black_box(&empty)))
     });

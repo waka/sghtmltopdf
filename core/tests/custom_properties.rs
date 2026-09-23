@@ -5,12 +5,12 @@
 
 use std::path::PathBuf;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::html::{self, Dom, NodeData, NodeId};
-use sghtmltopdf_core::img::{DocumentImageCache, ImageFetcher};
-use sghtmltopdf_core::layout::{build_box_tree, layout_document, paginate_document, PageSettings};
-use sghtmltopdf_core::pdf::encode_pdf;
-use sghtmltopdf_core::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
+use sghtmltopdf::img::{DocumentImageCache, ImageFetcher};
+use sghtmltopdf::layout::{build_box_tree, layout_document, paginate_document, PageSettings};
+use sghtmltopdf::pdf::encode_pdf;
+use sghtmltopdf::style::{compute_styles, extract_author_stylesheet, user_agent_stylesheet};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -43,13 +43,13 @@ fn find_all_tags(dom: &Dom, id: NodeId, tag: &str, out: &mut Vec<NodeId>) {
 }
 
 fn find_laid_out(
-    b: &sghtmltopdf_core::layout::LaidOutBox,
+    b: &sghtmltopdf::layout::LaidOutBox,
     target: NodeId,
-) -> Option<&sghtmltopdf_core::layout::LaidOutBox> {
+) -> Option<&sghtmltopdf::layout::LaidOutBox> {
     if b.node == Some(target) {
         return Some(b);
     }
-    if let sghtmltopdf_core::layout::LaidOutContent::Blocks(children) = &b.content {
+    if let sghtmltopdf::layout::LaidOutContent::Blocks(children) = &b.content {
         for child in children {
             if let Some(found) = find_laid_out(child, target) {
                 return Some(found);
@@ -70,13 +70,13 @@ fn dom_with_style(html_body: &str, css: &str) -> Dom {
     )
 }
 
-fn extract_stylesheet(dom: &Dom) -> sghtmltopdf_core::style::Stylesheet {
+fn extract_stylesheet(dom: &Dom) -> sghtmltopdf::style::Stylesheet {
     let fetcher = no_remote_fetcher();
     let cache = DocumentImageCache::new();
     extract_author_stylesheet(dom, &fetcher, &cache)
 }
 
-fn layout(html_body: &str, css: &str) -> (Dom, sghtmltopdf_core::layout::LaidOutBox) {
+fn layout(html_body: &str, css: &str) -> (Dom, sghtmltopdf::layout::LaidOutBox) {
     let dom = dom_with_style(html_body, css);
     let author = extract_stylesheet(&dom);
     let ua = user_agent_stylesheet();

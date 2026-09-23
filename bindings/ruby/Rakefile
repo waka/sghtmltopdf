@@ -5,7 +5,20 @@ require "rb_sys/extensiontask"
 
 GEMSPEC = Gem::Specification.load("sghtmltopdf.gemspec")
 
-RbSys::ExtensionTask.new("sghtmltopdf", GEMSPEC) do |ext|
+# The extension task is named after the gem, because that name decides the built library
+# (`lib/sghtmltopdf/sghtmltopdf.so`) and the `Init_sghtmltopdf` entry point. rb_sys also
+# uses it to look the crate up with `cargo metadata`, and there the Cargo package is
+# `sghtmltopdf-ruby`: the core crate is published to crates.io as `sghtmltopdf`, and two
+# packages of the same name cannot be written to one lockfile. Only the lookup is redirected.
+class ExtensionTask < RbSys::ExtensionTask
+  CARGO_PACKAGE = "sghtmltopdf-ruby"
+
+  def cargo_metadata
+    @cargo_metadata ||= RbSys::Cargo::Metadata.new_or_inferred(CARGO_PACKAGE)
+  end
+end
+
+ExtensionTask.new("sghtmltopdf", GEMSPEC) do |ext|
   ext.lib_dir = "lib/sghtmltopdf"
   # oxidize-rb/cross-gem-action
   ext.cross_compile = true

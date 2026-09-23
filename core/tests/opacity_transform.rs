@@ -5,8 +5,8 @@
 //! XObject with `/Group /S /Transparency`, so this confirms that `/Subtype /Form` and
 //! `/Transparency` really appear in the generated PDF bytes).
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::MemorySink;
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 

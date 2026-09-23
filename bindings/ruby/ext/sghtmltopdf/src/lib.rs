@@ -154,7 +154,10 @@ fn sleep_without_gvl(ms: u64) {
     gvl::without_gvl(|| std::thread::sleep(std::time::Duration::from_millis(ms)));
 }
 
-#[magnus::init]
+// The exported symbol has to match the `.so` file name, which stays `sghtmltopdf`. Without
+// this the name would come from the package (`sghtmltopdf-ruby`) and Ruby would look for an
+// `Init_sghtmltopdf` that does not exist.
+#[magnus::init(name = "sghtmltopdf")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     let module = ruby.define_module("Sghtmltopdf")?;
     errors::define(ruby, module)?;

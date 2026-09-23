@@ -22,7 +22,7 @@
 //!
 //! Run with: `cargo run --example spike_streaming_engine_api`
 
-use sghtmltopdf_core::sink::{MemorySink, Sink};
+use sghtmltopdf::sink::{MemorySink, Sink};
 
 /// Selects batch or streaming processing.
 ///

@@ -20,8 +20,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-use sghtmltopdf_core::fonts::{Font, FontCollection};
-use sghtmltopdf_core::pdf::SvgFontDb;
+use sghtmltopdf::fonts::{Font, FontCollection};
+use sghtmltopdf::pdf::SvgFontDb;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 const BOLD_FONT_PATH: &str = concat!(

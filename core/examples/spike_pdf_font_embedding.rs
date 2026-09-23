@@ -13,7 +13,7 @@
 use std::collections::BTreeMap;
 
 use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref, Str};
-use sghtmltopdf_core::fonts::{shape_text, Font};
+use sghtmltopdf::fonts::{shape_text, Font};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 

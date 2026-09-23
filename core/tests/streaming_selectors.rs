@@ -9,8 +9,8 @@
 //! merely a question of where the chunk boundaries happen to fall; the engine's contract is
 //! "the same result however it is chopped up", so the finest chopping is used).
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, Mode};
-use sghtmltopdf_core::sink::MemorySink;
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 /// The colour applied to a matched element. Counted as a PDF fill colour operator.
@@ -24,7 +24,7 @@ fn options(mode: Mode) -> EngineOptions {
             path: std::path::PathBuf::from(FONT_PATH),
             index: 0,
         }],
-        output: sghtmltopdf_core::pdf::PdfOutputOptions {
+        output: sghtmltopdf::pdf::PdfOutputOptions {
             // Left uncompressed so the fill colour operators can be counted.
             compress: false,
             ..Default::default()

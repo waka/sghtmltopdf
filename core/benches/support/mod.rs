@@ -17,13 +17,13 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use sghtmltopdf_core::engine::{Engine, EngineOptions, FontSpec, GenericFamily, Mode};
-use sghtmltopdf_core::fonts::{load_font_faces, Font, FontCollection, SystemFonts};
-use sghtmltopdf_core::html::{self, Dom, NodeId};
-use sghtmltopdf_core::img::{DocumentImageCache, ImageFetcher};
-use sghtmltopdf_core::layout::PageSettings;
-use sghtmltopdf_core::sink::MemorySink;
-use sghtmltopdf_core::style::{
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, GenericFamily, Mode};
+use sghtmltopdf::fonts::{load_font_faces, Font, FontCollection, SystemFonts};
+use sghtmltopdf::html::{self, Dom, NodeId};
+use sghtmltopdf::img::{DocumentImageCache, ImageFetcher};
+use sghtmltopdf::layout::PageSettings;
+use sghtmltopdf::sink::MemorySink;
+use sghtmltopdf::style::{
     compute_styles, extract_author_stylesheet, user_agent_stylesheet, ComputedStyle, Stylesheet,
 };
 

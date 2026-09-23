@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-09-19T10:49:37-05:00\n"
+"POT-Creation-Date: 2026-09-23T14:34:35+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -484,12 +484,12 @@ msgid ""
 msgstr ""
 "Memory use is roughly on par with wkhtmltopdf. At 60,000 elements and for "
 "the 20,000 row statement sghtmltopdf uses slightly more, and it grows with "
-"document size just as wkhtmltopdf does. [Streaming mode](usage/cli/"
-"streaming.md) brings this down to 25MB for the paragraph document. It does "
-"not help for a statement built from one huge table, however. Pages are "
-"flushed at the boundaries of the elements directly under `<body>`, so a "
-"document that contains a single table cannot release memory until the end of "
-"that table has been written."
+"document size just as wkhtmltopdf does. [Streaming mode](usage/cli/streaming."
+"md) brings this down to 25MB for the paragraph document. It does not help "
+"for a statement built from one huge table, however. Pages are flushed at the "
+"boundaries of the elements directly under `<body>`, so a document that "
+"contains a single table cannot release memory until the end of that table "
+"has been written."
 
 #: src/index.md:79
 msgid ""
@@ -508,14 +508,14 @@ msgstr "Architecture"
 #: src/index.md:84
 msgid ""
 "CLI・HTTPサーバモード・Ruby（ネイティブ拡張 / HTTPサーバへの委譲）の4つの経路"
-"は、すべて同じオプション定義（`cli/options.rs`）と同じエンジン（`sghtmltopdf-"
-"core`）を通ります。 違うのは呼び出し方と、変換後のPDFバイト列をどこへ書き出す"
-"か（Sink）だけです。"
+"は、すべて同じオプション定義（`cli/options.rs`）と同じエンジン"
+"（`sghtmltopdf`）を通ります。 違うのは呼び出し方と、変換後のPDFバイト列をどこ"
+"へ書き出すか（Sink）だけです。"
 msgstr ""
 "CLI, HTTP server mode, and the Ruby binding (native extension, or delegating "
 "to an HTTP server) are four different doors into the same option parser "
-"(`cli/options.rs`) and the same engine (`sghtmltopdf-core`). What differs is "
-"how the call comes in, and where the resulting PDF bytes are written (the "
+"(`cli/options.rs`) and the same engine (`sghtmltopdf`). What differs is how "
+"the call comes in, and where the resulting PDF bytes are written (the "
 "`Sink`)."
 
 #: src/index.md:87
@@ -531,8 +531,8 @@ msgid ""
 "\n"
 "    CallCLI[\"ターミナル / CI\"] --> CLI\n"
 "    CallHTTP[\"他言語・curl\"] -->|\"POST /pdf?options\"| Server\n"
-"    CallRuby[\"Rails / Rubyアプリ<br/>(gem sghtmltopdf)\"] -->|"
-"\"Sghtmltopdf.render\"| FFI\n"
+"    CallRuby[\"Rails / Rubyアプリ<br/>(gem sghtmltopdf)\"] -->|\"Sghtmltopdf."
+"render\"| FFI\n"
 "    CallRuby -->|\"server_url 設定時\"| Delegate[\"ServerClient\"]\n"
 "    Delegate -->|\"POST /pdf?options<br/>(別プロセス・別ホストへHTTP委譲)\"| "
 "Server\n"
@@ -542,8 +542,8 @@ msgid ""
 "    Server --> Options\n"
 "    FFI --> Options\n"
 "\n"
-"    Engine[\"sghtmltopdf-core Engine<br/>HTML解析 → スタイル計算 → レイアウ"
-"ト → ページ分割 → PDF書き出し\"]\n"
+"    Engine[\"sghtmltopdf Engine<br/>HTML解析 → スタイル計算 → レイアウト → "
+"ページ分割 → PDF書き出し\"]\n"
 "    Options --> Engine\n"
 "\n"
 "    Engine -->|\"FileSink / StdoutSink\"| OutCLI[\"PDFファイル / 標準出力"
@@ -566,8 +566,8 @@ msgstr ""
 "    CallCLI[\"Shell / CI\"] --> CLI\n"
 "    CallHTTP[\"Any language (curl, ...)\"] -->|\"POST /pdf?options\"| "
 "Server\n"
-"    CallRuby[\"Ruby app / Rails<br/>(gem sghtmltopdf)\"] -->|"
-"\"Sghtmltopdf.render\"| FFI\n"
+"    CallRuby[\"Ruby app / Rails<br/>(gem sghtmltopdf)\"] -->|\"Sghtmltopdf."
+"render\"| FFI\n"
 "    CallRuby -->|\"when server_url is set\"| Delegate[\"ServerClient\"]\n"
 "    Delegate -->|\"POST /pdf?options<br/>(HTTP, separate process/host)\"| "
 "Server\n"
@@ -577,8 +577,8 @@ msgstr ""
 "    Server --> Options\n"
 "    FFI --> Options\n"
 "\n"
-"    Engine[\"sghtmltopdf-core Engine<br/>parse HTML → cascade styles → "
-"layout → paginate → write PDF\"]\n"
+"    Engine[\"sghtmltopdf Engine<br/>parse HTML → cascade styles → layout → "
+"paginate → write PDF\"]\n"
 "    Options --> Engine\n"
 "\n"
 "    Engine -->|\"FileSink / StdoutSink\"| OutCLI[\"PDF file / stdout\"]\n"
@@ -702,8 +702,8 @@ msgstr "\"sghtmltopdf\""
 #: src/getting-started/install.md:56
 msgid ""
 "ビルド済み(precompiled)のgemを配布する方針のため、利用側にRustのツールチェイ"
-"ンは要りません。 対応は`x86_64-linux`・`aarch64-linux`(glibc)・`arm64-darwin`"
-"・`x86_64-darwin`と、Ruby 3.2以上です。"
+"ンは要りません。 対応は`x86_64-linux`・`aarch64-linux`(glibc)・`arm64-"
+"darwin`・`x86_64-darwin`と、Ruby 3.2以上です。"
 msgstr ""
 "Precompiled gems are distributed, so you do not need a Rust toolchain to "
 "install it. The supported platforms are `x86_64-linux`, `aarch64-linux` "
@@ -1247,7 +1247,7 @@ msgstr "Input and output"
 #: src/usage/cli/reference.md:29 src/usage/cli/reference.md:41
 #: src/usage/cli/reference.md:62 src/usage/cli/reference.md:85
 #: src/usage/cli/reference.md:102 src/usage/cli/reference.md:129
-#: src/usage/cli/reference.md:164 src/usage/cli/reference.md:184
+#: src/usage/cli/reference.md:165 src/usage/cli/reference.md:185
 #: src/usage/server.md:25 src/usage/ruby_rails.md:44
 #: src/migration/wkhtmltopdf-options.md:29
 #: src/migration/wkhtmltopdf-options.md:67
@@ -1259,7 +1259,7 @@ msgid "オプション"
 msgstr "Option"
 
 #: src/usage/cli/reference.md:29 src/usage/cli/reference.md:41
-#: src/usage/cli/reference.md:85 src/usage/cli/reference.md:164
+#: src/usage/cli/reference.md:85 src/usage/cli/reference.md:165
 #: src/usage/server.md:25 src/usage/ruby_rails.md:73
 #: src/usage/ruby_rails.md:165
 msgid "既定"
@@ -1268,7 +1268,7 @@ msgstr "Default"
 #: src/usage/cli/reference.md:29 src/usage/cli/reference.md:41
 #: src/usage/cli/reference.md:62 src/usage/cli/reference.md:85
 #: src/usage/cli/reference.md:102 src/usage/cli/reference.md:129
-#: src/usage/cli/reference.md:164 src/usage/server.md:25 src/usage/server.md:40
+#: src/usage/cli/reference.md:165 src/usage/server.md:25 src/usage/server.md:40
 #: src/usage/ruby_rails.md:73
 msgid "説明"
 msgstr "Description"
@@ -1337,7 +1337,7 @@ msgid "`--streaming`"
 msgstr "`--streaming`"
 
 #: src/usage/cli/reference.md:35 src/usage/cli/reference.md:91
-#: src/usage/cli/reference.md:92 src/usage/cli/reference.md:167
+#: src/usage/cli/reference.md:92 src/usage/cli/reference.md:168
 msgid "オフ"
 msgstr "Off"
 
@@ -1829,13 +1829,21 @@ msgstr ""
 
 #: src/usage/cli/reference.md:153
 msgid ""
-"外部リソースを取得しません。使えるのはインラインの`<style>`・テキスト・枠線・"
-"背景色までで、`<img>`と外部CSSは非対応です"
+"`data:` URLの埋め込み画像を`<img>`と`background-image`で使用できます(PNG / "
+"JPEG / WebP / SVG。SVGは`svg` featureが必要)。`--no-images`も適用されます"
 msgstr ""
-"No external resources are fetched. Inline `<style>`, text, borders, and "
-"background colours work; `<img>` and external CSS do not"
+"Images embedded as `data:` URLs work in `<img>` and `background-image` (PNG, "
+"JPEG, WebP, SVG; SVG needs the `svg` feature). `--no-images` applies here too"
 
 #: src/usage/cli/reference.md:154
+msgid ""
+"外部リソースは取得しません。ローカルファイル・リモートURLの画像と外部CSSは非"
+"対応です"
+msgstr ""
+"No external resources are fetched. Images from local files or remote URLs, "
+"and external CSS, are not supported"
+
+#: src/usage/cli/reference.md:155
 msgid ""
 "ヘッダー/フッターHTML内の`@font-face`は読み込みません。そこでしか使わないフォ"
 "ントは`--font`で明示してください"
@@ -1843,122 +1851,122 @@ msgstr ""
 "`@font-face` inside the header or footer HTML is not loaded. Name any font "
 "used only there with `--font`"
 
-#: src/usage/cli/reference.md:156 src/migration/wkhtmltopdf.md:44
+#: src/usage/cli/reference.md:157 src/migration/wkhtmltopdf.md:44
 msgid "表紙と目次"
 msgstr "Cover page and table of contents"
 
-#: src/usage/cli/reference.md:159
+#: src/usage/cli/reference.md:160
 msgid "\"[page]\""
 msgstr "\"[page]\""
 
-#: src/usage/cli/reference.md:162
+#: src/usage/cli/reference.md:163
 msgid "書き出される順は 表紙 → 目次 → 本文 です。"
 msgstr "They are written in the order cover, table of contents, body."
 
-#: src/usage/cli/reference.md:166
+#: src/usage/cli/reference.md:167
 msgid "`--cover <PATH>`"
 msgstr "`--cover <PATH>`"
 
-#: src/usage/cli/reference.md:166
+#: src/usage/cli/reference.md:167
 msgid "表紙にするHTML。ページ番号に数えず、ヘッダー/フッターも出さない"
 msgstr ""
 "The HTML to use as the cover. It is not counted in the page numbers and gets "
 "no header or footer"
 
-#: src/usage/cli/reference.md:167 src/usage/cli/streaming.md:19
+#: src/usage/cli/reference.md:168 src/usage/cli/streaming.md:19
 msgid "`--toc`"
 msgstr "`--toc`"
 
-#: src/usage/cli/reference.md:167
+#: src/usage/cli/reference.md:168
 msgid "目次を本文の前に挿入する(ストリーミングモードでは使えない)"
 msgstr ""
 "Insert a table of contents before the body; not available in streaming mode"
 
-#: src/usage/cli/reference.md:168
+#: src/usage/cli/reference.md:169
 msgid "`--toc-header-text <TEXT>`"
 msgstr "`--toc-header-text <TEXT>`"
 
-#: src/usage/cli/reference.md:168
+#: src/usage/cli/reference.md:169
 msgid "`Table of Contents`"
 msgstr "`Table of Contents`"
 
-#: src/usage/cli/reference.md:168
+#: src/usage/cli/reference.md:169
 msgid "目次の`<h1>`"
 msgstr "The `<h1>` of the table of contents"
 
-#: src/usage/cli/reference.md:169
+#: src/usage/cli/reference.md:170
 msgid "`--toc-level-indentation <WIDTH>`"
 msgstr "`--toc-level-indentation <WIDTH>`"
 
-#: src/usage/cli/reference.md:169
+#: src/usage/cli/reference.md:170
 msgid "`1em`"
 msgstr "`1em`"
 
-#: src/usage/cli/reference.md:169
+#: src/usage/cli/reference.md:170
 msgid "階層1段ごとのインデント"
 msgstr "The indent added per level"
 
-#: src/usage/cli/reference.md:170
+#: src/usage/cli/reference.md:171
 msgid "`--toc-text-size-shrink <REAL>`"
 msgstr "`--toc-text-size-shrink <REAL>`"
 
-#: src/usage/cli/reference.md:170
+#: src/usage/cli/reference.md:171
 msgid "`0.8`"
 msgstr "`0.8`"
 
-#: src/usage/cli/reference.md:170
+#: src/usage/cli/reference.md:171
 msgid "階層1段ごとの文字サイズ比"
 msgstr "The text size ratio applied per level"
 
-#: src/usage/cli/reference.md:171 src/migration/wkhtmltopdf-options.md:147
+#: src/usage/cli/reference.md:172 src/migration/wkhtmltopdf-options.md:147
 msgid "`--disable-dotted-lines`"
 msgstr "`--disable-dotted-lines`"
 
-#: src/usage/cli/reference.md:171
+#: src/usage/cli/reference.md:172
 msgid "(引く)"
 msgstr "(drawn)"
 
-#: src/usage/cli/reference.md:171
+#: src/usage/cli/reference.md:172
 msgid "項目の破線の下線を引かない"
 msgstr "Do not draw the dotted leader under each entry"
 
-#: src/usage/cli/reference.md:172 src/migration/wkhtmltopdf-options.md:148
+#: src/usage/cli/reference.md:173 src/migration/wkhtmltopdf-options.md:148
 msgid "`--disable-toc-links`"
 msgstr "`--disable-toc-links`"
 
-#: src/usage/cli/reference.md:172
+#: src/usage/cli/reference.md:173
 msgid "(張る)"
 msgstr "(linked)"
 
-#: src/usage/cli/reference.md:172
+#: src/usage/cli/reference.md:173
 msgid "目次から見出しへのリンクを張らない"
 msgstr "Do not link the entries to their headings"
 
-#: src/usage/cli/reference.md:173
+#: src/usage/cli/reference.md:174
 msgid "`--enable-toc-back-links`"
 msgstr "`--enable-toc-back-links`"
 
-#: src/usage/cli/reference.md:173
+#: src/usage/cli/reference.md:174
 msgid "(張らない)"
 msgstr "(not linked)"
 
-#: src/usage/cli/reference.md:173
+#: src/usage/cli/reference.md:174
 msgid "見出しから目次へ戻るリンクを張る"
 msgstr "Link each heading back to the table of contents"
 
-#: src/usage/cli/reference.md:174
+#: src/usage/cli/reference.md:175
 msgid "`--page-offset <N>`"
 msgstr "`--page-offset <N>`"
 
-#: src/usage/cli/reference.md:174 src/usage/cli/reference.md:249
+#: src/usage/cli/reference.md:175 src/usage/cli/reference.md:250
 msgid "0"
 msgstr "0"
 
-#: src/usage/cli/reference.md:174
+#: src/usage/cli/reference.md:175
 msgid "ページ番号の起点をずらす"
 msgstr "Shift where the page numbering starts"
 
-#: src/usage/cli/reference.md:176
+#: src/usage/cli/reference.md:177
 msgid ""
 "目次のHTML構造と既定スタイルはwkhtmltopdfの既定TOC XSLの出力に合わせてありま"
 "す(階層は入れ子の`<ul>`、各項目は`<div><a>見出し</a><span>ページ番号</span></"
@@ -1971,7 +1979,7 @@ msgstr ""
 "change how it looks, apply CSS with `--user-style-sheet`; XSLT is not "
 "supported."
 
-#: src/usage/cli/reference.md:179
+#: src/usage/cli/reference.md:180
 msgid ""
 "見出しは`h1`〜`h6`から集めます。 `id`が無い見出しには自動で宛先名が振られま"
 "す。"
@@ -1979,43 +1987,43 @@ msgstr ""
 "Headings are collected from `h1` through `h6`. A heading without an `id` is "
 "given a generated destination name."
 
-#: src/usage/cli/reference.md:182
+#: src/usage/cli/reference.md:183
 msgid "アクセス制御"
 msgstr "Access control"
 
-#: src/usage/cli/reference.md:184
+#: src/usage/cli/reference.md:185
 msgid "CLIの既定"
 msgstr "CLI default"
 
-#: src/usage/cli/reference.md:184
+#: src/usage/cli/reference.md:185
 msgid "サーバの既定"
 msgstr "Server default"
 
-#: src/usage/cli/reference.md:186
+#: src/usage/cli/reference.md:187
 msgid "`--enable-local-file-access` / `--disable-local-file-access`"
 msgstr "`--enable-local-file-access`, `--disable-local-file-access`"
 
-#: src/usage/cli/reference.md:186
+#: src/usage/cli/reference.md:187
 msgid "許可"
 msgstr "Allowed"
 
-#: src/usage/cli/reference.md:186 src/usage/cli/reference.md:188
+#: src/usage/cli/reference.md:187 src/usage/cli/reference.md:189
 msgid "禁止"
 msgstr "Denied"
 
-#: src/usage/cli/reference.md:187
+#: src/usage/cli/reference.md:188
 msgid "`--allow-path <PATH>`"
 msgstr "`--allow-path <PATH>`"
 
-#: src/usage/cli/reference.md:187
+#: src/usage/cli/reference.md:188
 msgid "制限なし"
 msgstr "No restriction"
 
-#: src/usage/cli/reference.md:188 src/migration/wkhtmltopdf-options.md:157
+#: src/usage/cli/reference.md:189 src/migration/wkhtmltopdf-options.md:157
 msgid "`--allow-remote-assets`"
 msgstr "`--allow-remote-assets`"
 
-#: src/usage/cli/reference.md:190
+#: src/usage/cli/reference.md:191
 msgid ""
 "`--allow-path`を1つ以上指定すると、ローカル参照はそのディレクトリ配下だけに限"
 "定されます。 `<img src>`・外部CSS・`@font-face`のすべてに効きます。"
@@ -2024,18 +2032,18 @@ msgstr ""
 "to those directories. This applies to `<img src>`, external CSS, and `@font-"
 "face` alike."
 
-#: src/usage/cli/reference.md:193
+#: src/usage/cli/reference.md:194
 msgid ""
 "判定は実パス(シンボリックリンクを辿った後のパス)で行います。 指定したディレク"
 "トリが存在しない場合は起動時にエラーになります。 黙って無視すると、許可した範"
 "囲と実際に効く範囲がずれるためです。"
 msgstr "Ranges"
 
-#: src/usage/cli/reference.md:197
+#: src/usage/cli/reference.md:198
 msgid "基準ディレクトリの外への参照"
 msgstr "References outside the base directory"
 
-#: src/usage/cli/reference.md:199
+#: src/usage/cli/reference.md:200
 msgid ""
 "ローカル参照は既定で基準ディレクトリ(`--base-url`、既定は入力HTMLのあるディレ"
 "クトリ)の中に閉じます。 `../`で外へ出ようとする参照はエラーになります。 信頼"
@@ -2047,7 +2055,7 @@ msgstr ""
 "it is an error. This keeps untrusted HTML from reading arbitrary files "
 "through a reference such as `<img src=\"../../../../etc/passwd\">`."
 
-#: src/usage/cli/reference.md:203
+#: src/usage/cli/reference.md:204
 msgid ""
 "`assets/../images/logo.png`のように基準ディレクトリの中で完結する`../`は従来"
 "どおり使えます。"
@@ -2055,7 +2063,7 @@ msgstr ""
 "A `../` that resolves within the base directory, such as `assets/../images/"
 "logo.png`, keeps working as before."
 
-#: src/usage/cli/reference.md:205
+#: src/usage/cli/reference.md:206
 msgid ""
 "外のファイルを意図的に参照する場合は`--allow-path`で範囲を明示してください。 "
 "`--allow-path`を指定した場合は、基準ディレクトリではなく許可したディレクトリ"
@@ -2065,7 +2073,7 @@ msgstr ""
 "file outside it. Once `--allow-path` is given, the boundary is the allowed "
 "directories rather than the base directory."
 
-#: src/usage/cli/reference.md:216
+#: src/usage/cli/reference.md:217
 msgid ""
 "判定はパス文字列に対して行うため、基準ディレクトリ配下のシンボリックリンクは"
 "辿ります。 シンボリックリンクの先まで含めて閉じたい場合は`--allow-path`を使っ"
@@ -2075,11 +2083,11 @@ msgstr ""
 "`--allow-path` when you want the boundary to hold across symlinks as well "
 "(that check resolves real paths)."
 
-#: src/usage/cli/reference.md:219
+#: src/usage/cli/reference.md:220
 msgid "`/`で始まる参照"
 msgstr "A reference starting with `/`"
 
-#: src/usage/cli/reference.md:221
+#: src/usage/cli/reference.md:222
 msgid ""
 "`/assets/logo.png`のように`/`で始まる参照は、まず基準ディレクトリからのサイト"
 "ルート相対(`<基準ディレクトリ>/assets/logo.png`)として解決します。 Railsのア"
@@ -2091,7 +2099,7 @@ msgstr ""
 "assets/logo.png`). That is the shape the Rails asset pipeline emits, so "
 "pointing the base directory at a precompiled `public/` resolves it as it is."
 
-#: src/usage/cli/reference.md:224
+#: src/usage/cli/reference.md:225
 msgid ""
 "そこにファイルが無い場合に限り、同じ文字列をファイルシステムの絶対パスとして"
 "解釈し直します。 `<img src=\"/var/www/app/public/logo.png\">`のような書き方の"
@@ -2105,17 +2113,17 @@ msgstr ""
 "same rules as for any other reference: an absolute path inside the base "
 "directory is read as it is, one outside it needs `--allow-path`."
 
-#: src/usage/cli/reference.md:229
+#: src/usage/cli/reference.md:230
 msgid ""
 "どちらの解釈でもファイルが見つからない場合は、両方のパスを挙げたエラーになり"
 "ます。"
 msgstr "When neither reading finds a file, the error names both paths."
 
-#: src/usage/cli/reference.md:231
+#: src/usage/cli/reference.md:232
 msgid "入力の大きさの制限"
 msgstr "Limits on input size"
 
-#: src/usage/cli/reference.md:233
+#: src/usage/cli/reference.md:234
 msgid ""
 "要素数がおよそ50万ノードを超えるHTMLはエラーになります。 算出スタイル・ボック"
 "スツリー・レイアウト結果がノード数に比例して積み上がるためで、実測では1ノード"
@@ -2125,7 +2133,7 @@ msgstr ""
 "box tree and the layout result all grow in proportion to the node count; "
 "measured at 472 B to 1210 B per node."
 
-#: src/usage/cli/reference.md:236
+#: src/usage/cli/reference.md:237
 msgid ""
 "数千ページ規模の文書でも数十万ノードなので、実在の文書がここに当たることはま"
 "ずありません。 当たった場合は文書を分割するか、[ストリーミングモード]"
@@ -2138,7 +2146,7 @@ msgstr ""
 "each processed part as it goes, so it can convert documents whose total "
 "exceeds the limit."
 
-#: src/usage/cli/reference.md:240
+#: src/usage/cli/reference.md:241
 msgid ""
 "テキストの量に比例するメモリはこの上限では抑えられません(要素3個でも10MiBのテ"
 "キストなら約1.7GiB使います)。 HTTPサーバモードでは`--max-body-size`がその役割"
@@ -2148,11 +2156,11 @@ msgstr ""
 "(three elements holding 10 MiB of text still use about 1.7 GiB). In HTTP "
 "server mode `--max-body-size` plays that role."
 
-#: src/usage/cli/reference.md:243
+#: src/usage/cli/reference.md:244
 msgid "ログとexit code"
 msgstr "Logging and exit codes"
 
-#: src/usage/cli/reference.md:245
+#: src/usage/cli/reference.md:246
 msgid ""
 "`--log-level <none|error|warn|info>`(既定`info`)、`-q`/`--quiet`(=`--log-"
 "level none`)。"
@@ -2160,34 +2168,34 @@ msgstr ""
 "`--log-level <none|error|warn|info>`, `info` by default, and `-q` or `--"
 "quiet`, which is the same as `--log-level none`."
 
-#: src/usage/cli/reference.md:247
+#: src/usage/cli/reference.md:248
 msgid "code"
 msgstr "Code"
 
-#: src/usage/cli/reference.md:247 src/usage/ruby_rails.md:54
+#: src/usage/cli/reference.md:248 src/usage/ruby_rails.md:54
 #: src/usage/ruby_rails.md:165 src/migration/wkhtmltopdf-options.md:6
 msgid "意味"
 msgstr "Meaning"
 
-#: src/usage/cli/reference.md:249
+#: src/usage/cli/reference.md:250
 msgid "成功"
 msgstr "Success"
 
-#: src/usage/cli/reference.md:250
+#: src/usage/cli/reference.md:251
 msgid "1"
 msgstr "1"
 
-#: src/usage/cli/reference.md:250
+#: src/usage/cli/reference.md:251
 msgid "使用法エラー(不明なオプション、値の形式不正、非対応オプションの指定)"
 msgstr ""
 "Usage error: an unknown option, a malformed value, or an option that is not "
 "supported"
 
-#: src/usage/cli/reference.md:251
+#: src/usage/cli/reference.md:252
 msgid "2"
 msgstr "2"
 
-#: src/usage/cli/reference.md:251
+#: src/usage/cli/reference.md:252
 msgid ""
 "入力/リソースエラー(ファイルが無い、フォントが読めない、`abort`指定での取得失"
 "敗)"
@@ -2195,20 +2203,20 @@ msgstr ""
 "Input or resource error: a missing file, a font that cannot be read, or a "
 "failed fetch under `abort`"
 
-#: src/usage/cli/reference.md:252
+#: src/usage/cli/reference.md:253
 msgid "3"
 msgstr "3"
 
-#: src/usage/cli/reference.md:252
+#: src/usage/cli/reference.md:253
 msgid "レンダリングエラー(ストリーミングモードの制約違反など)"
 msgstr ""
 "Rendering error, such as breaking one of the streaming mode restrictions"
 
-#: src/usage/cli/reference.md:253
+#: src/usage/cli/reference.md:254
 msgid "4"
 msgstr "4"
 
-#: src/usage/cli/reference.md:253
+#: src/usage/cli/reference.md:254
 msgid ""
 "制限時間超過(HTTPサーバモードの`--timeout`のみ。CLIには時間制限がないため出ま"
 "せん)"
@@ -2345,8 +2353,8 @@ msgstr ""
 "An element directly under `<body>` has its style settled the moment its next "
 "sibling appears. Only selectors that need to know whether more elements of "
 "the same kind follow are therefore undecidable. Rewrite rules such as "
-"\"remove the rule on the last row only\" by adding a class and writing "
-"`.last { … }` instead."
+"\"remove the rule on the last row only\" by adding a class and writing `."
+"last { … }` instead."
 
 #: src/usage/cli/streaming.md:37
 msgid ""
@@ -2354,10 +2362,10 @@ msgid ""
 "child`など)はバッチと同じ結果になります。 詳細は[セレクタ](../../supports/"
 "selectors.md#ストリーミングモード固有の制約)を参照してください。"
 msgstr ""
-"Every other sibling selector — `+`, `~`, `:first-child`, `:nth-child()`, "
-"`:last-child` and so on — gives the same result as batch mode. See "
-"[Selectors](../../supports/selectors.md#restrictions-specific-to-streaming-"
-"mode) for the details."
+"Every other sibling selector — `+`, `~`, `:first-child`, `:nth-child()`, `:"
+"last-child` and so on — gives the same result as batch mode. See [Selectors]"
+"(../../supports/selectors.md#restrictions-specific-to-streaming-mode) for "
+"the details."
 
 #: src/usage/cli/streaming.md:40
 msgid "使えるもの"
@@ -3111,8 +3119,8 @@ msgstr ""
 
 #: src/usage/ruby_rails.md:10
 msgid ""
-"wicked_pdfから移ってくる場合は[wicked_pdfからの移行](../migration/wicked-"
-"pdf.md)もあわせて読んでください。"
+"wicked_pdfから移ってくる場合は[wicked_pdfからの移行](../migration/wicked-pdf."
+"md)もあわせて読んでください。"
 msgstr ""
 "If you are coming from wicked_pdf, read [Migrating from wicked_pdf](../"
 "migration/wicked-pdf.md) as well."
@@ -3385,8 +3393,8 @@ msgstr "\"vendor/fonts/NotoSansJP-Regular.ttf\""
 
 #: src/usage/ruby_rails.md:92
 msgid ""
-"マージ順はグローバル設定 → 呼び出し時の引数で、後者が勝ちます。 "
-"`Sghtmltopdf.reset_config!`で空に戻せます(主にテスト用)。"
+"マージ順はグローバル設定 → 呼び出し時の引数で、後者が勝ちます。 `Sghtmltopdf."
+"reset_config!`で空に戻せます(主にテスト用)。"
 msgstr ""
 "Global configuration is merged first and the arguments at the call site win. "
 "`Sghtmltopdf.reset_config!` clears it again, mainly for tests."
@@ -3646,11 +3654,11 @@ msgid ""
 "どちらも`Sghtmltopdf.configure`で上書きできます(イニシャライザの実行順に依存"
 "しません)。 `allow_path`の既定はテンプレートにユーザー入力が混ざっても文書外"
 "のファイルを読ませないためのものなので、アプリの外(例: `/usr/share/fonts`)を"
-"参照している場合は明示的に足してください。 内訳は`public/`と"
-"`config.assets.paths`(Propshaft/Sprocketsのロードパス)で、gemやengineが提供す"
-"るアセットのように`Rails.root`の外にあるものも含みます。 `config/`や`db/`は入"
-"らないので、`Rails.root.join(\"tmp/chart.png\")`のようにアセット以外の場所を"
-"参照している場合も足してください。"
+"参照している場合は明示的に足してください。 内訳は`public/`と`config.assets."
+"paths`(Propshaft/Sprocketsのロードパス)で、gemやengineが提供するアセットのよ"
+"うに`Rails.root`の外にあるものも含みます。 `config/`や`db/`は入らないので、"
+"`Rails.root.join(\"tmp/chart.png\")`のようにアセット以外の場所を参照している"
+"場合も足してください。"
 msgstr ""
 "Both can be overridden with `Sghtmltopdf.configure`, regardless of "
 "initializer order. The `allow_path` default exists so that user input mixed "
@@ -3946,8 +3954,8 @@ msgstr "`Thread#kill` and timeouts work"
 #: src/usage/ruby_rails.md:278
 msgid ""
 "ブロックの呼び出しはRubyのメソッド呼び出しなので、その時点で保留中の割り込み"
-"が処理されます。 ブロック付きで呼んでいる限り、`Thread#kill`や"
-"`Timeout.timeout`・`Rack::Timeout`がチャンク境界で効きます。"
+"が処理されます。 ブロック付きで呼んでいる限り、`Thread#kill`や`Timeout."
+"timeout`・`Rack::Timeout`がチャンク境界で効きます。"
 msgstr ""
 "Calling the block is an ordinary Ruby method call, so any pending interrupt "
 "is handled at that point. As long as you pass a block, `Thread#kill`, "
@@ -4033,8 +4041,8 @@ msgid ""
 msgstr ""
 "For HTML with tens of thousands of elements, the engine's [streaming mode](./"
 "cli/streaming.md) cuts memory use sharply; measured at 60,000 elements it "
-"goes from 228MB to 28MB. See [Memory and processing time](./cli/"
-"streaming.md#memory-and-processing-time)."
+"goes from 228MB to 28MB. See [Memory and processing time](./cli/streaming."
+"md#memory-and-processing-time)."
 
 #: src/usage/ruby_rails.md:353
 msgid ""
@@ -5283,9 +5291,8 @@ msgstr ""
 "For `::before`, `::after`, `::first-letter`, and the `@page` margin boxes. "
 "String literals, `attr()`, `counter()` and `counters()`, and `open-quote`, "
 "`close-quote`, `no-open-quote`, and `no-close-quote` can be concatenated. "
-"Inserting an image with `url()` is not supported. As a simplification, "
-"`::before` and `::after` are not generated on an element that has block "
-"children"
+"Inserting an image with `url()` is not supported. As a simplification, `::"
+"before` and `::after` are not generated on an element that has block children"
 
 #: src/supports/properties.md:162
 msgid "`counter-reset`"
@@ -5975,8 +5982,8 @@ msgstr ""
 
 #: src/supports/selectors.md:33
 msgid ""
-"`:first-of-type` / `:last-of-type` / `:only-of-type` / `:nth-of-type()` / "
-"`:nth-last-of-type()`"
+"`:first-of-type` / `:last-of-type` / `:only-of-type` / `:nth-of-type()` / `:"
+"nth-last-of-type()`"
 msgstr ""
 "`:first-of-type`, `:last-of-type`, `:only-of-type`, `:nth-of-type()`, `:nth-"
 "last-of-type()`"
@@ -6016,9 +6023,9 @@ msgstr "`:has()`"
 
 #: src/supports/selectors.md:37
 msgid ""
-"子孫・`>`・`+`・`~`のいずれも書ける。詳細度は`:is()`と同じ規則。入れ子"
-"(`:has()`の中の`:has()`)と擬似要素は仕様どおり書けない。ストリーミングモード"
-"では`:has(~ ...)`が非マッチ(下記参照)"
+"子孫・`>`・`+`・`~`のいずれも書ける。詳細度は`:is()`と同じ規則。入れ子(`:"
+"has()`の中の`:has()`)と擬似要素は仕様どおり書けない。ストリーミングモードでは"
+"`:has(~ ...)`が非マッチ(下記参照)"
 msgstr ""
 "Descendant, `>`, `+` and `~` may all be used. Specificity follows the same "
 "rule as `:is()`. Nesting (a `:has()` inside a `:has()`) and pseudo-elements "
@@ -6027,8 +6034,8 @@ msgstr ""
 
 #: src/supports/selectors.md:38
 msgid ""
-"`:hover` / `:active` / `:focus` / `:focus-within` / `:focus-visible` / "
-"`:target` / `:enabled` / `:disabled` / `:checked` / `:visited`"
+"`:hover` / `:active` / `:focus` / `:focus-within` / `:focus-visible` / `:"
+"target` / `:enabled` / `:disabled` / `:checked` / `:visited`"
 msgstr ""
 "`:hover`, `:active`, `:focus`, `:focus-within`, `:focus-visible`, `:target`, "
 "`:enabled`, `:disabled`, `:checked`, `:visited`"
@@ -6058,9 +6065,9 @@ msgid ""
 msgstr ""
 "A selector containing an unsupported pseudo-element, such as `::first-line`, "
 "causes the whole rule to be dropped. Ones that parse, such as `:hover`, "
-"survive as rules but never match. The argument list of `:is()` and "
-"`:where()` is the one exception: an unsupported argument is dropped on its "
-"own and the rule survives."
+"survive as rules but never match. The argument list of `:is()` and `:"
+"where()` is the one exception: an unsupported argument is dropped on its own "
+"and the rule survives."
 
 #: src/supports/selectors.md:45 src/supports/selectors.md:47
 msgid "擬似要素"
@@ -6388,8 +6395,8 @@ msgid ""
 "intro`)・`:blank`・複合擬似クラス(`:first:left`)は非対応"
 msgstr ""
 "`size`, taking a keyword, one or two `<length>` values, or `landscape` and "
-"`portrait`, plus the `margin` properties. The pseudo-classes `:first`, "
-"`:left`, and `:right` are supported on their own; named pages such as `@page "
+"`portrait`, plus the `margin` properties. The pseudo-classes `:first`, `:"
+"left`, and `:right` are supported on their own; named pages such as `@page "
 "intro`, `:blank`, and compound pseudo-classes such as `:first:left` are not"
 
 #: src/supports/selectors.md:125
@@ -6481,8 +6488,8 @@ msgstr "Restrictions specific to streaming mode"
 
 #: src/supports/selectors.md:134
 msgid ""
-"`Mode::Batch`(一括処理)ではDOM全体が揃っているため下記の制約は無い。 "
-"`Mode::Streaming`でのみ以下が適用される。"
+"`Mode::Batch`(一括処理)ではDOM全体が揃っているため下記の制約は無い。 `Mode::"
+"Streaming`でのみ以下が適用される。"
 msgstr ""
 "In `Mode::Batch` the whole DOM is available, so none of this applies. The "
 "following holds only in `Mode::Streaming`."
@@ -6502,9 +6509,9 @@ msgstr ""
 
 #: src/supports/selectors.md:140
 msgid ""
-"`:last-of-type`/`:only-of-type`/`:nth-last-child()`/`:nth-last-of-type()`/"
-"`:has(~ ...)`は、余分にマッチしたり取りこぼしたりします。 これらを使うと警告"
-"が出ます"
+"`:last-of-type`/`:only-of-type`/`:nth-last-child()`/`:nth-last-of-type()`/`:"
+"has(~ ...)`は、余分にマッチしたり取りこぼしたりします。 これらを使うと警告が"
+"出ます"
 msgstr ""
 "`:last-of-type`, `:only-of-type`, `:nth-last-child()`, `:nth-last-of-type()` "
 "and `:has(~ ...)` match too much or miss altogether. Using any of them "
@@ -6521,9 +6528,9 @@ msgstr ""
 
 #: src/supports/selectors.md:143
 msgid ""
-"`+`/`~`・`:first-child`/`:nth-child()`/`:first-of-type`/`:nth-of-type()`/"
-"`:only-child`もバッチと同じ結果になります。 これらを使っている文書では、処理"
-"済みのトップレベル要素を子孫だけ解放し、要素そのものを兄弟として残すためです "
+"`+`/`~`・`:first-child`/`:nth-child()`/`:first-of-type`/`:nth-of-type()`/`:"
+"only-child`もバッチと同じ結果になります。 これらを使っている文書では、処理済"
+"みのトップレベル要素を子孫だけ解放し、要素そのものを兄弟として残すためです "
 "(残るのはトップレベル要素1個につき1ノードなので、解放できる量はほぼ変わりませ"
 "ん)"
 msgstr ""
@@ -6535,13 +6542,13 @@ msgstr ""
 
 #: src/supports/selectors.md:146
 msgid ""
-"`<body>`開始後の`<style>`タグはエラー: "
-"`EngineError::UnsupportedInStreamingMode`を返す。 黙って見た目が崩れるのを避"
-"けるため、`<style>`は`<head>`に集約する"
+"`<body>`開始後の`<style>`タグはエラー: `EngineError::"
+"UnsupportedInStreamingMode`を返す。 黙って見た目が崩れるのを避けるため、"
+"`<style>`は`<head>`に集約する"
 msgstr ""
-"A `<style>` tag after `<body>` starts is an error and returns "
-"`EngineError::UnsupportedInStreamingMode`. Keep all `<style>` in `<head>`, "
-"so that the layout does not quietly fall apart"
+"A `<style>` tag after `<body>` starts is an error and returns `EngineError::"
+"UnsupportedInStreamingMode`. Keep all `<style>` in `<head>`, so that the "
+"layout does not quietly fall apart"
 
 #: src/supports/selectors.md:148
 msgid "`position: absolute`/`fixed`は無視される"
@@ -6724,9 +6731,9 @@ msgstr ""
 
 #: src/supports/fonts.md:78
 msgid ""
-"読み込みの待ち合わせはありません。 headless Chromeで必要だった"
-"`document.fonts.ready`待ちのような処理は不要で、フォントが未解決のままPDF化さ"
-"れることはありません。"
+"読み込みの待ち合わせはありません。 headless Chromeで必要だった`document."
+"fonts.ready`待ちのような処理は不要で、フォントが未解決のままPDF化されることは"
+"ありません。"
 msgstr ""
 "There is nothing to wait for. The `document.fonts.ready` dance that headless "
 "Chrome needs is unnecessary here, and a PDF is never produced with fonts "
@@ -7476,9 +7483,9 @@ msgstr ""
 
 #: src/supports/images.md:209
 msgid ""
-"IPv4を埋め込むIPv6表記(IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible "
-"`::a.b.c.d`、NAT64 `64:ff9b::/96`、6to4 `2002::/16`)は、埋め込まれたIPv4側で"
-"判定します。 これらを素通しするとIPv4側のフィルタを迂回できてしまうためです。"
+"IPv4を埋め込むIPv6表記(IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible `::a.b."
+"c.d`、NAT64 `64:ff9b::/96`、6to4 `2002::/16`)は、埋め込まれたIPv4側で判定しま"
+"す。 これらを素通しするとIPv4側のフィルタを迂回できてしまうためです。"
 msgstr ""
 "IPv6 forms that embed an IPv4 address (IPv4-mapped `::ffff:a.b.c.d`, IPv4-"
 "compatible `::a.b.c.d`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`) are judged "
@@ -7734,8 +7741,8 @@ msgid ""
 "`counter(pages)`は[ストリーミングモード](../usage/cli/streaming.md)では使えま"
 "せん(総ページ数が1パスでは決まらないため)"
 msgstr ""
-"`counter(pages)` is unavailable in [streaming mode](../usage/cli/"
-"streaming.md), because the total page count is not known in a single pass"
+"`counter(pages)` is unavailable in [streaming mode](../usage/cli/streaming."
+"md), because the total page count is not known in a single pass"
 
 #: src/supports/pagination.md:75
 msgid ""
@@ -8201,8 +8208,8 @@ msgid ""
 "並びは公式マニュアルに合わせてあります。"
 msgstr ""
 "This covers every option listed by `--extended-help` in wkhtmltopdf 0.12.6, "
-"that is the official manual at <https://wkhtmltopdf.org/usage/"
-"wkhtmltopdf.txt>. The sections and their order follow that manual."
+"that is the official manual at <https://wkhtmltopdf.org/usage/wkhtmltopdf."
+"txt>. The sections and their order follow that manual."
 
 #: src/migration/wkhtmltopdf-options.md:6
 msgid "記号"
@@ -9132,9 +9139,9 @@ msgstr "How the option names map"
 #: src/migration/wicked-pdf.md:46
 msgid ""
 "wicked_pdfはネストしたHash(`margin: {top: 10}`)を使うが、sghtmltopdfは CLIの"
-"フラグ名をそのままキーにした平坦なHashを使う(`_`が`-`に対応する。"
-"`page_size:` → `--page-size`)。 オプションの定義はRust側の1箇所に集約されてい"
-"て、Ruby側はホワイトリストを持ちません。"
+"フラグ名をそのままキーにした平坦なHashを使う(`_`が`-`に対応する。`page_size:"
+"` → `--page-size`)。 オプションの定義はRust側の1箇所に集約されていて、Ruby側"
+"はホワイトリストを持ちません。"
 msgstr ""
 "wicked_pdf takes nested hashes such as `margin: {top: 10}`, while "
 "sghtmltopdf takes a flat hash whose keys are the CLI flag names, with `_` "
@@ -9497,8 +9504,8 @@ msgid ""
 "ローカルファイルの参照範囲: Railsでは`--allow-path`(旧`--allow`。別名として受"
 "ける)の既定が`public/`とアセットパイプラインのロードパスになる。そこから外れ"
 "るファイル(例: `/usr/share/fonts`、`Rails.root.join(\"tmp\")`)を`<img>`や"
-"`@font-face`の`url()`で参照している場合は、`Sghtmltopdf.configure { |c| "
-"c.allow_path += [\"/usr/share/fonts\"] }`のように明示する。`--font`系"
+"`@font-face`の`url()`で参照している場合は、`Sghtmltopdf.configure { |c| c."
+"allow_path += [\"/usr/share/fonts\"] }`のように明示する。`--font`系"
 "(`gothic_font`など)で渡すフォントはこの制限を受けない"
 msgstr ""
 "Range of local file references: on Rails the `--allow-path` default "
@@ -9637,8 +9644,8 @@ msgstr "Including a chart drawn on the client with something like Chart.js"
 
 #: src/appendix/limitations.md:13
 msgid ""
-"JSでページ番号やヘッダーを差し込む(→ [プレースホルダ](../usage/cli/"
-"reference.md#ヘッダーフッター)を使ってください)"
+"JSでページ番号やヘッダーを差し込む(→ [プレースホルダ](../usage/cli/reference."
+"md#ヘッダーフッター)を使ってください)"
 msgstr ""
 "Injecting page numbers or headers with JavaScript; use the [placeholders](../"
 "usage/cli/reference.md#headers-and-footers) instead"
@@ -9837,11 +9844,11 @@ msgstr "How whitespace is treated"
 
 #: src/appendix/limitations.md:64
 msgid ""
-"畳み込みの対象はCSS Text 3が定める空白(space・tab・改行)だけです。 "
-"`&nbsp;`(U+00A0)やthin space(U+2009)などは畳み込まれない普通の文字として、 "
-"フォント本来の字幅で描かれます。改行してよい位置はUAX #14の行分割クラスに従"
-"い、 `&nbsp;`・narrow no-break space・figure space・word joinerの前後では改行"
-"しません (`word-break: break-all`を指定した場合も同様です)。"
+"畳み込みの対象はCSS Text 3が定める空白(space・tab・改行)だけです。 `&nbsp;"
+"`(U+00A0)やthin space(U+2009)などは畳み込まれない普通の文字として、 フォント"
+"本来の字幅で描かれます。改行してよい位置はUAX #14の行分割クラスに従い、 "
+"`&nbsp;`・narrow no-break space・figure space・word joinerの前後では改行しま"
+"せん (`word-break: break-all`を指定した場合も同様です)。"
 msgstr ""
 "Only the whitespace CSS Text 3 defines as such — space, tab and newline — is "
 "collapsed. `&nbsp;` (U+00A0), thin space (U+2009) and the like are ordinary "
@@ -10025,8 +10032,8 @@ msgstr ""
 #~ msgid ""
 #~ "素の`stylesheet_link_tag`/`image_tag`も、アセットが`public/`配下へ"
 #~ "precompileされていればそのまま動きます。 PDFのレンダリングはHTTPサーバを介"
-#~ "さないので、`/assets/…`のようなURLは`--base-url`(Railsでの既定は"
-#~ "`Rails.root/public`)を基準にローカルファイルとして解決される。"
+#~ "さないので、`/assets/…`のようなURLは`--base-url`(Railsでの既定は`Rails."
+#~ "root/public`)を基準にローカルファイルとして解決される。"
 #~ msgstr ""
 #~ "A plain `stylesheet_link_tag` or `image_tag` works as it is, as long as "
 #~ "the assets have been precompiled into `public/`. Rendering does not go "
@@ -10134,11 +10141,11 @@ msgstr ""
 #~ msgstr "Use `top`, `right`, `bottom`, and `left` individually"
 
 #~ msgid ""
-#~ "`:last-child`・`:nth-last-child`・`:last-of-type`・`:nth-last-of-type`・"
-#~ "`:only-child`・`:only-of-type`・`:empty`"
+#~ "`:last-child`・`:nth-last-child`・`:last-of-type`・`:nth-last-of-type`・`:"
+#~ "only-child`・`:only-of-type`・`:empty`"
 #~ msgstr ""
-#~ "`:last-child`, `:nth-last-child`, `:last-of-type`, `:nth-last-of-type`, "
-#~ "`:only-child`, `:only-of-type`, and `:empty`"
+#~ "`:last-child`, `:nth-last-child`, `:last-of-type`, `:nth-last-of-type`, `:"
+#~ "only-child`, `:only-of-type`, and `:empty`"
 
 #~ msgid "常に非マッチになる(親の子リストが完結するまで判定できないため)"
 #~ msgstr ""
