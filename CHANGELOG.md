@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.1 - 2026-09-23
+
+### Added
+
+- The Rust core is published on crates.io as `sghtmltopdf` (`cargo install sghtmltopdf`, or
+  `sghtmltopdf = "0.5"` as a library). It was `sghtmltopdf-core` inside this repository,
+  and the rename covers the package, the library and the binary alike.
+
+  The public API is what the crate root re-exports: `Engine`, `EngineOptions`, the `Sink`
+  trait and its implementations, `PageSettings`, `PdfOutputOptions` and
+  `with_render_stack`. The modules are hidden and may change in any release. Option structs
+  and error enums are `#[non_exhaustive]`, so they are built from `Default` and assigned
+  field by field.
+
+  `Converter` is the entry point for language bindings: it takes the same options as the
+  command, as a list of strings, and renders from a reader into a sink, so a binding gets
+  every option without assembling `EngineOptions` itself. It replaces
+  `cli::parse_convert_argv` and `CliError` (now `ConvertError`), which bindings built
+  against the git repository have to move off. The minimum supported Rust version is 1.89.
+
+- `--header-html-content` and `--footer-html-content` (`header_html_content:` and
+  `footer_html_content:` in Ruby) take the header and footer markup directly, so a caller
+  no longer has to write it to a temporary file first (#60). Placeholders and embedded
+  images work as they do with `--header-html`, and giving both the path and the content for
+  the same side is an error.
+
+### Changed
+
+- Error messages and warnings are in English (#46).
+
+- Passing `output:` to the Ruby API raises `Sghtmltopdf::UsageError`. It used to be
+  ignored: the destination is decided by the method called (`render`, `render_to_file`,
+  `render_each`), never by that option.
+
+### Fixed
+
+- In HTTP server mode, an option that takes a value no longer has the value dropped when it
+  looks like a boolean (#60). `header-center=` (empty), `title=true` or `title=0` was treated
+  as a bare flag or as the option being absent, so the request failed or the value was lost;
+  only on/off options read those values that way now.
+
 ## 0.5.0 - 2026-09-20
 
 ### Added

@@ -2,7 +2,7 @@
 # The package name differs from the library name on purpose: the core crate is published as
 # `sghtmltopdf`, and two packages with the same name cannot be written to one lockfile.
 name = "sghtmltopdf-ruby"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 publish = false
 description = "Ruby binding for sghtmltopdf (see bindings/ruby)"
