@@ -19,7 +19,7 @@
 
 | プロパティ | 対応 | 備考 |
 | - | - | - |
-| `display` | ⚠️ | `block`/`inline`/`inline-block`/`list-item`/`table`/`table-row`/`table-cell`/`table-caption`/`flex`/`none`のみ。`grid`は対応([Grid](#grid)節)。`inline-flex`/`inline-grid`・`table-row-group`等のテーブル内部値・`flow-root`は非対応。`<thead>`/`<tbody>`/`<tfoot>`はUAスタイルで`block`のままだが、行収集が透過するのでテーブルとして機能する |
+| `display` | ⚠️ | `block`/`inline`/`inline-block`/`list-item`/`table`/`table-row`/`table-cell`/`table-caption`/`flex`/`inline-flex`/`none`のみ。`grid`は対応([Grid](#grid)節)。`inline-flex`は[Flexbox](#flexbox)節。`inline-grid`・`table-row-group`等のテーブル内部値・`flow-root`は非対応。`<thead>`/`<tbody>`/`<tfoot>`はUAスタイルで`block`のままだが、行収集が透過するのでテーブルとして機能する |
 | `visibility` | ⚠️ | `visible`/`hidden`/`collapse`。`collapse`は`hidden`と同一視(テーブル行/列の高さ再計算はしない)。継承プロパティ |
 | `overflow` | ⚠️ | `visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は非対応 |
 | `opacity` | ⚠️ | `<number>`/`<percentage>`を0〜1にクランプ。PDFの透明グループ+ExtGStateで実装。要素単位の合成で、`mix-blend-mode`等のブレンドは非対応 |
@@ -183,6 +183,8 @@ HTML属性`data-page-break="before|after|avoid"`によるシンタックスシ�
 1ページに収まるflexコンテナはページ分割上アトミック(途中で分割せず、収まらなければ次ページへ送る)。
 1ページに収まらない高さのコンテナは、縦に重ならないアイテム群を単位に分割する(詳細は[ページ分割](./pagination.md)を参照)。
 
+`display: inline-flex`は`inline-block`と同じく行の中に1つのボックスとして並び(幅はshrink-to-fit、パディング・ボーダー・背景も付く)、中身は上記のflexレイアウトで配置する。行内の縦位置は、最初のアイテムの最初のテキストのベースラインを周囲の文字に揃える(CSS Flexbox 8.5節。テキストを含まない場合はマージンボックスの下端)。`inline-flex`自体が行をまたいで分割されることはない。
+
 | プロパティ | 対応 | 備考 |
 | - | - | - |
 | `flex-direction` | ✅ | `row`/`row-reverse`/`column`/`column-reverse` |
@@ -229,7 +231,7 @@ flexで特定のアイテムだけを寄せたい場合は`margin: auto`を使�
 | `justify-items` / `justify-self` | ✅ | Gridでのみ意味を持つ(flexアイテムには適用されない、[上記](#justify-itemsjustify-selfがflexで効かないのは仕様)) |
 | `align-items` / `align-self` / `justify-content` / `align-content` / `gap` | ✅ | Flexboxと共有(値の範囲は[Flexbox](#flexbox)節を参照) |
 | `grid` / `grid-template`(ショートハンド) | ❌ | 個別のロングハンドを使う。トラック定義とエリア定義を1つの構文へ詰め込む複雑な文法のため非対応 |
-| `display: inline-grid` | ❌ | `inline-flex`と同じ理由で非対応 |
+| `display: inline-grid` | ❌ | 非対応(`inline-flex`は対応済み、[Flexbox](#flexbox)節) |
 | subgrid / masonry | ❌ | 未実装 |
 
 `auto`トラックだけで構成したグリッドにコンテナ幅の指定がある場合、余った幅は`auto`トラックへ配分されますが、その配分比率はCSSの規定(`auto`トラックへ均等)と一致しません。

@@ -21,10 +21,11 @@ use std::rc::Rc;
 use crate::fonts::FontCollection;
 use crate::html::NodeId;
 use crate::style::{
-    CaptionSide, ComputedStyle, FlexDirection, LengthPercentageOrAuto, RepeatCount, TableLayout,
-    TrackComponent, TrackList, VerticalAlign,
+    BoxSizing, CaptionSide, ComputedStyle, FlexDirection, LengthPercentage, LengthPercentageOrAuto,
+    RepeatCount, TableLayout, TrackComponent, TrackList, VerticalAlign,
 };
 
+use super::block::resolve_lpa_or_zero;
 use super::block::{
     box_style, clamp_used_width, layout_box, layout_box_with_forced_width, resolve_border,
     resolve_lp, resolve_padding, shift_box_y, shift_box_y_in_place, shift_content_vertical,
@@ -644,9 +645,11 @@ fn natural_cell_width(
     clamped + padding.left + padding.right + border.left + border.right
 }
 
-/// One child box's natural width plus that child's own padding and border.
+/// One child box's natural (max-content) outer width: its content width plus its own padding,
+/// border and margins. A definite `width` in px replaces the measured content width (an empty
+/// icon box with `width: 10px` still takes 10px), and `box-sizing: border-box` is honoured.
 /// A percentage resolves against 0, the basis width being unknown at this point
-/// (the same simplification as `natural_cell_width`). Margins are not included.
+/// (the same simplification as `natural_cell_width`).
 fn outer_natural_width(
     child: &LayoutBox,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -655,11 +658,20 @@ fn outer_natural_width(
     let style = box_style(child, styles);
     let padding = resolve_padding(&style, 0.0);
     let border = resolve_border(&style);
-    measure_natural_content_width(child, styles, fonts)
-        + padding.left
-        + padding.right
-        + border.left
-        + border.right
+    let pb_x = padding.left + padding.right + border.left + border.right;
+    let content = match style.width {
+        LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(px)) => {
+            if style.box_sizing == BoxSizing::BorderBox {
+                (px - pb_x).max(0.0)
+            } else {
+                px
+            }
+        }
+        _ => measure_natural_content_width(child, styles, fonts),
+    };
+    let margin_x =
+        resolve_lpa_or_zero(style.margin_left, 0.0) + resolve_lpa_or_zero(style.margin_right, 0.0);
+    content + pb_x + margin_x
 }
 
 /// The number of tracks `grid-template-columns` declares.

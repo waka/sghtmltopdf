@@ -6,12 +6,13 @@ use std::rc::Rc;
 use crate::fonts::{measure_text, shape_text, Font, FontCollection, ShapedGlyph};
 use crate::html::NodeId;
 use crate::style::{
-    BoxSizing, ComputedStyle, ComputedTextShadow, EmphasisPosition, EmphasisStyle, FontStyle,
-    FontWeight, Hyphens, LengthPercentage, LengthPercentageOrAuto, LineHeight, OverflowWrap,
-    RgbaColor, TextAlign, TextOverflow, TextTransform, VerticalAlign, WhiteSpace, WordBreak,
+    BoxSizing, ComputedStyle, ComputedTextShadow, Display, EmphasisPosition, EmphasisStyle,
+    FontStyle, FontWeight, Hyphens, LengthPercentage, LengthPercentageOrAuto, LineHeight,
+    OverflowWrap, RgbaColor, TextAlign, TextOverflow, TextTransform, VerticalAlign, WhiteSpace,
+    WordBreak,
 };
 
-use super::block::{resolve_relative_offset, LaidOutBox, PosCtx};
+use super::block::{resolve_relative_offset, LaidOutBox, LaidOutContent, PosCtx};
 use super::box_tree::{BoxContent, InlineSpan, LayoutBox};
 use super::float_ctx::FloatContext;
 use super::geometry::Rect;
@@ -131,6 +132,11 @@ pub struct AtomicInline {
     /// The margin box's dimensions (used for line advance and wrapping decisions).
     pub margin_box_width: f32,
     pub margin_box_height: f32,
+    /// How far above the bottom of the margin box the box's own baseline is (px). 0 for
+    /// `inline-block` and `<img>`, whose margin-box bottom sits on the line's baseline. An
+    /// `inline-flex` box uses its first item's first text baseline (CSS Flexbox section 8.5),
+    /// so its text lines up with the text around it.
+    pub baseline_from_bottom: f32,
     /// The offset from the baseline from `vertical-align` (px, positive being up).
     pub baseline_shift: f32,
     /// This box's `vertical-align` (kept so `top`/`bottom` can be resolved after the line
@@ -381,6 +387,11 @@ fn layout_inline_content_in_flow(
                 let laid = layout_atomic_inline(atomic, styles, fonts, line_available_width, pos);
                 let margin_box_width = margin_box_width_of(&laid);
                 let margin_box_height = laid.layout.margin_box_height();
+                let baseline_from_bottom = if style.display == Display::InlineFlex {
+                    first_baseline_from_bottom(&laid).unwrap_or(0.0)
+                } else {
+                    0.0
+                };
 
                 let gap_width = if space_before {
                     current_runs
@@ -440,6 +451,7 @@ fn layout_inline_content_in_flow(
                     x_offset: current_width,
                     margin_box_width,
                     margin_box_height,
+                    baseline_from_bottom,
                     baseline_shift: 0.0,
                     vertical_align: style.vertical_align,
                 });
@@ -1748,8 +1760,10 @@ pub(super) fn finish_line(
         ) {
             above = above.max(atomic.margin_box_height);
         } else {
-            above = above.max(atomic.margin_box_height + atomic.baseline_shift);
-            below = below.max(-atomic.baseline_shift);
+            above = above.max(
+                atomic.margin_box_height - atomic.baseline_from_bottom + atomic.baseline_shift,
+            );
+            below = below.max(atomic.baseline_from_bottom - atomic.baseline_shift);
         }
     }
 
@@ -1788,9 +1802,12 @@ pub(super) fn finish_line(
     for atomic in &mut atomics {
         match atomic.vertical_align {
             VerticalAlign::Top => {
-                atomic.baseline_shift = baseline - atomic.margin_box_height;
+                atomic.baseline_shift =
+                    baseline - (atomic.margin_box_height - atomic.baseline_from_bottom);
             }
-            VerticalAlign::Bottom => atomic.baseline_shift = -(line_height - baseline),
+            VerticalAlign::Bottom => {
+                atomic.baseline_shift = -(line_height - baseline) + atomic.baseline_from_bottom
+            }
             _ => {}
         }
     }
@@ -1806,6 +1823,31 @@ pub(super) fn finish_line(
         baseline,
         atomics,
     }
+}
+
+/// The distance from the bottom of the margin box up to the first text baseline inside `b`
+/// (the first line of the first item that has one), or `None` if it holds no text. `b` is
+/// freshly laid out, so its line coordinates are in the same space as its own box.
+fn first_baseline_from_bottom(b: &LaidOutBox) -> Option<f32> {
+    fn first_baseline_y(b: &LaidOutBox) -> Option<f32> {
+        match &b.content {
+            LaidOutContent::Inline(lines) => lines
+                .iter()
+                .find(|l| !l.runs.is_empty())
+                .map(|l| l.rect.y + l.baseline),
+            LaidOutContent::Blocks(items) | LaidOutContent::Flex(items) => {
+                items.iter().find_map(first_baseline_y)
+            }
+            _ => None,
+        }
+    }
+    let layout = &b.layout;
+    let margin_bottom_y = layout.content.y
+        + layout.content.height
+        + layout.padding.bottom
+        + layout.border.bottom
+        + layout.margin.bottom;
+    first_baseline_y(b).map(|y| (margin_bottom_y - y).max(0.0))
 }
 
 /// Lay out the contents of a `display: inline-block`. It establishes a new Block Formatting

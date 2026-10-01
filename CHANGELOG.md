@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- `display: inline-flex` is supported. The element is an inline-level box on the line, like
+  `inline-block` (shrink-to-fit width, padding, border and background), and its children are
+  laid out as a flex container. It used to fall back to plain `inline`, so badges and pills
+  lost their shape (#73). Its text lines up with the surrounding text on the first item's
+  baseline. `inline-grid` is still unsupported.
+
+### Fixed
+
+- A flex item's declared `width` and its horizontal margins now count towards the container's
+  shrink-to-fit width. An empty `width: 10px` icon box in an `inline-block`, float or nested
+  flex container used to contribute 0, so the container came out too narrow (#73).
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

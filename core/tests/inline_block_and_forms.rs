@@ -637,3 +637,213 @@ fn the_containers_text_align_wins_over_a_text_align_on_an_inline_span() {
         line.rect.x + word.x_offset + word.width
     );
 }
+
+// ===== display: inline-flex =====
+
+/// The y of the first text baseline inside `b` (the first line of the first item that has one).
+fn first_baseline_y(b: &LaidOutBox) -> Option<f32> {
+    match &b.content {
+        LaidOutContent::Inline(lines) => lines
+            .iter()
+            .find(|l| !l.runs.is_empty())
+            .map(|l| l.rect.y + l.baseline),
+        LaidOutContent::Blocks(items) | LaidOutContent::Flex(items) => {
+            items.iter().find_map(first_baseline_y)
+        }
+        _ => None,
+    }
+}
+
+#[test]
+fn an_inline_flex_is_an_atomic_box_with_its_padding_and_background() {
+    // The issue's pill: padding and background must survive, and the box joins the line.
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .pill { display: inline-flex; padding: 4px 60px; background: black; color: white; }";
+    let (_, laid) = layout(r#"<p>Before <span class="pill">X</span> after</p>"#, css);
+    let lines = all_lines(&laid);
+    assert_eq!(lines.len(), 1, "everything must fit on one line");
+    assert_eq!(
+        lines[0].atomics.len(),
+        1,
+        "the pill is an atomic inline box"
+    );
+    let atomic = &lines[0].atomics[0];
+    assert!(
+        atomic.margin_box_width > 120.0,
+        "width {} must include the 60px side padding",
+        atomic.margin_box_width
+    );
+    assert!(atomic.content.has_visible_decoration);
+    assert!(
+        atomic.x_offset > 0.0,
+        "text 'Before' precedes the box on the line"
+    );
+    assert!(
+        lines[0].runs.iter().any(|r| r.text.contains("after")),
+        "the text after the pill stays on the same line"
+    );
+}
+
+#[test]
+fn an_inline_flex_with_one_child_is_as_wide_as_the_same_inline_block() {
+    let css = |display: &str| {
+        format!(
+            "body {{ margin: 0; }} p {{ margin: 0; }} \
+             .pill {{ display: {display}; padding: 4px 60px; background: black; }}"
+        )
+    };
+    let html_src = r#"<p>Before <span class="pill">X</span> after</p>"#;
+    let flex = all_lines(&layout(html_src, &css("inline-flex")).1);
+    let block = all_lines(&layout(html_src, &css("inline-block")).1);
+    assert_eq!(
+        flex[0].atomics[0].margin_box_width,
+        block[0].atomics[0].margin_box_width
+    );
+    assert_eq!(flex[0].atomics[0].x_offset, block[0].atomics[0].x_offset);
+}
+
+#[test]
+fn a_tailwind_style_badge_lays_out_its_icon_and_label_in_a_row() {
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; \
+                        border-radius: 9999px; background: #dbeafe; } \
+               .icon { width: 10px; height: 10px; background: #1e40af; }";
+    let (_, laid) = layout(
+        r#"<p>Status: <span class="badge"><span class="icon"></span>Active</span> since Monday.</p>"#,
+        css,
+    );
+    let lines = all_lines(&laid);
+    assert_eq!(lines.len(), 1);
+    let atomic = &lines[0].atomics[0];
+    let LaidOutContent::Flex(items) = &atomic.content.content else {
+        panic!("the badge contents must be laid out as a flex container");
+    };
+    assert_eq!(items.len(), 2, "the icon box and the anonymous text item");
+    let (icon, label) = (&items[0], &items[1]);
+    let icon_right = icon.layout.border_box().x + icon.layout.border_box().width;
+    assert!(
+        (label.layout.border_box().x - icon_right - 4.0).abs() < 0.01,
+        "the label sits 4px (gap) after the icon"
+    );
+    // The row is as wide as padding + icon + gap + label.
+    let label_width = label.layout.border_box().width;
+    assert!(
+        (atomic.margin_box_width - (16.0 + 10.0 + 4.0 + label_width)).abs() < 0.01,
+        "the badge is {} wide; the label is {label_width}",
+        atomic.margin_box_width
+    );
+    // The icon's declared width counts towards the shrink-to-fit width, so it is not squeezed.
+    assert_eq!(icon.layout.border_box().width, 10.0);
+}
+
+#[test]
+fn text_inside_an_inline_flex_shares_the_baseline_of_the_surrounding_text() {
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .pill { display: inline-flex; align-items: center; padding: 12px 10px; \
+                       background: #2563eb; color: white; }";
+    let (_, laid) = layout(r#"<p>Tags: <span class="pill">New</span> end</p>"#, css);
+    let lines = all_lines(&laid);
+    assert_eq!(lines.len(), 1);
+    let line = &lines[0];
+    let inner = first_baseline_y(&line.atomics[0].content).expect("the pill holds text");
+    let line_baseline = line.rect.y + line.baseline;
+    assert!(
+        (inner - line_baseline).abs() < 0.01,
+        "the pill's text baseline {inner} must sit on the line baseline {line_baseline}"
+    );
+}
+
+#[test]
+fn two_inline_flex_pills_share_a_line_with_the_text_around_them() {
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .pill { display: inline-flex; padding: 3px 10px; margin: 0 4px; background: #16a34a; }";
+    let (_, laid) = layout(
+        r#"<p>Tags: <span class="pill">One</span> between <span class="pill">Two</span> and more</p>"#,
+        css,
+    );
+    let lines = all_lines(&laid);
+    assert_eq!(lines.len(), 1);
+    let atomics = &lines[0].atomics;
+    assert_eq!(atomics.len(), 2);
+    assert!(
+        atomics[1].x_offset >= atomics[0].x_offset + atomics[0].margin_box_width,
+        "the second pill follows the first without overlapping it"
+    );
+    let text: String = lines[0].runs.iter().map(|r| r.text.as_str()).collect();
+    assert!(text.contains("Tags:") && text.contains("between") && text.contains("more"));
+}
+
+#[test]
+fn an_inline_flex_column_stacks_its_items_and_is_as_wide_as_the_widest() {
+    let css = |direction: &str| {
+        format!(
+            "body {{ margin: 0; }} p {{ margin: 0; }} \
+             .box {{ display: inline-flex; flex-direction: {direction}; }}"
+        )
+    };
+    let html_src =
+        r#"<p>L <span class="box"><span>First</span><span>Second longer</span></span> R</p>"#;
+    let col = all_lines(&layout(html_src, &css("column")).1);
+    let row = all_lines(&layout(html_src, &css("row")).1);
+    let (col, row) = (&col[0].atomics[0], &row[0].atomics[0]);
+    assert!(
+        col.margin_box_height > row.margin_box_height * 1.5,
+        "column {} must be about two lines tall, row {} one",
+        col.margin_box_height,
+        row.margin_box_height
+    );
+    assert!(
+        col.margin_box_width < row.margin_box_width,
+        "stacked items need only the widest item's width"
+    );
+}
+
+#[test]
+fn a_floated_inline_flex_is_blockified_and_floated() {
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .f { display: inline-flex; float: right; width: 100px; height: 20px; background: red; }";
+    let (_, laid) = layout(r#"<p><span class="f">x</span>text</p>"#, css);
+    let lines = all_lines(&laid);
+    assert!(
+        lines.iter().all(|l| l.atomics.is_empty()),
+        "a float is not an inline box on the line"
+    );
+}
+
+#[test]
+fn an_absolutely_positioned_inline_flex_is_not_an_inline_box() {
+    let css = "body { margin: 0; } p { margin: 0; } \
+               .a { display: inline-flex; position: absolute; top: 5px; left: 5px; width: 100px; \
+                    height: 20px; background: red; }";
+    let (_, laid) = layout(r#"<p>text<span class="a">x</span></p>"#, css);
+    let lines = all_lines(&laid);
+    assert!(lines.iter().all(|l| l.atomics.is_empty()));
+}
+
+#[test]
+fn an_inline_flex_child_of_a_flex_container_is_a_flex_item_and_a_flex_container() {
+    let css = "body { margin: 0; } .row { display: flex; } \
+               .c { display: inline-flex; flex-direction: column; width: 80px; }";
+    let (_, laid) = layout(
+        r#"<div class="row"><span class="c"><i>a</i><i>b</i></span><span class="c">z</span></div>"#,
+        css,
+    );
+    fn find_row(b: &LaidOutBox) -> Option<&Vec<LaidOutBox>> {
+        match &b.content {
+            LaidOutContent::Flex(items) => Some(items),
+            LaidOutContent::Blocks(c) => c.iter().find_map(find_row),
+            _ => None,
+        }
+    }
+    let items = find_row(&laid).expect("the row is a flex container");
+    assert_eq!(items.len(), 2);
+    assert!(
+        matches!(items[0].content, LaidOutContent::Flex(_)),
+        "the item is itself a flex container"
+    );
+    assert_eq!(items[0].layout.border_box().width, 80.0);
+    assert!(
+        items[1].layout.border_box().x >= 80.0,
+        "items sit side by side"
+    );
+}

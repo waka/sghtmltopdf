@@ -1275,6 +1275,12 @@ fn compute_element_style(
         Display::Inline if resolved_float != Float::None || resolved_position.is_out_of_flow() => {
             Display::Block
         }
+        // `inline-flex` blockifies to `flex` in the same cases (CSS Display 3 section 2.7).
+        Display::InlineFlex
+            if resolved_float != Float::None || resolved_position.is_out_of_flow() =>
+        {
+            Display::Flex
+        }
         other => other,
     };
 

@@ -52,7 +52,7 @@
 * グラデーション(`linear-gradient()`等)と複数背景
 * 相対色構文(`rgb(from ...)`)と`color()`(`color-mix()`は対応済み)
 * アニメーション・トランジション・`filter`(静的な出力のため)
-* `position: sticky`、`display: inline-flex`/`inline-grid`、subgrid
+* `position: sticky`、`display: inline-grid`、subgrid
 * `::first-line`、`::marker`(`:is()`/`:where()`/`:has()`は対応済み)
 
 値の文法では、`calc()`と括弧のネストが32段までです。

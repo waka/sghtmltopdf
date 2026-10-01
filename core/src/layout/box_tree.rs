@@ -376,7 +376,7 @@ pub(crate) fn build_box_for_element(
             BoxContent::Table(build_table_box(dom, styles, node)),
         ));
     }
-    if style.display == Display::Flex {
+    if matches!(style.display, Display::Flex | Display::InlineFlex) {
         return Some(LayoutBox::for_node(
             node,
             BoxContent::Flex(build_flex_box(dom, styles, node)),
@@ -1271,7 +1271,7 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
             match display {
                 // An `inline-block` takes part in the parent's line (its contents are laid
                 // out as a block).
-                Some(Display::InlineBlock) => ChildKind::Inline,
+                Some(Display::InlineBlock) | Some(Display::InlineFlex) => ChildKind::Inline,
                 Some(Display::Block)
                 | Some(Display::Table)
                 | Some(Display::ListItem)
@@ -1363,6 +1363,16 @@ fn collect_spans_in_context(
                     node,
                     LayoutBox::for_node(node, BoxContent::Inline(Vec::new())),
                 ));
+                return;
+            }
+            // `display: inline-flex` takes part in the line as one atomic box, like
+            // `inline-block`, but its contents are a flex container (the same box
+            // `display: flex` builds, so the flex layout is shared).
+            if styles.get(&node).map(|s| s.display) == Some(Display::InlineFlex) {
+                if let Some(mut atomic) = build_box_for_element(dom, styles, node) {
+                    atomic.marker = None;
+                    out.push(InlineSpan::atomic(node, atomic));
+                }
                 return;
             }
             // `display: inline-block` takes part in the line as one box. Its contents are

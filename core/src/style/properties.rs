@@ -1054,7 +1054,8 @@ fn parse_display<'i>(input: &mut Parser<'i, '_>) -> Result<Display, ParseError<'
         "table-caption" => Display::TableCaption,
         "list-item" => Display::ListItem,
         "flex" => Display::Flex,
-        // `inline-grid` is not supported (the same known simplification as `inline-flex`).
+        "inline-flex" => Display::InlineFlex,
+        // `inline-grid` is not supported.
         "grid" => Display::Grid,
         "none" => Display::None,
         _ => return Err(input.new_custom_error(())),

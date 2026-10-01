@@ -1525,7 +1525,8 @@ fn place_atomic_inlines(lines: &mut [LineBox]) {
         for atomic in line.atomics.iter_mut() {
             // The target position of the top left of the margin box.
             let target_x = line.rect.x + atomic.x_offset;
-            let target_y = baseline_y - atomic.baseline_shift - atomic.margin_box_height;
+            let target_y = baseline_y - atomic.baseline_shift - atomic.margin_box_height
+                + atomic.baseline_from_bottom;
             // The current top left of the margin box (laid out at the origin 0, so it follows
             // from the content coordinates minus margin/border/padding).
             let layout = atomic.content.layout;

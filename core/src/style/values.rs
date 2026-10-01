@@ -30,9 +30,11 @@ pub enum Display {
     ListItem,
     /// For `flex` elements only. Establishes a flexbox formatting context
     /// (generates one flex item per child and delegates layout to taffy).
-    /// `inline-flex` is not supported.
     Flex,
-    /// `display: grid`. `inline-grid` is not supported (same reason as `inline-flex`).
+    /// `display: inline-flex`. Inline-level on the outside (an atomic box on the parent's
+    /// line, like `InlineBlock`) and a flex container on the inside.
+    InlineFlex,
+    /// `display: grid`. `inline-grid` is not supported.
     Grid,
     None,
 }
