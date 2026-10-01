@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- A block `<img>` with a CSS `width` smaller than the image file no longer counts at its
+  natural width when its container is sized (#77). A flex item holding a 160px-wide `<img
+  style="display: block">` of a 600px PNG was measured as 600px wide, so its flex siblings
+  were squeezed below their max-content width and wrapped. The same measurement feeds table
+  column widths and the shrink-to-fit width of floats and inline-blocks. It now uses the
+  used width (`width`, or the one derived from `height` and the aspect ratio, clamped by
+  `min-width`/`max-width`). A percentage `width` counts as `auto` and a percentage
+  `max-width` as `none`, so Tailwind's `img { max-width: 100% }` no longer changes the result.
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

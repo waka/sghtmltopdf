@@ -21,16 +21,17 @@ use std::rc::Rc;
 use crate::fonts::FontCollection;
 use crate::html::NodeId;
 use crate::style::{
-    CaptionSide, ComputedStyle, FlexDirection, LengthPercentageOrAuto, RepeatCount, TableLayout,
-    TrackComponent, TrackList, VerticalAlign,
+    BoxSizing, CaptionSide, ComputedStyle, FlexDirection, LengthPercentage, LengthPercentageOrAuto,
+    MaxSize, RepeatCount, TableLayout, TrackComponent, TrackList, VerticalAlign,
 };
 
 use super::block::{
-    box_style, clamp_used_width, layout_box, layout_box_with_forced_width, resolve_border,
-    resolve_lp, resolve_padding, shift_box_y, shift_box_y_in_place, shift_content_vertical,
-    LaidOutBox, LaidOutContent, LaidOutTable, LaidOutTableRow, PosCtx,
+    apply_replaced_element_auto_size, box_style, clamp_used_width, layout_box,
+    layout_box_with_forced_width, resolve_border, resolve_lp, resolve_padding, shift_box_y,
+    shift_box_y_in_place, shift_content_vertical, LaidOutBox, LaidOutContent, LaidOutTable,
+    LaidOutTableRow, PosCtx,
 };
-use super::box_tree::{BoxContent, LayoutBox, TableBox, TableCell, TableRow};
+use super::box_tree::{BoxContent, ImageBoxContent, LayoutBox, TableBox, TableCell, TableRow};
 use super::float_ctx::FloatContext;
 use super::inline::layout_inline_content;
 
@@ -782,12 +783,61 @@ fn compute_natural_content_width(
                     .sum::<f32>()
             })
             .fold(0.0f32, f32::max),
-        BoxContent::Image(image_content) => image_content
+        BoxContent::Image(image_content) => {
+            replaced_natural_content_width(&box_style(b, styles), image_content)
+        }
+    }
+}
+
+/// A block-level replaced element's (`<img>`) content-box contribution to an intrinsic size.
+///
+/// This is its used width, not the image's natural width: an explicit `width` (or one derived
+/// from `height` and the aspect ratio) clamped by `min-width`/`max-width`, and otherwise the
+/// `width`/`height` attributes or the natural size, as `apply_replaced_element_auto_size`
+/// resolves it for the final layout. A percentage `width` cannot resolve while the container's
+/// size is still being determined, so it is treated as `auto` (CSS Sizing 3 5.2.1: a cyclic
+/// percentage on a replaced element's width contributes as `auto` to max-content). A percentage
+/// `max-width` (Tailwind's `img { max-width: 100% }`) is treated as `none` for the same reason.
+/// Browsers also let such a replaced element shrink to 0 for min-content; the measure shared
+/// with the callers does not distinguish min-content from max-content (see `layout::flex`).
+fn replaced_natural_content_width(style: &ComputedStyle, image: &ImageBoxContent) -> f32 {
+    let mut style = style.clone();
+    let is_definite = |lp: LengthPercentage| matches!(lp, LengthPercentage::Length(_));
+    if let LengthPercentageOrAuto::LengthPercentage(lp) = style.width {
+        if !is_definite(lp) {
+            style.width = LengthPercentageOrAuto::Auto;
+        }
+    }
+    apply_replaced_element_auto_size(&mut style, image, 0.0);
+    let padding = resolve_padding(&style, 0.0);
+    let border = resolve_border(&style);
+    let padding_lr = padding.left + padding.right;
+    let border_lr = border.left + border.right;
+    let LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(width)) = style.width
+    else {
+        // A settled `height` with no intrinsic ratio (the decode failed) leaves the width
+        // `auto`. The final layout then shrinks to this same measure, so keep the attribute
+        // (or natural) width it has always used rather than collapsing to 0.
+        return image
             .attr_width
             .map(|w| w as f32)
-            .or_else(|| image_content.image.as_ref().map(|img| img.width))
-            .unwrap_or(0.0),
+            .or_else(|| image.image.as_ref().map(|img| img.width))
+            .unwrap_or(0.0);
+    };
+    let width = if style.box_sizing == BoxSizing::BorderBox {
+        (width - padding_lr - border_lr).max(0.0)
+    } else {
+        width
+    };
+    if let MaxSize::LengthPercentage(lp) = style.max_width {
+        if !is_definite(lp) {
+            style.max_width = MaxSize::None;
+        }
     }
+    if !is_definite(style.min_width) {
+        style.min_width = LengthPercentage::Length(0.0);
+    }
+    clamp_used_width(&style, 0.0, padding_lr, border_lr, width)
 }
 
 #[cfg(test)]
