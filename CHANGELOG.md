@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- Under `table-layout: auto`, a column is no longer shrunk below its min-content width (#70).
+  When the table was wider than the space available, every column was scaled down in
+  proportion to its natural width, so a short column holding an unbreakable word (an amount
+  such as `$3,480.00`) came out narrower than the word and the text ran past the cell and
+  the table. The shrinking now comes out of each column's slack (natural width minus
+  min-content width), so a long wrappable column gives up the space first. If even the
+  min-content widths do not fit, the table overflows rather than the columns overlapping.
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

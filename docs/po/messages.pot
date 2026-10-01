@@ -4092,9 +4092,7 @@ msgstr ""
 
 #: src/supports/properties.md:144
 msgid ""
-"セルの`min-width`/`max-width`は列幅アルゴリズムに反映される。 `table-layout: "
-"auto`では列の自然幅をクランプする形で効くため、表を紙幅に収める比例縮尺の後は`min-width`が保証されない。 `table-layout: "
-"fixed`では1行目のセルの指定幅をクランプし、`width: auto`かつ`min-width`のみの指定はその値を列幅として使う。"
+"セルの`min-width`/`max-width`は列幅アルゴリズムに反映される。 `table-layout: auto`では列が最小内容幅(折り返せない最長の語など)を下回ることはなく、表を紙幅に収める縮小は各列の(自然幅 − 最小内容幅)の余りからだけ行う。最小内容幅の合計が紙幅を超えるときは、列が重ならずに表が紙幅からはみ出す。 `table-layout: fixed`では1行目のセルの指定幅をクランプし、`width: auto`かつ`min-width`のみの指定はその値を列幅として使う。"
 msgstr ""
 
 #: src/supports/properties.md:148

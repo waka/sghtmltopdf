@@ -68,6 +68,8 @@ impl LayoutBox {
 pub struct MeasureMemo {
     /// The natural (max-content) width. Filled in by [`super::table::measure_natural_content_width`].
     natural_width: Cell<Option<f32>>,
+    /// The min-content width. Filled in by [`super::table::measure_min_content_width`].
+    min_content_width: Cell<Option<f32>>,
     /// The content height when built with a fixed content width. Filled in by the flex/grid
     /// measure bridge.
     ///
@@ -85,6 +87,14 @@ impl MeasureMemo {
 
     pub(super) fn set_natural_width(&self, width: f32) {
         self.natural_width.set(Some(width));
+    }
+
+    pub(super) fn min_content_width(&self) -> Option<f32> {
+        self.min_content_width.get()
+    }
+
+    pub(super) fn set_min_content_width(&self, width: f32) {
+        self.min_content_width.set(Some(width));
     }
 
     pub(super) fn height(&self, content_width: f32, containing_width: f32) -> Option<f32> {
