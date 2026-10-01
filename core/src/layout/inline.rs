@@ -1930,6 +1930,158 @@ fn resolve_baseline_shifts(runs: &mut [TextRun], fonts: &FontCollection) {
     }
 }
 
+/// The min-content width of an inline formatting context, worked out without laying lines
+/// out: the widest word, shaped on its own. This is the same number a line layout at width 0
+/// ends up with (every word on its own line), for a plain case that can be recognised cheaply,
+/// and costs a fraction of it since no line boxes, runs or per-span style copies are built.
+///
+/// Returns `None` when the content is not that plain case (more than one span, a box or a
+/// forced break, `white-space` other than `normal`, `word-break`/`overflow-wrap`/
+/// `text-transform` in effect, a `::first-letter`, text outside printable ASCII and
+/// whitespace, or a word that needs more than one font). The caller then measures with the
+/// full layout. `natural_width` is the max-content width of the same content.
+pub(super) fn plain_text_min_content_width(
+    spans: &[InlineSpan],
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    fonts: &FontCollection,
+    natural_width: impl FnOnce() -> f32,
+) -> Option<f32> {
+    let [span] = spans else {
+        return None;
+    };
+    if span.atomic.is_some() || span.is_forced_break || span.is_first_letter {
+        return None;
+    }
+    let style = styles.get(&span.node)?;
+    if style.white_space != WhiteSpace::Normal
+        || style.word_break != WordBreak::Normal
+        || style.overflow_wrap != OverflowWrap::Normal
+        || style.text_transform != TextTransform::None
+        || fonts.is_empty()
+        // The first line carries the indent, so leave it to the full layout.
+        || style.text_indent != LengthPercentage::Length(0.0)
+    {
+        return None;
+    }
+    // A single word has no break opportunity, so its min-content width is its natural width,
+    // which the caller already has (or has memoised) from the max-content pass.
+    let mut words = span
+        .text
+        .split(white_space::is_collapsible)
+        .filter(|w| !w.is_empty());
+    if let (Some(word), None) = (words.next(), words.next()) {
+        if word.chars().all(|c| c.is_ascii_graphic()) {
+            return Some(natural_width());
+        }
+    }
+    // Words repeat a lot across the cells of a table, so each distinct word is shaped once
+    // per measuring pass (see [`clear_word_width_cache`]).
+    let font_size = style.font_size.0;
+    let mut widest = 0.0f32;
+    for word in span
+        .text
+        .split(white_space::is_collapsible)
+        .filter(|w| !w.is_empty())
+    {
+        let mut font_index = None;
+        for c in word.chars() {
+            if !c.is_ascii_graphic() {
+                return None;
+            }
+            let selected = select_ascii_font(fonts, style, c);
+            if *font_index.get_or_insert(selected) != selected {
+                return None;
+            }
+        }
+        let font_index = font_index?;
+        let key = (
+            font_index,
+            font_size.to_bits(),
+            style.letter_spacing.to_bits(),
+        );
+        let cached = WORD_WIDTH_CACHE.with(|cache| {
+            cache
+                .borrow()
+                .get(&key)
+                .and_then(|words| words.get(word).copied())
+        });
+        let width = match cached {
+            Some(width) => width,
+            None => {
+                let shaped = shape_text(fonts.get(font_index)?, word, font_size);
+                let width = shaped.width + style.letter_spacing * shaped.glyphs.len() as f32;
+                WORD_WIDTH_CACHE.with(|cache| {
+                    cache
+                        .borrow_mut()
+                        .entry(key)
+                        .or_default()
+                        .insert(word.to_string(), width);
+                });
+                width
+            }
+        };
+        widest = widest.max(width);
+    }
+    Some(widest)
+}
+
+/// Word widths by (font index, font size bits, letter-spacing bits), then by word.
+type WordWidths = HashMap<(usize, u32, u32), HashMap<String, f32>>;
+
+thread_local! {
+    // Both caches below are only valid for one `FontCollection`, so the table code clears
+    // them around each measuring pass (see [`clear_word_width_cache`]).
+    static ASCII_FONT_CACHE: std::cell::RefCell<Vec<AsciiFontEntry>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// Word widths shaped by [`plain_text_min_content_width`].
+    static WORD_WIDTH_CACHE: std::cell::RefCell<WordWidths> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// `FontCollection::select_for_char` for an ASCII character, remembered per (font families,
+/// weight, style) for the length of a measuring pass. Selecting walks the font list and reads
+/// each face's family name, which allocates, and a plain-text cell asks once per character.
+fn select_ascii_font(fonts: &FontCollection, style: &ComputedStyle, c: char) -> usize {
+    ASCII_FONT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let entry = match cache.iter().position(|e| {
+            e.weight == style.font_weight
+                && e.style == style.font_style
+                && e.families == style.font_family
+        }) {
+            Some(i) => &mut cache[i],
+            None => {
+                cache.push(AsciiFontEntry {
+                    families: style.font_family.clone(),
+                    weight: style.font_weight,
+                    style: style.font_style,
+                    selected: [None; 128],
+                });
+                cache.last_mut().expect("just pushed")
+            }
+        };
+        let slot = &mut entry.selected[c as usize & 127];
+        *slot.get_or_insert_with(|| {
+            fonts
+                .select_for_char(&style.font_family, style.font_weight, style.font_style, c)
+                .unwrap_or(0)
+        })
+    })
+}
+
+struct AsciiFontEntry {
+    families: Vec<String>,
+    weight: FontWeight,
+    style: FontStyle,
+    selected: [Option<usize>; 128],
+}
+
+/// Drop the word widths cached by [`plain_text_min_content_width`].
+pub(super) fn clear_word_width_cache() {
+    WORD_WIDTH_CACHE.with(|cache| cache.borrow_mut().clear());
+    ASCII_FONT_CACHE.with(|cache| cache.borrow_mut().clear());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

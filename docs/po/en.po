@@ -5610,17 +5610,9 @@ msgstr ""
 
 #: src/supports/properties.md:144
 msgid ""
-"セルの`min-width`/`max-width`は列幅アルゴリズムに反映される。 `table-layout: "
-"auto`では列の自然幅をクランプする形で効くため、表を紙幅に収める比例縮尺の後は"
-"`min-width`が保証されない。 `table-layout: fixed`では1行目のセルの指定幅をク"
-"ランプし、`width: auto`かつ`min-width`のみの指定はその値を列幅として使う。"
+"セルの`min-width`/`max-width`は列幅アルゴリズムに反映される。 `table-layout: auto`では列が最小内容幅(折り返せない最長の語など)を下回ることはなく、表を紙幅に収める縮小は各列の(自然幅 − 最小内容幅)の余りからだけ行う。最小内容幅の合計が紙幅を超えるときは、列が重ならずに表が紙幅からはみ出す。 `table-layout: fixed`では1行目のセルの指定幅をクランプし、`width: auto`かつ`min-width`のみの指定はその値を列幅として使う。"
 msgstr ""
-"`min-width` and `max-width` on a cell feed into the column width algorithm. "
-"Under `table-layout: auto` they clamp the natural width of the column, so "
-"`min-width` is no longer guaranteed once the table has been scaled down "
-"proportionally to fit the paper. Under `table-layout: fixed` they clamp the "
-"width stated on the first row's cells, and a cell with `width: auto` and "
-"only a `min-width` uses that value as the column width."
+"`min-width` and `max-width` on a cell feed into the column width algorithm. Under `table-layout: auto` a column never gets narrower than its min-content width (the widest unbreakable run, such as a long word), and the shrinking needed to fit the table to the paper comes only out of each column's slack (natural width minus min-content width). When the min-content widths alone exceed the paper width, the table overflows instead of the columns overlapping. Under `table-layout: fixed` they clamp the width stated on the first row's cells, and a cell with `width: auto` and only a `min-width` uses that value as the column width."
 
 #: src/supports/properties.md:148
 msgid "リスト"

@@ -18,7 +18,10 @@ use super::flex::layout_flex;
 use super::float_ctx::FloatContext;
 use super::geometry::{EdgeSizes, FragmentPosition, Layout, Rect};
 use super::grid::{layout_grid, LaidOutGrid};
-use super::inline::{apply_text_overflow, finish_line, layout_inline_content, shape_run, LineBox};
+use super::inline::{
+    apply_text_overflow, clear_word_width_cache, finish_line, layout_inline_content, shape_run,
+    LineBox,
+};
 use super::table::layout_table;
 
 /// The fixed gap (px) between a marker (`list-style-position: outside`) and the content edge.
@@ -493,7 +496,10 @@ fn layout_out_of_flow_child(
 /// The shrink-to-fit (content-based) content width. Shared by the atomic box of
 /// `display: inline-block` and by `width: auto` on a float. We have no CSS2.1 preferred
 /// minimum width, so it is simplified to `min(preferred, available)` (content exceeding the
-/// available width wraps).
+/// available width wraps), but never below the min-content width: CSS2.1 section 10.3.5 gives
+/// `min(max(preferred minimum, available), preferred)`. For `white-space: nowrap` the
+/// min-content width is the whole line, so the box overflows what contains it instead of
+/// being narrower than its own text.
 pub(super) fn shrink_to_fit_content_width(
     b: &LayoutBox,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -503,7 +509,16 @@ pub(super) fn shrink_to_fit_content_width(
 ) -> f32 {
     let _ = style;
     let natural = super::table::measure_natural_content_width(b, styles, fonts);
-    natural.min(available_width).max(0.0)
+    if natural <= available_width {
+        // The content fits, so min-content (never above natural) cannot change the result.
+        return natural.max(0.0);
+    }
+    // The word caches behind the min-content measure are only valid for one font
+    // collection, so they are cleared around the pass, as the table code does.
+    clear_word_width_cache();
+    let min_content = super::table::measure_min_content_width(b, styles, fonts);
+    clear_word_width_cache();
+    available_width.max(min_content.min(natural)).max(0.0)
 }
 
 fn resolve_box_geometry(
@@ -616,7 +631,7 @@ fn layout_box_impl(
     y: f32,
     pos: &mut PosCtx,
 ) -> LaidOutBox {
-    let (style, padding, border, mut margin, content_width) =
+    let (style, padding, border, mut margin, mut content_width) =
         resolve_box_geometry(b, styles, fonts, containing_width, forced_content_width);
 
     let content_x = x + margin.left + border.left + padding.left;
@@ -766,7 +781,7 @@ fn layout_box_impl(
                     style.border_spacing_vertical.0,
                 )
             };
-            let (laid_table, table_height) = layout_table(
+            let (laid_table, table_height, table_width) = layout_table(
                 table,
                 styles,
                 fonts,
@@ -780,6 +795,9 @@ fn layout_box_impl(
             );
             let height =
                 resolve_used_height(&style, &padding, &border, content_width, table_height);
+            // A table whose columns cannot fit (a `white-space: nowrap` cell wider than the
+            // table's width) grows past it, so its own background and border cover them all.
+            content_width = content_width.max(table_width);
             (LaidOutContent::Table(laid_table), height)
         }
         BoxContent::Grid(grid) => {
