@@ -12,6 +12,10 @@ use crate::html::{Dom, NodeData, NodeId};
 use super::cascade::{
     matching_declarations_by_origin, matching_pseudo_content, matching_pseudo_declarations,
 };
+use super::custom_properties::{
+    compute_custom_properties, resolve_declarations, resolve_unparsed, uses_variables,
+    CustomProperties,
+};
 use super::presentational::presentational_hint_declarations;
 use super::properties::PropertyDeclaration;
 use super::selector_impl::PseudoElement;
@@ -292,6 +296,9 @@ pub struct ComputedStyle {
     pub transform_origin: BackgroundPosition,
     /// `opacity`. Not inherited; already clamped to 0-1; initial value 1.0.
     pub opacity: f32,
+    /// The custom properties (`--foo`) in effect on this element. Inherited, and shared with
+    /// the parent when unchanged.
+    pub custom_properties: CustomProperties,
 }
 
 /// The computed value of one `box-shadow`. Lengths are resolved to px and `color` has
@@ -535,6 +542,7 @@ impl Default for ComputedStyle {
                 vertical: LengthPercentage::Percentage(0.5),
             },
             opacity: 1.0,
+            custom_properties: CustomProperties::default(),
         }
     }
 }
@@ -678,6 +686,30 @@ pub fn compute_single_element_style(
         quote_depth,
     )
     .0
+}
+
+/// The computed custom properties of the root element (`<html>`, what `:root` matches).
+///
+/// `@page` rules have no element of their own, so `var()` inside them is resolved against
+/// these values.
+pub fn root_custom_properties(dom: &Dom, ua: &Stylesheet, author: &Stylesheet) -> CustomProperties {
+    let Some(root) = dom
+        .children(dom.document())
+        .find(|&child| matches!(dom.node(child).data, NodeData::Element { .. }))
+    else {
+        return CustomProperties::default();
+    };
+    let (ua_declarations, author_declarations) =
+        matching_declarations_by_origin(dom, root, ua, author);
+    let inline_declarations = inline_style_declarations(dom, root);
+    compute_custom_properties(
+        &CustomProperties::default(),
+        ua_declarations
+            .iter()
+            .copied()
+            .chain(author_declarations.iter().copied())
+            .chain(inline_declarations.iter()),
+    )
 }
 
 /// Values shared across the whole `compute_recursive`/`compute_element_style` recursion
@@ -925,137 +957,192 @@ fn compute_element_style(
     // `data-page-break` sugar) count as "default hints, stronger than the UA stylesheet but
     // overridable by author CSS", so they sit between the two. An inline style attribute
     // outranks every selector-based declaration, so it goes last.
-    for decl in ua_declarations
-        .into_iter()
-        .chain(attribute_declarations.iter())
-        .chain(author_declarations)
-        .chain(inline_declarations.iter())
-    {
-        match decl {
-            PropertyDeclaration::Display(v) => display = Some(*v),
-            PropertyDeclaration::Width(v) => width = Some(*v),
-            PropertyDeclaration::Height(v) => height = Some(*v),
-            PropertyDeclaration::MinWidth(v) => min_width = Some(*v),
-            PropertyDeclaration::MinHeight(v) => min_height = Some(*v),
-            PropertyDeclaration::MaxWidth(v) => max_width = Some(*v),
-            PropertyDeclaration::MaxHeight(v) => max_height = Some(*v),
-            PropertyDeclaration::AspectRatio(v) => aspect_ratio = Some(*v),
-            PropertyDeclaration::MarginTop(v) => margin_top = Some(*v),
-            PropertyDeclaration::MarginRight(v) => margin_right = Some(*v),
-            PropertyDeclaration::MarginBottom(v) => margin_bottom = Some(*v),
-            PropertyDeclaration::MarginLeft(v) => margin_left = Some(*v),
-            PropertyDeclaration::PaddingTop(v) => padding_top = Some(*v),
-            PropertyDeclaration::PaddingRight(v) => padding_right = Some(*v),
-            PropertyDeclaration::PaddingBottom(v) => padding_bottom = Some(*v),
-            PropertyDeclaration::PaddingLeft(v) => padding_left = Some(*v),
-            PropertyDeclaration::BorderTopWidth(v) => border_top_width = Some(*v),
-            PropertyDeclaration::BorderRightWidth(v) => border_right_width = Some(*v),
-            PropertyDeclaration::BorderBottomWidth(v) => border_bottom_width = Some(*v),
-            PropertyDeclaration::BorderLeftWidth(v) => border_left_width = Some(*v),
-            PropertyDeclaration::BorderTopColor(v) => border_top_color = Some(*v),
-            PropertyDeclaration::BorderRightColor(v) => border_right_color = Some(*v),
-            PropertyDeclaration::BorderBottomColor(v) => border_bottom_color = Some(*v),
-            PropertyDeclaration::BorderLeftColor(v) => border_left_color = Some(*v),
-            PropertyDeclaration::BorderTopStyle(v) => border_top_style = Some(*v),
-            PropertyDeclaration::BorderRightStyle(v) => border_right_style = Some(*v),
-            PropertyDeclaration::BorderBottomStyle(v) => border_bottom_style = Some(*v),
-            PropertyDeclaration::BorderLeftStyle(v) => border_left_style = Some(*v),
-            PropertyDeclaration::BorderTopLeftRadius(v) => border_top_left_radius = Some(*v),
-            PropertyDeclaration::BorderTopRightRadius(v) => border_top_right_radius = Some(*v),
-            PropertyDeclaration::BorderBottomRightRadius(v) => {
-                border_bottom_right_radius = Some(*v)
+    // Custom properties are cascaded first (they only depend on other custom properties and
+    // the parent), so `var()` in the declarations below can be substituted.
+    let all_declarations = || {
+        ua_declarations
+            .iter()
+            .copied()
+            .chain(attribute_declarations.iter())
+            .chain(author_declarations.iter().copied())
+            .chain(inline_declarations.iter())
+    };
+    let inherited_custom = parent
+        .map(|p| p.custom_properties.clone())
+        .unwrap_or_default();
+    let custom_properties = if uses_variables(all_declarations()) {
+        compute_custom_properties(&inherited_custom, all_declarations())
+    } else {
+        inherited_custom
+    };
+
+    let mut expanded: Vec<PropertyDeclaration>;
+    for source in all_declarations() {
+        // `reset`: the declaration was invalid at computed-value time, so the properties it
+        // names behave as `unset` (the inherited value or the initial value).
+        let mut reset = false;
+        let list: &[PropertyDeclaration] = match source {
+            PropertyDeclaration::Custom(_) => &[],
+            PropertyDeclaration::Unparsed(unparsed) => {
+                (expanded, reset) = resolve_unparsed(unparsed, &custom_properties);
+                &expanded
             }
-            PropertyDeclaration::BorderBottomLeftRadius(v) => border_bottom_left_radius = Some(*v),
-            PropertyDeclaration::FontSize(v) => font_size = Some(*v),
-            PropertyDeclaration::FontFamily(v) => font_family = Some(v.clone()),
-            PropertyDeclaration::FontWeight(v) => font_weight = Some(*v),
-            PropertyDeclaration::FontStyle(v) => font_style = Some(*v),
-            PropertyDeclaration::Color(v) => color = Some(*v),
-            PropertyDeclaration::BackgroundColor(v) => background_color = Some(*v),
-            PropertyDeclaration::BackgroundImage(v) => background_image = v.clone(),
-            PropertyDeclaration::BackgroundPosition(v) => background_position = Some(*v),
-            PropertyDeclaration::BackgroundSize(v) => background_size = Some(*v),
-            PropertyDeclaration::BackgroundRepeat(v) => background_repeat = Some(*v),
-            PropertyDeclaration::BackgroundAttachment(v) => background_attachment = Some(*v),
-            PropertyDeclaration::TextDecorationLine(v) => text_decoration_line = Some(*v),
-            // `content` is for `::before`/`::after` only and has no effect on an ordinary
-            // element (`matching_pseudo_content` does the pseudo-element matching separately).
-            PropertyDeclaration::Content(_) => {}
-            PropertyDeclaration::BreakBefore(v) => break_before = Some(*v),
-            PropertyDeclaration::BreakAfter(v) => break_after = Some(*v),
-            PropertyDeclaration::BreakInside(v) => break_inside = Some(*v),
-            PropertyDeclaration::Orphans(v) => orphans = Some(*v),
-            PropertyDeclaration::Widows(v) => widows = Some(*v),
-            PropertyDeclaration::Float(v) => float = Some(*v),
-            PropertyDeclaration::Clear(v) => clear = Some(*v),
-            PropertyDeclaration::Position(v) => position = Some(*v),
-            PropertyDeclaration::Top(v) => top = Some(*v),
-            PropertyDeclaration::Right(v) => right = Some(*v),
-            PropertyDeclaration::Bottom(v) => bottom = Some(*v),
-            PropertyDeclaration::Left(v) => left = Some(*v),
-            PropertyDeclaration::TextAlign(v) => text_align = Some(*v),
-            PropertyDeclaration::LineHeight(v) => line_height = Some(*v),
-            PropertyDeclaration::TextIndent(v) => text_indent = Some(*v),
-            PropertyDeclaration::WhiteSpace(v) => white_space = Some(*v),
-            PropertyDeclaration::LetterSpacing(v) => letter_spacing = Some(*v),
-            PropertyDeclaration::WordSpacing(v) => word_spacing = Some(*v),
-            PropertyDeclaration::TextTransform(v) => text_transform = Some(*v),
-            PropertyDeclaration::TextShadow(v) => text_shadow = Some(v.clone()),
-            PropertyDeclaration::TextOverflow(v) => text_overflow = Some(*v),
-            PropertyDeclaration::WordBreak(v) => word_break = Some(*v),
-            PropertyDeclaration::OverflowWrap(v) => overflow_wrap = Some(*v),
-            PropertyDeclaration::Hyphens(v) => hyphens = Some(*v),
-            PropertyDeclaration::TextEmphasisStyle(v) => text_emphasis_style = Some(v.clone()),
-            PropertyDeclaration::TextEmphasisColor(v) => text_emphasis_color = Some(*v),
-            PropertyDeclaration::TextEmphasisPosition(v) => text_emphasis_position = Some(*v),
-            PropertyDeclaration::GridTemplateColumns(v) => grid_template_columns = Some(v.clone()),
-            PropertyDeclaration::GridTemplateRows(v) => grid_template_rows = Some(v.clone()),
-            PropertyDeclaration::GridAutoColumns(v) => grid_auto_columns = Some(v.clone()),
-            PropertyDeclaration::GridAutoRows(v) => grid_auto_rows = Some(v.clone()),
-            PropertyDeclaration::GridAutoFlow(v) => grid_auto_flow = Some(*v),
-            PropertyDeclaration::GridTemplateAreas(v) => grid_template_areas = Some(v.clone()),
-            PropertyDeclaration::GridRowStart(v) => grid_row_start = Some(v.clone()),
-            PropertyDeclaration::GridRowEnd(v) => grid_row_end = Some(v.clone()),
-            PropertyDeclaration::GridColumnStart(v) => grid_column_start = Some(v.clone()),
-            PropertyDeclaration::GridColumnEnd(v) => grid_column_end = Some(v.clone()),
-            PropertyDeclaration::JustifyItems(v) => justify_items = Some(*v),
-            PropertyDeclaration::JustifySelf(v) => justify_self = Some(*v),
-            PropertyDeclaration::BorderCollapse(v) => border_collapse = Some(*v),
-            PropertyDeclaration::BorderSpacing(h, v) => border_spacing = Some((*h, *v)),
-            PropertyDeclaration::CaptionSide(v) => caption_side = Some(*v),
-            PropertyDeclaration::TableLayout(v) => table_layout = Some(*v),
-            PropertyDeclaration::EmptyCells(v) => empty_cells = Some(*v),
-            PropertyDeclaration::VerticalAlign(v) => vertical_align = Some(*v),
-            PropertyDeclaration::ListStyleType(v) => list_style_type = Some(*v),
-            PropertyDeclaration::ListStylePosition(v) => list_style_position = Some(*v),
-            PropertyDeclaration::ListStyleImage(v) => list_style_image = Some(v.clone()),
-            PropertyDeclaration::Overflow(v) => overflow = Some(*v),
-            PropertyDeclaration::BoxSizing(v) => box_sizing = Some(*v),
-            PropertyDeclaration::ZIndex(v) => z_index = Some(*v),
-            PropertyDeclaration::Visibility(v) => visibility = Some(*v),
-            PropertyDeclaration::OutlineWidth(v) => outline_width = Some(*v),
-            PropertyDeclaration::OutlineStyle(v) => outline_style = Some(*v),
-            PropertyDeclaration::OutlineColor(v) => outline_color = Some(*v),
-            PropertyDeclaration::CounterReset(v) => counter_reset = Some(v.clone()),
-            PropertyDeclaration::CounterIncrement(v) => counter_increment = Some(v.clone()),
-            PropertyDeclaration::Quotes(v) => quotes = Some(v.clone()),
-            PropertyDeclaration::ObjectFit(v) => object_fit = Some(*v),
-            PropertyDeclaration::ObjectPosition(v) => object_position = Some(*v),
-            PropertyDeclaration::BoxShadow(v) => box_shadow = Some(v.clone()),
-            PropertyDeclaration::FlexDirection(v) => flex_direction = Some(*v),
-            PropertyDeclaration::FlexWrap(v) => flex_wrap = Some(*v),
-            PropertyDeclaration::JustifyContent(v) => justify_content = Some(*v),
-            PropertyDeclaration::AlignItems(v) => align_items = Some(*v),
-            PropertyDeclaration::AlignContent(v) => align_content = Some(*v),
-            PropertyDeclaration::AlignSelf(v) => align_self = Some(*v),
-            PropertyDeclaration::FlexGrow(v) => flex_grow = Some(*v),
-            PropertyDeclaration::FlexShrink(v) => flex_shrink = Some(*v),
-            PropertyDeclaration::FlexBasis(v) => flex_basis = Some(*v),
-            PropertyDeclaration::RowGap(v) => row_gap = Some(*v),
-            PropertyDeclaration::ColumnGap(v) => column_gap = Some(*v),
-            PropertyDeclaration::Transform(v) => transform = Some(v.clone()),
-            PropertyDeclaration::TransformOrigin(v) => transform_origin = Some(*v),
-            PropertyDeclaration::Opacity(v) => opacity = Some(*v),
+            other => std::slice::from_ref(other),
+        };
+        for decl in list {
+            match decl {
+                PropertyDeclaration::Display(v) => display = sel(reset, *v),
+                PropertyDeclaration::Width(v) => width = sel(reset, *v),
+                PropertyDeclaration::Height(v) => height = sel(reset, *v),
+                PropertyDeclaration::MinWidth(v) => min_width = sel(reset, *v),
+                PropertyDeclaration::MinHeight(v) => min_height = sel(reset, *v),
+                PropertyDeclaration::MaxWidth(v) => max_width = sel(reset, *v),
+                PropertyDeclaration::MaxHeight(v) => max_height = sel(reset, *v),
+                PropertyDeclaration::AspectRatio(v) => aspect_ratio = sel(reset, *v),
+                PropertyDeclaration::MarginTop(v) => margin_top = sel(reset, *v),
+                PropertyDeclaration::MarginRight(v) => margin_right = sel(reset, *v),
+                PropertyDeclaration::MarginBottom(v) => margin_bottom = sel(reset, *v),
+                PropertyDeclaration::MarginLeft(v) => margin_left = sel(reset, *v),
+                PropertyDeclaration::PaddingTop(v) => padding_top = sel(reset, *v),
+                PropertyDeclaration::PaddingRight(v) => padding_right = sel(reset, *v),
+                PropertyDeclaration::PaddingBottom(v) => padding_bottom = sel(reset, *v),
+                PropertyDeclaration::PaddingLeft(v) => padding_left = sel(reset, *v),
+                PropertyDeclaration::BorderTopWidth(v) => border_top_width = sel(reset, *v),
+                PropertyDeclaration::BorderRightWidth(v) => border_right_width = sel(reset, *v),
+                PropertyDeclaration::BorderBottomWidth(v) => border_bottom_width = sel(reset, *v),
+                PropertyDeclaration::BorderLeftWidth(v) => border_left_width = sel(reset, *v),
+                PropertyDeclaration::BorderTopColor(v) => border_top_color = sel(reset, *v),
+                PropertyDeclaration::BorderRightColor(v) => border_right_color = sel(reset, *v),
+                PropertyDeclaration::BorderBottomColor(v) => border_bottom_color = sel(reset, *v),
+                PropertyDeclaration::BorderLeftColor(v) => border_left_color = sel(reset, *v),
+                PropertyDeclaration::BorderTopStyle(v) => border_top_style = sel(reset, *v),
+                PropertyDeclaration::BorderRightStyle(v) => border_right_style = sel(reset, *v),
+                PropertyDeclaration::BorderBottomStyle(v) => border_bottom_style = sel(reset, *v),
+                PropertyDeclaration::BorderLeftStyle(v) => border_left_style = sel(reset, *v),
+                PropertyDeclaration::BorderTopLeftRadius(v) => {
+                    border_top_left_radius = sel(reset, *v)
+                }
+                PropertyDeclaration::BorderTopRightRadius(v) => {
+                    border_top_right_radius = sel(reset, *v)
+                }
+                PropertyDeclaration::BorderBottomRightRadius(v) => {
+                    border_bottom_right_radius = sel(reset, *v)
+                }
+                PropertyDeclaration::BorderBottomLeftRadius(v) => {
+                    border_bottom_left_radius = sel(reset, *v)
+                }
+                PropertyDeclaration::FontSize(v) => font_size = sel(reset, *v),
+                PropertyDeclaration::FontFamily(v) => font_family = sel(reset, v.clone()),
+                PropertyDeclaration::FontWeight(v) => font_weight = sel(reset, *v),
+                PropertyDeclaration::FontStyle(v) => font_style = sel(reset, *v),
+                PropertyDeclaration::Color(v) => color = sel(reset, *v),
+                PropertyDeclaration::BackgroundColor(v) => background_color = sel(reset, *v),
+                PropertyDeclaration::BackgroundImage(v) => {
+                    background_image = if reset { None } else { v.clone() }
+                }
+                PropertyDeclaration::BackgroundPosition(v) => background_position = sel(reset, *v),
+                PropertyDeclaration::BackgroundSize(v) => background_size = sel(reset, *v),
+                PropertyDeclaration::BackgroundRepeat(v) => background_repeat = sel(reset, *v),
+                PropertyDeclaration::BackgroundAttachment(v) => {
+                    background_attachment = sel(reset, *v)
+                }
+                PropertyDeclaration::TextDecorationLine(v) => text_decoration_line = sel(reset, *v),
+                // `content` is for `::before`/`::after` only and has no effect on an ordinary
+                // element (`matching_pseudo_content` does the pseudo-element matching separately).
+                PropertyDeclaration::Content(_) => {}
+                PropertyDeclaration::BreakBefore(v) => break_before = sel(reset, *v),
+                PropertyDeclaration::BreakAfter(v) => break_after = sel(reset, *v),
+                PropertyDeclaration::BreakInside(v) => break_inside = sel(reset, *v),
+                PropertyDeclaration::Orphans(v) => orphans = sel(reset, *v),
+                PropertyDeclaration::Widows(v) => widows = sel(reset, *v),
+                PropertyDeclaration::Float(v) => float = sel(reset, *v),
+                PropertyDeclaration::Clear(v) => clear = sel(reset, *v),
+                PropertyDeclaration::Position(v) => position = sel(reset, *v),
+                PropertyDeclaration::Top(v) => top = sel(reset, *v),
+                PropertyDeclaration::Right(v) => right = sel(reset, *v),
+                PropertyDeclaration::Bottom(v) => bottom = sel(reset, *v),
+                PropertyDeclaration::Left(v) => left = sel(reset, *v),
+                PropertyDeclaration::TextAlign(v) => text_align = sel(reset, *v),
+                PropertyDeclaration::LineHeight(v) => line_height = sel(reset, *v),
+                PropertyDeclaration::TextIndent(v) => text_indent = sel(reset, *v),
+                PropertyDeclaration::WhiteSpace(v) => white_space = sel(reset, *v),
+                PropertyDeclaration::LetterSpacing(v) => letter_spacing = sel(reset, *v),
+                PropertyDeclaration::WordSpacing(v) => word_spacing = sel(reset, *v),
+                PropertyDeclaration::TextTransform(v) => text_transform = sel(reset, *v),
+                PropertyDeclaration::TextShadow(v) => text_shadow = sel(reset, v.clone()),
+                PropertyDeclaration::TextOverflow(v) => text_overflow = sel(reset, *v),
+                PropertyDeclaration::WordBreak(v) => word_break = sel(reset, *v),
+                PropertyDeclaration::OverflowWrap(v) => overflow_wrap = sel(reset, *v),
+                PropertyDeclaration::Hyphens(v) => hyphens = sel(reset, *v),
+                PropertyDeclaration::TextEmphasisStyle(v) => {
+                    text_emphasis_style = sel(reset, v.clone())
+                }
+                PropertyDeclaration::TextEmphasisColor(v) => text_emphasis_color = sel(reset, *v),
+                PropertyDeclaration::TextEmphasisPosition(v) => {
+                    text_emphasis_position = sel(reset, *v)
+                }
+                PropertyDeclaration::GridTemplateColumns(v) => {
+                    grid_template_columns = sel(reset, v.clone())
+                }
+                PropertyDeclaration::GridTemplateRows(v) => {
+                    grid_template_rows = sel(reset, v.clone())
+                }
+                PropertyDeclaration::GridAutoColumns(v) => {
+                    grid_auto_columns = sel(reset, v.clone())
+                }
+                PropertyDeclaration::GridAutoRows(v) => grid_auto_rows = sel(reset, v.clone()),
+                PropertyDeclaration::GridAutoFlow(v) => grid_auto_flow = sel(reset, *v),
+                PropertyDeclaration::GridTemplateAreas(v) => {
+                    grid_template_areas = sel(reset, v.clone())
+                }
+                PropertyDeclaration::GridRowStart(v) => grid_row_start = sel(reset, v.clone()),
+                PropertyDeclaration::GridRowEnd(v) => grid_row_end = sel(reset, v.clone()),
+                PropertyDeclaration::GridColumnStart(v) => {
+                    grid_column_start = sel(reset, v.clone())
+                }
+                PropertyDeclaration::GridColumnEnd(v) => grid_column_end = sel(reset, v.clone()),
+                PropertyDeclaration::JustifyItems(v) => justify_items = sel(reset, *v),
+                PropertyDeclaration::JustifySelf(v) => justify_self = sel(reset, *v),
+                PropertyDeclaration::BorderCollapse(v) => border_collapse = sel(reset, *v),
+                PropertyDeclaration::BorderSpacing(h, v) => border_spacing = sel(reset, (*h, *v)),
+                PropertyDeclaration::CaptionSide(v) => caption_side = sel(reset, *v),
+                PropertyDeclaration::TableLayout(v) => table_layout = sel(reset, *v),
+                PropertyDeclaration::EmptyCells(v) => empty_cells = sel(reset, *v),
+                PropertyDeclaration::VerticalAlign(v) => vertical_align = sel(reset, *v),
+                PropertyDeclaration::ListStyleType(v) => list_style_type = sel(reset, *v),
+                PropertyDeclaration::ListStylePosition(v) => list_style_position = sel(reset, *v),
+                PropertyDeclaration::ListStyleImage(v) => list_style_image = sel(reset, v.clone()),
+                PropertyDeclaration::Overflow(v) => overflow = sel(reset, *v),
+                PropertyDeclaration::BoxSizing(v) => box_sizing = sel(reset, *v),
+                PropertyDeclaration::ZIndex(v) => z_index = sel(reset, *v),
+                PropertyDeclaration::Visibility(v) => visibility = sel(reset, *v),
+                PropertyDeclaration::OutlineWidth(v) => outline_width = sel(reset, *v),
+                PropertyDeclaration::OutlineStyle(v) => outline_style = sel(reset, *v),
+                PropertyDeclaration::OutlineColor(v) => outline_color = sel(reset, *v),
+                PropertyDeclaration::CounterReset(v) => counter_reset = sel(reset, v.clone()),
+                PropertyDeclaration::CounterIncrement(v) => {
+                    counter_increment = sel(reset, v.clone())
+                }
+                PropertyDeclaration::Quotes(v) => quotes = sel(reset, v.clone()),
+                PropertyDeclaration::ObjectFit(v) => object_fit = sel(reset, *v),
+                PropertyDeclaration::ObjectPosition(v) => object_position = sel(reset, *v),
+                PropertyDeclaration::BoxShadow(v) => box_shadow = sel(reset, v.clone()),
+                PropertyDeclaration::FlexDirection(v) => flex_direction = sel(reset, *v),
+                PropertyDeclaration::FlexWrap(v) => flex_wrap = sel(reset, *v),
+                PropertyDeclaration::JustifyContent(v) => justify_content = sel(reset, *v),
+                PropertyDeclaration::AlignItems(v) => align_items = sel(reset, *v),
+                PropertyDeclaration::AlignContent(v) => align_content = sel(reset, *v),
+                PropertyDeclaration::AlignSelf(v) => align_self = sel(reset, *v),
+                PropertyDeclaration::FlexGrow(v) => flex_grow = sel(reset, *v),
+                PropertyDeclaration::FlexShrink(v) => flex_shrink = sel(reset, *v),
+                PropertyDeclaration::FlexBasis(v) => flex_basis = sel(reset, *v),
+                PropertyDeclaration::RowGap(v) => row_gap = sel(reset, *v),
+                PropertyDeclaration::ColumnGap(v) => column_gap = sel(reset, *v),
+                PropertyDeclaration::Transform(v) => transform = sel(reset, v.clone()),
+                PropertyDeclaration::TransformOrigin(v) => transform_origin = sel(reset, *v),
+                PropertyDeclaration::Opacity(v) => opacity = sel(reset, *v),
+                PropertyDeclaration::Custom(_) | PropertyDeclaration::Unparsed(_) => {}
+            }
         }
     }
 
@@ -1313,8 +1400,22 @@ fn compute_element_style(
     // resolved here (the `counter()`/`quotes` state should reflect changes made by the
     // descendants). The list of parts is returned unresolved to the caller
     // (`compute_recursive`), which resolves it once the descendants are processed.
-    let before_parts = matching_pseudo_content(dom, element, PseudoElement::Before, ua, author);
-    let after_parts = matching_pseudo_content(dom, element, PseudoElement::After, ua, author);
+    let before_parts = matching_pseudo_content(
+        dom,
+        element,
+        PseudoElement::Before,
+        ua,
+        author,
+        &custom_properties,
+    );
+    let after_parts = matching_pseudo_content(
+        dom,
+        element,
+        PseudoElement::After,
+        ua,
+        author,
+        &custom_properties,
+    );
     let pseudo_before_content = resolve_content_parts(
         before_parts,
         dom,
@@ -1325,8 +1426,18 @@ fn compute_element_style(
     );
 
     // `::first-letter`. A limited override style covering only the supported properties.
-    let first_letter_declarations =
+    let mut first_letter_declarations =
         matching_pseudo_declarations(dom, element, PseudoElement::FirstLetter, ua, author);
+    let first_letter_resolved;
+    if uses_variables(first_letter_declarations.iter().copied()) {
+        let properties = compute_custom_properties(
+            &custom_properties,
+            first_letter_declarations.iter().copied(),
+        );
+        first_letter_resolved =
+            resolve_declarations(first_letter_declarations.iter().copied(), &properties);
+        first_letter_declarations = first_letter_resolved.iter().collect();
+    }
     let first_letter_style = compute_first_letter_style(
         &first_letter_declarations,
         resolved_font_size.0,
@@ -1479,6 +1590,7 @@ fn compute_element_style(
         transform: resolved_transform,
         transform_origin: resolved_transform_origin,
         opacity: resolved_opacity,
+        custom_properties,
     };
 
     (style, pushed_counter_names, after_parts)
@@ -1703,6 +1815,15 @@ fn resolve_color(declared: Option<Color>, inherited: RgbaColor) -> RgbaColor {
             alpha,
         },
         Some(Color::CurrentColor) | None => inherited,
+    }
+}
+
+/// `Some(value)`, or `None` when the declaration is being applied as a reset.
+fn sel<T>(reset: bool, value: T) -> Option<T> {
+    if reset {
+        None
+    } else {
+        Some(value)
     }
 }
 

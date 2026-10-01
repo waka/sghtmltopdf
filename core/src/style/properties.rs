@@ -192,6 +192,12 @@ pub enum PropertyDeclaration {
     /// `align-items`/`align-self`.
     JustifyItems(AlignItems),
     JustifySelf(AlignSelf),
+    /// A custom property declaration (`--foo: ...`). Handled by the custom property cascade
+    /// ([`super::custom_properties`]); it never reaches the typed computed style.
+    Custom(super::custom_properties::CustomDeclaration),
+    /// An ordinary property whose value contains `var()`, parsed at computed-value time
+    /// once the element's custom properties are known.
+    Unparsed(super::custom_properties::UnparsedDeclaration),
 }
 
 /// Parse a value given a property name. Shorthands (`margin`/`padding`/`border`) are

@@ -13,6 +13,9 @@ use selectors::parser::SelectorList;
 
 use crate::html::{Dom, NodeId};
 
+use super::custom_properties::{
+    compute_custom_properties, resolve_unparsed, uses_variables, CustomProperties,
+};
 use super::element_ref::ElementRef;
 use super::properties::PropertyDeclaration;
 use super::selector_impl::{PseudoElement, SgSelectorImpl};
@@ -155,14 +158,38 @@ pub fn matching_pseudo_content(
     pseudo: PseudoElement,
     ua: &Stylesheet,
     author: &Stylesheet,
+    element_properties: &CustomProperties,
 ) -> Option<Vec<ContentPart>> {
-    matching_pseudo_declarations(dom, element, pseudo, ua, author)
+    let declarations = matching_pseudo_declarations(dom, element, pseudo, ua, author);
+    // `content: var(--label)` resolves against the element's custom properties plus any
+    // declared on the pseudo-element itself.
+    let properties = if uses_variables(declarations.iter().copied()) {
+        compute_custom_properties(element_properties, declarations.iter().copied())
+    } else {
+        element_properties.clone()
+    };
+    declarations
         .into_iter()
-        .filter_map(|decl| match decl {
+        .rev()
+        .find_map(|decl| match decl {
             PropertyDeclaration::Content(content) => Some(content.clone()),
+            PropertyDeclaration::Unparsed(unparsed)
+                if unparsed.name.eq_ignore_ascii_case("content") =>
+            {
+                // Invalid at computed-value time: `content` becomes its initial value (`normal`).
+                Some(
+                    match resolve_unparsed(unparsed, &properties) {
+                        (resolved, false) => resolved.into_iter().find_map(|d| match d {
+                            PropertyDeclaration::Content(content) => Some(content),
+                            _ => None,
+                        }),
+                        _ => None,
+                    }
+                    .flatten(),
+                )
+            }
             _ => None,
         })
-        .next_back()
         .flatten()
 }
 

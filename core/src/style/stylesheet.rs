@@ -11,9 +11,10 @@ use selectors::parser::{
     Combinator, Component, NthSelectorData, NthType, ParseRelative, Selector, SelectorList,
 };
 
+use super::custom_properties::parse_declaration_or_defer;
 use super::font_face::{parse_font_face_block, FontFaceRule};
 use super::page_rule::{parse_page_rule_block, parse_page_selector, PageRule};
-use super::properties::{parse_declaration, PropertyDeclaration};
+use super::properties::PropertyDeclaration;
 use super::rule_index::RuleIndex;
 use super::selector_impl::{SelectorParser, SgSelectorImpl};
 
@@ -249,7 +250,7 @@ impl<'i> DeclarationParser<'i> for StyleRuleBodyParser<'_> {
         input: &mut Parser<'i, 't>,
         _declaration_start: &cssparser::ParserState,
     ) -> Result<Self::Declaration, ParseError<'i, Self::Error>> {
-        parse_declaration(&name, input).map(StyleRuleBodyItem::Declarations)
+        parse_declaration_or_defer(&name, input).map(StyleRuleBodyItem::Declarations)
     }
 }
 
@@ -475,7 +476,7 @@ impl<'i> DeclarationParser<'i> for DeclarationBlockParser {
         input: &mut Parser<'i, 't>,
         _declaration_start: &cssparser::ParserState,
     ) -> Result<Self::Declaration, ParseError<'i, Self::Error>> {
-        parse_declaration(&name, input)
+        parse_declaration_or_defer(&name, input)
     }
 }
 

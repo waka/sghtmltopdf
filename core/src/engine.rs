@@ -45,9 +45,10 @@ use crate::pdf::{
 use crate::sink::Sink;
 use crate::style::{
     compute_single_element_style, compute_styles, compute_styles_with_parent,
-    extract_author_stylesheet, needs_preceding_siblings, resolve_page_rules, rules_use_page_count,
-    streaming_unsafe_selectors, user_agent_stylesheet, ComputedStyle, LengthPercentageOrAuto,
-    PageRule, RgbaColor, Stylesheet,
+    extract_author_stylesheet, needs_preceding_siblings, resolve_page_rule_variables,
+    resolve_page_rules, root_custom_properties, rules_use_page_count, streaming_unsafe_selectors,
+    user_agent_stylesheet, ComputedStyle, CustomProperties, LengthPercentageOrAuto, PageRule,
+    RgbaColor, Stylesheet,
 };
 use crate::style::{FontStyle, FontWeight};
 
@@ -776,12 +777,19 @@ fn warn_unresolved_font_families(
 }
 
 /// Return the `@page` rules of `EngineOptions::extra_page_css` placed before the author's rules.
-fn page_rules_with_extra(extra_css: Option<&str>, author: &[PageRule]) -> Vec<PageRule> {
+///
+/// `var()` inside `@page` is resolved against the custom properties of the root element
+/// (`:root`), since a page has no element of its own.
+fn page_rules_with_extra(
+    extra_css: Option<&str>,
+    author: &[PageRule],
+    root_properties: &CustomProperties,
+) -> Vec<PageRule> {
     let mut rules = extra_css
         .map(|css| crate::style::parse_stylesheet(css).page_rules)
         .unwrap_or_default();
     rules.extend_from_slice(author);
-    rules
+    resolve_page_rule_variables(&rules, root_properties)
 }
 
 /// Concatenate the user-origin CSS after the UA stylesheet.
@@ -1152,8 +1160,12 @@ impl<S: Sink> Engine<S> {
             let dom = self.parser.dom();
             extract_author_stylesheet(&dom, &css_fetcher, &css_cache)
         };
-        let page_rules =
-            page_rules_with_extra(self.options.extra_page_css.as_deref(), &author.page_rules);
+        let root_properties = root_custom_properties(&self.parser.dom(), &ua, &author);
+        let page_rules = page_rules_with_extra(
+            self.options.extra_page_css.as_deref(),
+            &author.page_rules,
+            &root_properties,
+        );
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
         if rules_use_page_count(&page_rules) {
             return Err(EngineError::UnsupportedInStreamingMode(
@@ -1631,8 +1643,12 @@ impl<S: Sink> Engine<S> {
             .into_iter()
             .map(|(node, id)| (node, anchor_destination_name(&id)))
             .collect();
-        let page_rules =
-            page_rules_with_extra(options.extra_page_css.as_deref(), &author.page_rules);
+        let root_properties = root_custom_properties(&dom, &ua, &author);
+        let page_rules = page_rules_with_extra(
+            options.extra_page_css.as_deref(),
+            &author.page_rules,
+            &root_properties,
+        );
         let page_settings = apply_page_rule_settings_override(options.settings, &page_rules);
 
         register_generic_fonts(&mut fonts, &options.generic_fonts)?;

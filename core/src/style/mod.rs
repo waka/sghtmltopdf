@@ -20,15 +20,16 @@ mod values;
 pub use cascade::matching_declarations;
 pub use computed::{
     compute_single_element_style, compute_styles, compute_styles_with_parent,
-    resolve_margin_box_content, ComputedBoxShadow, ComputedStyle, ComputedTextShadow,
-    FirstLetterStyle, LineHeight, RgbaColor,
+    resolve_margin_box_content, root_custom_properties, ComputedBoxShadow, ComputedStyle,
+    ComputedTextShadow, FirstLetterStyle, LineHeight, RgbaColor,
 };
+pub use custom_properties::CustomProperties;
 pub use element_ref::ElementRef;
 pub use extract::extract_author_stylesheet;
 pub use font_face::{FontFaceRule, FontFaceSource};
 pub use page_rule::{
-    resolve_page_rules, rules_use_page_count, MarginBoxArea, NamedPageSize, PageOrientation,
-    PageRule, PageSelector, PageSizeValue, ResolvedPageRule,
+    resolve_page_rule_variables, resolve_page_rules, rules_use_page_count, MarginBoxArea,
+    NamedPageSize, PageOrientation, PageRule, PageSelector, PageSizeValue, ResolvedPageRule,
 };
 pub use properties::PropertyDeclaration;
 pub use selector_impl::SgSelectorImpl;

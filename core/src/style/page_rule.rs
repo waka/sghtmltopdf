@@ -13,11 +13,14 @@
 use std::collections::BTreeMap;
 
 use cssparser::{
-    AtRuleParser, CowRcStr, DeclarationParser, ParseError, Parser, QualifiedRuleParser,
-    RuleBodyItemParser, RuleBodyParser,
+    AtRuleParser, CowRcStr, DeclarationParser, ParseError, Parser, ParserInput,
+    QualifiedRuleParser, RuleBodyItemParser, RuleBodyParser,
 };
 
-use super::properties::{parse_declaration, parse_length, PropertyDeclaration};
+use super::custom_properties::{
+    parse_declaration_or_defer, resolve_declarations, substitute_unparsed, CustomProperties,
+};
+use super::properties::{parse_length, PropertyDeclaration};
 use super::stylesheet::DeclarationBlockParser;
 use super::values::{ContentPart, LengthPercentageOrAuto, SpecifiedLength};
 
@@ -143,9 +146,22 @@ impl<'i> DeclarationParser<'i> for PageRuleParser {
         _declaration_start: &cssparser::ParserState,
     ) -> Result<Self::Declaration, ParseError<'i, Self::Error>> {
         if name.eq_ignore_ascii_case("size") {
-            return Ok(PageBodyItem::Size(parse_page_size(input)?));
+            // A `size` containing `var()` is kept unparsed and resolved against `:root`
+            // ([`resolve_page_rule_variables`]).
+            let start = input.state();
+            return match parse_page_size(input) {
+                Ok(size) if input.is_exhausted() => Ok(PageBodyItem::Size(size)),
+                _ => {
+                    input.reset(&start);
+                    Ok(PageBodyItem::Declarations(parse_declaration_or_defer(
+                        &name, input,
+                    )?))
+                }
+            };
         }
-        Ok(PageBodyItem::Declarations(parse_declaration(&name, input)?))
+        Ok(PageBodyItem::Declarations(parse_declaration_or_defer(
+            &name, input,
+        )?))
     }
 }
 
@@ -339,6 +355,56 @@ pub fn resolve_page_rules(rules: &[PageRule], is_first: bool, is_left: bool) -> 
 /// Whether any margin box's `content` uses `counter(pages)` (including `counters(pages, ...)`).
 /// The total page count cannot be known in principle under `Mode::Streaming`, so this
 /// decides whether to return `EngineError::UnsupportedInStreamingMode`.
+/// Resolve `var()` in `@page` rules (the `size`, the margins and the margin boxes).
+///
+/// An `@page` rule has no element, so references are resolved against `root`, the computed
+/// custom properties of the root element (`:root`/`html`). Custom properties declared inside
+/// an `@page` rule itself are not visible. A declaration that cannot be resolved is ignored.
+pub fn resolve_page_rule_variables(rules: &[PageRule], root: &CustomProperties) -> Vec<PageRule> {
+    rules
+        .iter()
+        .map(|rule| {
+            let mut resolved = rule.clone();
+            let has_vars = |decls: &[PropertyDeclaration]| {
+                decls.iter().any(|d| {
+                    matches!(
+                        d,
+                        PropertyDeclaration::Unparsed(_) | PropertyDeclaration::Custom(_)
+                    )
+                })
+            };
+            if has_vars(&rule.margin) {
+                resolved.margin.clear();
+                for decl in &rule.margin {
+                    match decl {
+                        PropertyDeclaration::Unparsed(u) if u.name.eq_ignore_ascii_case("size") => {
+                            let size = substitute_unparsed(u, root).and_then(|text| {
+                                let mut input = ParserInput::new(&text);
+                                let mut parser = Parser::new(&mut input);
+                                parse_page_size(&mut parser)
+                                    .ok()
+                                    .filter(|_| parser.is_exhausted())
+                            });
+                            if size.is_some() {
+                                resolved.size = size;
+                            }
+                        }
+                        other => resolved
+                            .margin
+                            .extend(resolve_declarations(std::slice::from_ref(other), root)),
+                    }
+                }
+            }
+            for decls in resolved.margin_boxes.values_mut() {
+                if has_vars(decls) {
+                    *decls = resolve_declarations(&*decls, root);
+                }
+            }
+            resolved
+        })
+        .collect()
+}
+
 pub fn rules_use_page_count(rules: &[PageRule]) -> bool {
     rules.iter().any(|rule| {
         rule.margin_boxes.values().any(|decls| {

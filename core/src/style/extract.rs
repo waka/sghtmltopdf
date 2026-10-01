@@ -14,14 +14,12 @@
 //! ignored by cssparser's error recovery), so a direct call that bypasses
 //! `extract_author_stylesheet` still leaves `@import` unexpanded and simply ignored.
 //!
-//! After concatenation and before parsing, [`substitute_custom_properties`] resolves CSS
-//! Custom Properties (`--foo`/`var`) by text substitution (treating the whole document as
-//! one flat namespace across `<style>` and `<link>`).
+//! Custom properties and `var()` are not touched here: they are kept in the parsed
+//! stylesheet and resolved per element during style computation (`custom_properties.rs`).
 
 use crate::html::{is_stylesheet_link, Dom, NodeData, NodeId};
 use crate::img::{DocumentImageCache, ImageFetcher};
 
-use super::custom_properties::substitute_custom_properties;
 use super::import::resolve_imports;
 use super::stylesheet::{parse_stylesheet, Stylesheet};
 
@@ -71,7 +69,7 @@ pub fn extract_author_stylesheet(
             },
         }
     }
-    parse_stylesheet(&substitute_custom_properties(&css))
+    parse_stylesheet(&css)
 }
 
 /// Walk the DOM tree once and enumerate either "inline CSS text" or "a `<link>` href",
