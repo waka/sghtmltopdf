@@ -12,7 +12,7 @@
 //!
 //! The thinking behind which elements get `display: none`: the initial `display` in
 //! `ComputedStyle` is `Inline`, so an element with no UA rule is treated as inline and its
-//! descendant text flows into the body. Embedded content we cannot draw (`svg`/`canvas`/
+//! descendant text flows into the body. Embedded content we cannot draw (`canvas`/
 //! `video` and so on) and form controls are set to `display: none` explicitly so that their
 //! alternative content and option text do not leak into the body. Form controls are instead
 //! given a static `display: inline-block` appearance.
@@ -62,6 +62,11 @@ bdi, bdo, ruby, rt, rp, time, data, output, wbr, picture {
 
 /* ===== Elements that are hidden ===== */
 
+/* An inline `<svg>` is a replaced element, like `img`. */
+svg {
+  display: inline;
+}
+
 /* Document metadata. The contents of `template` are moved to a separate tree at parse time
    (by `html5ever`'s `TreeSink`), but this states it explicitly for safety. */
 head, script, style, title, meta, link, base, noscript, template {
@@ -72,11 +77,9 @@ head, script, style, title, meta, link, base, noscript, template {
    considered. `layout::box_tree::child_kind` stops recursing at a `display: none` element,
    so removing one root removes the whole subtree (`<svg><text>` and the like).
    `picture` is excluded, because we do want to draw the `<img>` inside it.
-   SVG can be drawn from `<img src="*.svg">` and `background-image: url(*.svg)`
-   (`pdf::svg`), but an inline `<svg>` written directly in the HTML is removed here.
-   Inline SVG would require joining the HTML DOM to the SVG DOM, which is a different job
-   from an external reference. */
-svg, math, canvas, video, audio, iframe, embed, object, param, track, source,
+   `svg` is not in the list: an inline `<svg>` is a replaced element (the layout never
+   descends into it, see `layout::box_tree`, and it is drawn through `pdf::svg`). */
+math, canvas, video, audio, iframe, embed, object, param, track, source,
 area, map {
   display: none;
 }
@@ -388,7 +391,7 @@ mod tests {
     #[test]
     fn undisplayable_embedded_content_is_hidden() {
         for tag in [
-            "svg", "math", "canvas", "video", "audio", "iframe", "embed", "object",
+            "math", "canvas", "video", "audio", "iframe", "embed", "object",
         ] {
             let html_src = format!("<{tag}>x</{tag}>");
             assert_eq!(

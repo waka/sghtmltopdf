@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Added
+
+- Inline `<svg>` elements are now drawn as vector graphics instead of being dropped with a
+  warning (#76). The element and its subtree are serialised into an SVG document (adding
+  `xmlns` and `xmlns:xlink` when the HTML left them out) and laid out as a replaced element
+  through the same path as `<img src="*.svg">`, in batch and streaming mode. The size comes
+  from CSS `width`/`height`, then the `width`/`height` attributes, then the `viewBox` (a
+  missing side follows its aspect ratio), then the CSS default of 300x150. `currentColor`
+  is the element's computed `color`, so Heroicons/Lucide style icons take the colour of
+  their text. They sit on the baseline in a line of text, work with `display: block`, and
+  the same icon repeated is embedded once. A `<style>` inside an `<svg>` applies to that SVG
+  only, so it no longer counts as a late page stylesheet in streaming mode. Not covered:
+  `<use href="#id">` pointing at a different `<svg>` in the page, and page CSS that sets
+  `fill`/`stroke` on SVG elements.
+
+### Removed
+
+- The "inline <svg> element(s), which are not drawn" warning.
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

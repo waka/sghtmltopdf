@@ -40,6 +40,14 @@ pub struct RgbaColor {
 }
 
 impl RgbaColor {
+    /// Opaque black (the initial value of `color`).
+    pub const BLACK: Self = Self {
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 1.0,
+    };
+
     /// Fully transparent (the initial value of `background-color`, `transparent`).
     pub const TRANSPARENT: Self = Self {
         red: 0,

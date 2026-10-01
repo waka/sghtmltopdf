@@ -15,9 +15,8 @@ SVG(`.svg`と、gzip圧縮された`.svgz`)はラスタライズせず、ベク�
 図形の数で決まります。パース・正規化は[usvg]、PDFの描画命令への変換は
 [svg2pdf](どちらも[typst]由来)が行います。
 
-**参照して使う形だけに対応します。** `<img src>`と`background-image: url()`の
-どちらでも使えますが、HTMLに直接書いたインラインの`<svg>`要素は描画しません
-(後述)。
+`<img src>`と`background-image: url()`のどちらでも使えます。HTMLに直接書いた
+インラインの`<svg>`要素も描画できます([後述](#インラインsvg))。
 
 ```html
 <img src="logo.svg" width="120">
@@ -100,27 +99,45 @@ img.logo {
 
 [rustybuzz]: https://github.com/harfbuzz/rustybuzz
 
-### インラインSVGは描画しません
+### インラインSVG
 
-HTMLに直接書いた`<svg>`要素は、サブツリーごと描画対象から外します
-(UAスタイルシートの`svg { display: none }`)。中のテキストが本文へ
-流れ込むこともありません。文書内に1つでもあれば警告します。
+HTMLに直接書いた`<svg>`要素は、`<img src="*.svg">`と同じ経路でベクタのまま
+描画します。`<svg>`とそのサブツリーをSVG文書へ書き出し(`xmlns`が無ければ
+補います)、置換要素として配置します。中の`<text>`が本文へ流れ込むことは
+ありません。Heroiconsなどのアイコンセットや`inline_svg`が出力する形が
+そのまま使えます。
 
 ```html
-<!-- 描画されない -->
-<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">
-  <rect width="40" height="20" fill="red"/>
-</svg>
-
-<!-- こう書けば描画される -->
-<img src="logo.svg" width="40" height="20">
-<img src="data:image/svg+xml,%3Csvg%20...%3E" width="40" height="20">
+<style>.size-6 { width: 24px; height: 24px }</style>
+<p style="color: red">
+  確認
+  <svg fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+    <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5"/>
+  </svg>
+</p>
 ```
 
-対応させるにはHTMLのDOMからSVGのXMLを組み直してusvgへ渡す必要があり、
-属性名の大小(`viewBox`等)・CSSの継承・`currentColor`をどう扱うかが
-外部ファイルの参照とは別の問題になります。今のところ「参照して使う」形に
-絞っています。
+* **寸法**は、CSSの`width`/`height`、`width`/`height`属性、`viewBox`の
+  順に決めます。属性が片方だけなら、もう片方は`viewBox`の縦横比から
+  求めます。どれも無ければ、CSSの置換要素の既定値300×150になります。
+  `viewBox`だけがある場合は、`viewBox`の幅と高さがそのまま固有サイズに
+  なります(ブラウザのように行の幅いっぱいには広げません)。
+  `width="100%"`のような属性はCSSの値として扱います。
+* **`currentColor`** は、その`<svg>`要素の計算済み`color`になります。
+  親に`color: red`があれば赤です。
+* 行の中では`<img>`と同じくインラインの置換要素で、下端がベースラインに
+  揃います。`display: block`も使えます。`display: none`なら描画しません
+  (スプライト用の`<svg>`を隠す書き方)。
+* `<svg>`の中の`<style>`はそのSVGの中だけに効き、ページ全体のCSSには
+  なりません(ストリーミングで`<body>`の後に`<style>`を置くとエラーになる
+  制約にも掛かりません)。
+* 同じ内容のアイコンを何度書いても、PDFには1つだけ埋め込みます。
+* `<text>`は[SVG内のテキストとフォント](#svg内のテキストとフォント)と同じ扱いで、
+  `svg-text` featureが必要です。
+* 対応していないもの: ページ内の別の`<svg>`を指す`<use href="#id">`
+  (スプライトシート形式。同じ`<svg>`の中のIDなら使えます)、
+  ページのCSSからSVGの`fill`・`stroke`などへの指定(`.icon { fill: red }`
+  のようなセレクタ。`style`属性とSVG内の`<style>`は効きます)。
 
 ### その他の制限
 

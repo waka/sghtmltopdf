@@ -215,57 +215,6 @@ pub fn looks_like_it_has_text(bytes: &[u8]) -> bool {
     contains_tag(bytes, b"<text") || contains_tag(bytes, b"<tspan")
 }
 
-/// Count the inline `<svg>` elements written directly in the HTML.
-///
-/// Inline SVG is not drawn (the UA stylesheet's `svg { display: none }` removes the whole
-/// subtree). `<img src="*.svg">` and `background-image` can now be drawn, so this exists to
-/// warn once per document, sparing anyone who read "SVG supported", wrote one inline and saw
-/// nothing appear.
-///
-/// Supporting it would mean rebuilding the SVG XML from the HTML DOM and handing that to
-/// usvg (attribute name casing, `viewBox` and the like, CSS inheritance, `currentColor`),
-/// which is a different job from referencing an external file, so this only counts them.
-/// Only the subtree under `root` is inspected (streaming calls it per top-level element;
-/// scanning the whole document each time would be quadratic in the element count).
-pub fn count_inline_svg_elements(dom: &crate::html::Dom, root: crate::html::NodeId) -> usize {
-    fn walk(dom: &crate::html::Dom, node: crate::html::NodeId, count: &mut usize) {
-        if let crate::html::NodeData::Element { name, .. } = &dom.node(node).data {
-            // Namespaces are not considered (matching the UA stylesheet's decision). A nested
-            // `<svg>` should not be counted, so once one is found its interior is not walked.
-            if &*name.local == "svg" {
-                *count += 1;
-                return;
-            }
-        }
-        for child in dom.children(node) {
-            walk(dom, child, count);
-        }
-    }
-    let mut count = 0;
-    walk(dom, root, &mut count);
-    count
-}
-
-/// Warn once per document when [`count_inline_svg_elements`] found at least one.
-///
-/// `warned` is per-document state. Several documents are converted in one process (the gem
-/// and server mode), so making it once per process would silence every document after the first.
-pub fn warn_about_inline_svg(dom: &crate::html::Dom, root: crate::html::NodeId, warned: &mut bool) {
-    if *warned {
-        return;
-    }
-    let count = count_inline_svg_elements(dom, root);
-    if count == 0 {
-        return;
-    }
-    *warned = true;
-    eprintln!(
-        "warning: the HTML contains {count} inline <svg> element(s), which are not drawn.\n  \
-         SVG can only be drawn when referenced from <img src=\"...svg\"> or\n  \
-         background-image: url(...svg) (inline SVG is not supported)"
-    );
-}
-
 #[cfg(feature = "svg")]
 mod convert {
     use std::cell::RefCell;

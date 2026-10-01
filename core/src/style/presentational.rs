@@ -81,6 +81,12 @@ pub(super) fn presentational_hint_declarations(
                 }
             }
         }
+        // Per the HTML spec an `<svg>` `width`/`height` is a presentational hint (`100%` and
+        // lengths in other units are CSS values, so they go through the CSS parser too).
+        "svg" => {
+            push_svg_length(&mut css, "width", attr(attrs, "width"));
+            push_svg_length(&mut css, "height", attr(attrs, "height"));
+        }
         "col" | "colgroup" => push_length(&mut css, "width", attr(attrs, "width")),
         "img" => {
             if let Some(border) = attr(attrs, "border").and_then(parse_pixels) {
@@ -192,6 +198,27 @@ fn push_length(css: &mut String, property: &str, value: Option<&str>) {
     }
     if let Some(px) = parse_pixels(value) {
         css.push_str(&format!("{property}: {px}px;"));
+    }
+}
+
+/// An `<svg>` `width`/`height` attribute: a number, optionally with a CSS length unit or `%`
+/// (a bare number is px). Anything else (`auto`, junk) is dropped.
+fn push_svg_length(css: &mut String, property: &str, value: Option<&str>) {
+    let Some(value) = value.map(str::trim) else {
+        return;
+    };
+    let split = value
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(value.len());
+    let (number, unit) = value.split_at(split);
+    if number.parse::<f32>().is_err() || !unit.chars().all(|c| c.is_ascii_alphabetic() || c == '%')
+    {
+        return;
+    }
+    if unit.is_empty() {
+        css.push_str(&format!("{property}: {number}px;"));
+    } else {
+        css.push_str(&format!("{property}: {number}{unit};"));
     }
 }
 

@@ -187,6 +187,9 @@ struct Sink {
     body_id: Cell<Option<NodeId>>,
 }
 
+/// The SVG namespace. A `<style>` in it is the inline SVG's own and is not a page CSS source.
+const SVG_NAMESPACE: &str = "http://www.w3.org/2000/svg";
+
 /// Whether `name`/`attrs` describe an element treated as a CSS source (a `<style>`, or a
 /// `<link>` with `rel="stylesheet"`), so that an appearance after `<body>` is an error
 /// just as it is for `<style>`.
@@ -278,7 +281,10 @@ impl TreeSink for Sink {
         let is_body = &*name.local == "body";
         if is_body {
             self.seen_body.set(true);
-        } else if self.seen_body.get() && is_late_css_source(&name.local, &attrs) {
+        } else if self.seen_body.get()
+            && is_late_css_source(&name.local, &attrs)
+            && &*name.ns != SVG_NAMESPACE
+        {
             self.late_css_source_detected.set(true);
         }
 

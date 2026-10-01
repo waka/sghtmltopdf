@@ -7389,13 +7389,12 @@ msgstr ""
 
 #: src/supports/images.md:18
 msgid ""
-"**参照して使う形だけに対応します。** `<img src>`と`background-image: url()`"
-"の どちらでも使えますが、HTMLに直接書いたインラインの`<svg>`要素は描画しませ"
-"ん (後述)。"
+"`<img src>`と`background-image: url()`のどちらでも使えます。HTMLに直接書いた "
+"インラインの`<svg>`要素も描画できます([後述](#インラインsvg))。"
 msgstr ""
-"Only referenced SVG is supported. It works from both `<img src>` and "
-"`background-image: url()`, but an inline `<svg>` element written directly in "
-"the HTML is not drawn (see below)."
+"It works from both `<img src>` and `background-image: url()`. An inline "
+"`<svg>` element written directly in the HTML can be drawn too ([see "
+"below](#インラインsvg))."
 
 #: src/supports/images.md:23 src/supports/images.md:116
 msgid "\"logo.svg\""
@@ -7603,23 +7602,95 @@ msgstr ""
 "add them if your SVG has no text"
 
 #: src/supports/images.md:103
-msgid "インラインSVGは描画しません"
-msgstr "Inline SVG is not drawn"
+msgid "インラインSVG"
+msgstr "Inline SVG"
 
 #: src/supports/images.md:105
 msgid ""
-"HTMLに直接書いた`<svg>`要素は、サブツリーごと描画対象から外します (UAスタイル"
-"シートの`svg { display: none }`)。中のテキストが本文へ 流れ込むこともありませ"
-"ん。文書内に1つでもあれば警告します。"
+"HTMLに直接書いた`<svg>`要素は、`<img src=\"*.svg\">`と同じ経路でベクタのまま "
+"描画します。`<svg>`とそのサブツリーをSVG文書へ書き出し(`xmlns`が無ければ 補い"
+"ます)、置換要素として配置します。中の`<text>`が本文へ流れ込むことは ありませ"
+"ん。Heroiconsなどのアイコンセットや`inline_svg`が出力する形が そのまま使えま"
+"す。"
 msgstr ""
-"An `<svg>` element written directly in the HTML is dropped along with its "
-"subtree (through `svg { display: none }` in the user agent stylesheet). Its "
-"text does not leak into the body text either. A warning is printed if the "
-"document contains even one."
+"An `<svg>` element written directly in the HTML is drawn as vectors through "
+"the same path as `<img src=\"*.svg\">`. The `<svg>` and its subtree are "
+"written out as an SVG document (`xmlns` is added when missing) and laid out "
+"as a replaced element. Its `<text>` does not leak into the body text. The "
+"markup that icon sets such as Heroicons and `inline_svg` produce can be used "
+"as it is."
 
-#: src/supports/images.md:110
-msgid "<!-- 描画されない -->"
-msgstr "<!-- not drawn -->"
+#: src/supports/images.md:121
+msgid ""
+"**寸法**は、CSSの`width`/`height`、`width`/`height`属性、`viewBox`の 順に決め"
+"ます。属性が片方だけなら、もう片方は`viewBox`の縦横比から 求めます。どれも無"
+"ければ、CSSの置換要素の既定値300×150になります。 `viewBox`だけがある場合は、"
+"`viewBox`の幅と高さがそのまま固有サイズに なります(ブラウザのように行の幅いっ"
+"ぱいには広げません)。 `width=\"100%\"`のような属性はCSSの値として扱います。"
+msgstr ""
+"The **size** is decided from the CSS `width`/`height`, then the "
+"`width`/`height` attributes, then the `viewBox`, in that order. If only one "
+"attribute is given, the other side is derived from the aspect ratio of the "
+"`viewBox`. If there is none of them, the CSS default replaced-element size "
+"of 300x150 is used. With only a `viewBox`, its width and height become the "
+"intrinsic size as they are (it is not stretched to the full width of the "
+"line the way a browser does). An attribute such as `width=\"100%\"` is "
+"treated as a CSS value."
+
+#: src/supports/images.md:125
+msgid ""
+"**`currentColor`** は、その`<svg>`要素の計算済み`color`になります。 親に"
+"`color: red`があれば赤です。"
+msgstr ""
+"**`currentColor`** is the computed `color` of that `<svg>` element. If a "
+"parent has `color: red`, it is red."
+
+#: src/supports/images.md:129
+msgid ""
+"行の中では`<img>`と同じくインラインの置換要素で、下端がベースラインに 揃いま"
+"す。`display: block`も使えます。`display: none`なら描画しません (スプライト用"
+"の`<svg>`を隠す書き方)。"
+msgstr ""
+"Within a line it is an inline replaced element like `<img>`, and its bottom "
+"edge sits on the baseline. `display: block` works too. With `display: none` "
+"it is not drawn (the way to hide a sprite `<svg>`)."
+
+#: src/supports/images.md:133
+msgid ""
+"`<svg>`の中の`<style>`はそのSVGの中だけに効き、ページ全体のCSSには なりません"
+"(ストリーミングで`<body>`の後に`<style>`を置くとエラーになる 制約にも掛かりま"
+"せん)。"
+msgstr ""
+"A `<style>` inside an `<svg>` applies only within that SVG and does not "
+"become page-wide CSS (so the streaming error for a `<style>` placed after "
+"`<body>` does not apply to it either)."
+
+#: src/supports/images.md:137
+msgid "同じ内容のアイコンを何度書いても、PDFには1つだけ埋め込みます。"
+msgstr ""
+"However many times the same icon is written, it is embedded in the PDF only "
+"once."
+
+#: src/supports/images.md:141
+msgid ""
+"`<text>`は[SVG内のテキストとフォント](#svg内のテキストとフォント)と同じ扱いで"
+"、 `svg-text` featureが必要です。"
+msgstr ""
+"`<text>` is handled as described in [Text and fonts inside "
+"SVG](#svg内のテキストとフォント), and needs the `svg-text` feature."
+
+#: src/supports/images.md:145
+msgid ""
+"対応していないもの: ページ内の別の`<svg>`を指す`<use href=\"#id\">` (スプライ"
+"トシート形式。同じ`<svg>`の中のIDなら使えます)、 ページのCSSからSVGの`fill`・"
+"`stroke`などへの指定(`.icon { fill: red }` のようなセレクタ。`style`属性とSVG"
+"内の`<style>`は効きます)。"
+msgstr ""
+"Not supported: a `<use href=\"#id\">` that points at a different `<svg>` in "
+"the page (the sprite sheet form; an ID inside the same `<svg>` works), and "
+"setting `fill`, `stroke` and the like on the SVG from the page CSS (a "
+"selector such as `.icon { fill: red }`; the `style` attribute and a "
+"`<style>` inside the SVG do work)."
 
 #: src/supports/images.md:111
 msgid "\"http://www.w3.org/2000/svg\""
@@ -7639,25 +7710,9 @@ msgstr "\"20\""
 msgid "\"red\""
 msgstr "\"red\""
 
-#: src/supports/images.md:114
-msgid "<!-- こう書けば描画される -->"
-msgstr "<!-- written this way it is drawn -->"
-
 #: src/supports/images.md:117
 msgid "\"data:image/svg+xml,%3Csvg%20...%3E\""
 msgstr "\"data:image/svg+xml,%3Csvg%20...%3E\""
-
-#: src/supports/images.md:120
-msgid ""
-"対応させるにはHTMLのDOMからSVGのXMLを組み直してusvgへ渡す必要があり、 属性名"
-"の大小(`viewBox`等)・CSSの継承・`currentColor`をどう扱うかが 外部ファイルの参"
-"照とは別の問題になります。今のところ「参照して使う」形に 絞っています。"
-msgstr ""
-"Supporting it would mean rebuilding the SVG XML from the HTML DOM and "
-"handing that to usvg, and the case of attribute names (`viewBox` and "
-"friends), CSS inheritance, and how to treat `currentColor` all become "
-"questions separate from simply referencing an external file. For now it is "
-"limited to referencing an external SVG."
 
 #: src/supports/images.md:125
 msgid "その他の制限"
@@ -10177,12 +10232,18 @@ msgstr "Images may be PNG, JPEG, WebP, or SVG only; GIF is not supported"
 
 #: src/appendix/limitations.md:40
 msgid ""
-"SVGは`<img>`と`background-image`からの参照のみ(ファイル・`data:` URIどちらも"
-"可)。HTMLに直接書いたインラインの`<svg>`要素は描画せず、見つけたら警告します"
+"SVGは`<img>`・`background-image`からの参照(ファイル・`data:` URIどちらも可)と"
+"、HTMLに直接書いたインラインの`<svg>`要素で描画できます。インラインSVGからペ"
+"ージ内の別の`<svg>`を`<use href=\"#id\">`で参照する形と、ページのCSSからSVGの"
+"`fill`・`stroke`を指定する形は未対応です([画像](../supports/images.md#インラ"
+"インsvg)を参照)"
 msgstr ""
-"SVG can only be referenced from `<img>` and `background-image` (either a "
-"file or a `data:` URI). An inline `<svg>` element written directly in the "
-"HTML is not drawn, and a warning is printed when one is found"
+"SVG can be drawn from `<img>` and `background-image` (either a file or a "
+"`data:` URI), and from an inline `<svg>` element written directly in the "
+"HTML. Referencing a different `<svg>` in the page from an inline SVG with "
+"`<use href=\"#id\">`, and setting `fill` and `stroke` on the SVG from the "
+"page CSS, are not supported (see "
+"[Images](../supports/images.md#インラインsvg))"
 
 #: src/appendix/limitations.md:41
 msgid ""

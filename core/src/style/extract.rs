@@ -84,6 +84,11 @@ fn collect_css_sources(dom: &Dom) -> Vec<CssSource> {
 
 fn collect_css_sources_rec(dom: &Dom, node: NodeId, out: &mut Vec<CssSource>) {
     if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
+        // The `<style>` of an inline `<svg>` belongs to that SVG (it is handed to the SVG
+        // renderer with the rest of the subtree), not to the page.
+        if &*name.local == "svg" {
+            return;
+        }
         if &*name.local == "style" {
             let mut text = String::new();
             for child in dom.children(node) {

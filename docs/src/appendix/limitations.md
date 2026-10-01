@@ -37,7 +37,7 @@
 ## 画像・フォントの形式
 
 * 画像はPNG / JPEG / WebP / SVGのみ。GIFは非対応です
-* SVGは`<img>`と`background-image`からの参照のみ(ファイル・`data:` URIどちらも可)。HTMLに直接書いたインラインの`<svg>`要素は描画せず、見つけたら警告します
+* SVGは`<img>`・`background-image`からの参照(ファイル・`data:` URIどちらも可)と、HTMLに直接書いたインラインの`<svg>`要素で描画できます。インラインSVGからページ内の別の`<svg>`を`<use href="#id">`で参照する形と、ページのCSSからSVGの`fill`・`stroke`を指定する形は未対応です([画像](../supports/images.md#インラインsvg)を参照)
 * SVG内の`<text>`は`svg-text` featureを有効にした場合だけ描画します(使えるフォントは文書と同じもので、SVGのためにシステムフォントを探し直すことはしません)。`<filter>`と`<image>`は非対応です([画像](../supports/images.md#svg)を参照)
 * フォントはTTF / OTFのみ。WOFF / WOFF2は非対応です
 * カラーフォントは埋め込みビットマップ(`CBDT`/`CBLC`・`sbix`)と`COLR`/`CPAL` v0のみ。COLRv1(グラデーション)とOpenType SVGは非対応です。絵文字は[フォント](../supports/fonts.md#絵文字)を参照してください

@@ -414,7 +414,7 @@ pub fn paginate_document_with_absolutes(
     image_cache: &ImageAssetCache,
 ) -> Vec<Page> {
     let mut tree = build_box_tree(dom, styles);
-    resolve_images(&mut tree, dom, image_cache);
+    resolve_images(&mut tree, dom, styles, image_cache);
     let (laid_out, positioned) = layout_document_positioned(
         &tree,
         styles,
@@ -446,7 +446,7 @@ pub fn paginate_document_streaming(
     on_page: &mut dyn FnMut(Page),
 ) {
     let mut tree = build_box_tree(dom, styles);
-    resolve_images(&mut tree, dom, image_cache);
+    resolve_images(&mut tree, dom, styles, image_cache);
     let mut laid_out = layout_document(&tree, styles, fonts, settings.content_width());
     paginate_streaming(&mut laid_out, settings.content_height(), &mut |page| {
         release_completed_subtrees(dom, &page);

@@ -19,4 +19,4 @@ pub use options::{
     PdfOutputOptions, DEFAULT_SCALE,
 };
 pub use streaming::StreamingPdfWriter;
-pub use svg::{warn_about_inline_svg, SvgFontDb};
+pub use svg::SvgFontDb;

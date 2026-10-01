@@ -160,11 +160,18 @@ fn a_form_control_inside_a_paragraph_does_not_leak_text_into_the_flow() {
 
 #[test]
 fn svg_subtree_is_not_rendered() {
-    // Confirms that hiding one <svg> removes the whole subtree.
+    // An inline <svg> is one replaced box; its subtree never becomes page text.
     assert_eq!(
         text_of(r#"<p>x</p><svg width="10" height="10"><text>LEAK</text></svg><p>y</p>"#),
         "xy"
     );
+    for display in ["inline", "block", "inline-block"] {
+        let text = text_of(&format!(
+            r#"<p>a <svg style="display:{display}" width="10" height="10"><text>LEAK</text><title>LEAK</title></svg> b</p>"#
+        ));
+        assert!(!text.contains("LEAK"), "display:{display} leaked {text:?}");
+        assert!(text.contains('a') && text.contains('b'), "{text:?}");
+    }
 }
 
 #[test]

@@ -81,7 +81,7 @@ fn layout(html_src: &str, css: &str) -> (Dom, LaidOutBox) {
     let fonts = test_fonts();
     let mut tree = build_box_tree(&dom, &styles);
     let cache = ImageAssetCache::new(std::path::PathBuf::from("."), false);
-    resolve_images(&mut tree, &dom, &cache);
+    resolve_images(&mut tree, &dom, &styles, &cache);
     let laid = layout_document(
         &tree,
         &styles,

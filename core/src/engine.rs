@@ -39,8 +39,8 @@ use crate::layout::{
     PageSettings, Rect, StreamingPaginator,
 };
 use crate::pdf::{
-    anchor_destination_name, warn_about_inline_svg, ImageAssetCache, LinkSettings, PageOverlay,
-    PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, ImageAssetCache, LinkSettings, PageOverlay, PdfOutputOptions,
+    PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -955,8 +955,6 @@ struct StreamingState<S: Sink> {
     /// per top-level element, so the characters already warned about are carried along to
     /// prevent duplicates.
     warned_uncovered_chars: HashSet<char>,
-    /// Whether inline `<svg>` has already been warned about (emitted once per document).
-    warned_inline_svg: bool,
     /// Whether a processed top-level element may be freed along with its subtree.
     ///
     /// In a document using selectors that need the preceding sibling, such as `+`/`~` or
@@ -1345,7 +1343,6 @@ impl<S: Sink> Engine<S> {
             overlay_cache: OverlayCache::default(),
             warned_font_families: Vec::new(),
             warned_uncovered_chars: HashSet::new(),
-            warned_inline_svg: false,
             release_whole_subtree,
             paginator: StreamingPaginator::new(page_settings.content_height()),
             writer,
@@ -1396,12 +1393,9 @@ impl<S: Sink> Engine<S> {
                 &sub_styles,
                 &mut state.warned_uncovered_chars,
             );
-            // Only the inside of this top-level element is inspected (scanning the whole
-            // document each time would be quadratic in the element count).
-            warn_about_inline_svg(&dom, node, &mut state.warned_inline_svg);
             let mut item_box = build_box_for_element(&dom, &sub_styles, node);
             if let (Some(item_box), true) = (&mut item_box, options_content.load_images) {
-                resolve_images(item_box, &dom, &state.image_cache);
+                resolve_images(item_box, &dom, &sub_styles, &state.image_cache);
             }
             (sub_styles, item_box)
         };
@@ -1654,9 +1648,6 @@ impl<S: Sink> Engine<S> {
         ensure_default_font(&mut fonts, &system_fonts)?;
         // Warn if any character remains undrawable even after topping up.
         warn_uncovered_chars(&fonts, &dom, &styles, &mut HashSet::new());
-        // Inline `<svg>` is not drawn. `<img src="*.svg">` can be, so it is confusing for one
-        // to vanish silently.
-        warn_about_inline_svg(&dom, dom.document(), &mut false);
 
         let mut output = options.output.clone();
         output

@@ -370,6 +370,12 @@ pub(crate) fn build_box_for_element(
     if style.display == Display::None {
         return None;
     }
+    // An inline `<svg>` is a replaced element. Its subtree is never turned into boxes (the
+    // `<text>` and shapes inside belong to the SVG), so stop here whatever `display` is.
+    // `resolve_images` fills in the drawing.
+    if is_inline_svg(dom, node) {
+        return Some(LayoutBox::for_node(node, BoxContent::Inline(Vec::new())));
+    }
     if style.display == Display::Table {
         return Some(LayoutBox::for_node(
             node,
@@ -429,6 +435,11 @@ pub(crate) fn build_box_for_element(
     Some(LayoutBox::for_node(node, content))
 }
 
+/// Whether `node` is an `<svg>` element, drawn as one replaced box (the subtree is not walked).
+fn is_inline_svg(dom: &Dom, node: NodeId) -> bool {
+    matches!(&dom.node(node).data, NodeData::Element { name, .. } if &*name.local == "svg")
+}
+
 /// Called after the box tree is built, this replaces the boxes corresponding to `<img>`
 /// elements (treated as blocks by `child_kind`, and holding an empty
 /// `BoxContent::Inline(vec![])` at this point) with a real [`BoxContent::Image`].
@@ -436,12 +447,30 @@ pub(crate) fn build_box_for_element(
 /// `image_cache` does the fetching and decoding (which involves I/O). The same `src` is
 /// memoised inside `image_cache`, so even a repeatedly referenced image is fetched and
 /// decoded only the first time.
-pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetCache) {
+///
+/// An inline `<svg>` gets the same treatment: the element and its subtree are serialised
+/// into an SVG document (with `currentColor` resolved from the element's computed `color`,
+/// which is why `styles` is needed) and decoded like an `<img src="*.svg">`.
+pub fn resolve_images(
+    tree: &mut LayoutBox,
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    image_cache: &ImageAssetCache,
+) {
     if let Some(node) = tree.node {
         if let NodeData::Element { name, .. } = &dom.node(node).data {
             if &*name.local == "img" {
                 tree.content = BoxContent::Image(build_image_box_content(dom, node, image_cache));
                 return; // <img> is a void element (it has no children), so no recursion is needed.
+            }
+            if is_inline_svg(dom, node) {
+                let color = styles
+                    .get(&node)
+                    .map(|s| s.color)
+                    .unwrap_or(RgbaColor::BLACK);
+                tree.content =
+                    BoxContent::Image(build_inline_svg_box_content(dom, node, color, image_cache));
+                return; // The subtree belongs to the SVG, not to the box tree.
             }
         }
     }
@@ -449,27 +478,27 @@ pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetC
     match &mut tree.content {
         BoxContent::Blocks(children) => {
             for child in children {
-                resolve_images(child, dom, image_cache);
+                resolve_images(child, dom, styles, image_cache);
             }
         }
         BoxContent::Table(table) => {
             if let Some(caption) = &mut table.caption {
-                resolve_images(caption, dom, image_cache);
+                resolve_images(caption, dom, styles, image_cache);
             }
             for row in &mut table.rows {
                 for cell in &mut row.cells {
-                    resolve_images(&mut cell.content, dom, image_cache);
+                    resolve_images(&mut cell.content, dom, styles, image_cache);
                 }
             }
         }
         BoxContent::Flex(flex) => {
             for item in &mut flex.items {
-                resolve_images(item, dom, image_cache);
+                resolve_images(item, dom, styles, image_cache);
             }
         }
         BoxContent::Grid(grid) => {
             for item in &mut grid.items {
-                resolve_images(item, dom, image_cache);
+                resolve_images(item, dom, styles, image_cache);
             }
         }
         // Descend into the atomic boxes that take part in a line (an inline `<img>` and
@@ -477,7 +506,7 @@ pub fn resolve_images(tree: &mut LayoutBox, dom: &Dom, image_cache: &ImageAssetC
         BoxContent::Inline(spans) => {
             for span in spans {
                 if let Some(atomic) = span.atomic.as_deref_mut() {
-                    resolve_images(atomic, dom, image_cache);
+                    resolve_images(atomic, dom, styles, image_cache);
                 }
             }
         }
@@ -507,6 +536,22 @@ pub fn resolve_background_images(
         }
     }
     out
+}
+
+fn build_inline_svg_box_content(
+    dom: &Dom,
+    node: NodeId,
+    color: RgbaColor,
+    image_cache: &ImageAssetCache,
+) -> ImageBoxContent {
+    let markup = crate::img::serialize_inline_svg(dom, node, color);
+    ImageBoxContent {
+        image: image_cache.get_or_decode_inline_svg(&markup).ok(),
+        // The `width`/`height` attributes are already part of the document handed to the SVG
+        // renderer (they decide the intrinsic size) or become CSS hints (`presentational`).
+        attr_width: None,
+        attr_height: None,
+    }
 }
 
 fn build_image_box_content(
@@ -1358,7 +1403,7 @@ fn collect_spans_in_context(
             }
             // An inline `<img>` (a replaced element) also takes part in the line as one box.
             // Its contents are swapped for `BoxContent::Image` later by `resolve_images`.
-            if &*name.local == "img" {
+            if &*name.local == "img" || is_inline_svg(dom, node) {
                 out.push(InlineSpan::atomic(
                     node,
                     LayoutBox::for_node(node, BoxContent::Inline(Vec::new())),

@@ -636,102 +636,271 @@ fn an_svg_cannot_read_files_through_a_nested_image_href() {
     cleanup(&dir);
 }
 
-// ===== Inline SVG (unsupported) =====
+// ===== Inline SVG =====
 
-/// An `<svg>` written directly in the HTML is not drawn. `<img src="*.svg">` can be drawn,
-/// so rather than silently producing nothing, it warns.
+/// The CLI modes every inline SVG case must work in.
+const MODES: [(&[&str], &str); 2] = [(&[], "batch"), (&["--streaming"], "streaming")];
+
+/// An `<svg>` written directly in the HTML (HTML-parsed, so with no `xmlns`) is drawn as
+/// vectors in both modes, through the same path as `<img src="*.svg">`.
 #[test]
-fn an_inline_svg_is_not_rendered_and_says_so() {
-    for (mode, name) in [
-        (&[][..], "inline-batch"),
-        (&["--streaming"][..], "inline-streaming"),
-    ] {
-        let dir =
-            std::env::temp_dir().join(format!("sghtmltopdf-svg-{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let input = dir.join("input.html");
-        std::fs::write(
-            &input,
+fn an_inline_svg_is_drawn_as_vector_graphics_in_both_modes() {
+    for (mode, name) in MODES {
+        let pdf = convert(
             r##"<body style="margin:0"><p>before</p>
-                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="20">
+                 <svg width="40" height="20">
                    <rect width="40" height="20" fill="#ff0000"/>
-                   <text x="2" y="14">INLINE</text>
+                   <circle cx="20" cy="10" r="8" fill="#00ff00"/>
                  </svg>
                  <p>after</p></body>"##,
-        )
-        .unwrap();
-        let output = dir.join("out.pdf");
-
-        let result = Command::new(BIN)
-            .arg(&input)
-            .args(["--font", FONT_PATH])
-            .args(mode)
-            .arg("-o")
-            .arg(&output)
-            .output()
-            .expect("failed to run the sghtmltopdf binary");
-        assert!(result.status.success(), "conversion should still succeed");
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        assert!(
-            stderr.contains("<svg> element") && stderr.contains("not drawn"),
-            "an inline <svg> should be reported, got: {stderr}"
+            mode,
+            &format!("inline-{name}"),
         );
-
-        let pdf = std::fs::read(&output).unwrap();
-        assert_eq!(
-            count_occurrences(&pdf, b"/Subtype /Form"),
-            0,
-            "an inline <svg> must not produce a form XObject in {name}"
-        );
-        // The whole subtree is removed, so the `<text>` inside never flows into the body either.
-        let content = decompressed_stream_bytes(&pdf);
-        assert_eq!(
-            count_occurrences(&content, b"INLINE"),
-            0,
-            "the inline SVG's text must not leak into the page in {name}"
-        );
-        cleanup(&dir);
+        assert_embedded_as_vector(&pdf);
+        assert_xref_is_consistent(&pdf);
+        assert_close(xobject_cm(&pdf)[0], 40.0, "inline width");
+        assert_close(xobject_cm(&pdf)[3], 20.0, "inline height");
     }
 }
 
-/// The warning appears once per document (so a document making heavy use of inline SVG does
-/// not fill up with the same warning).
+/// The report's case: the viewBox and `width`/`height` attributes give 400x40, the same as
+/// the identical SVG referenced from `<img>`.
 #[test]
-fn the_inline_svg_warning_is_emitted_once_per_document() {
-    let dir = std::env::temp_dir().join(format!(
-        "sghtmltopdf-svg-{}-inline-once",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    let mut html = String::from(r#"<body style="margin:0">"#);
-    for _ in 0..5 {
-        html.push_str(
-            r#"<p><svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"></svg></p>"#,
+fn an_inline_svg_matches_the_same_svg_referenced_from_img() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 1" width="400" height="40"><rect width="10" height="1"/></svg>"#;
+    let inline = convert(
+        &format!(r#"<body style="margin:0">{svg}</body>"#),
+        &[],
+        "same-inline",
+    );
+    let img = convert_svg_file(
+        r#"<body style="margin:0"><img src="logo.svg"></body>"#,
+        svg,
+        &[],
+        "same-img",
+    );
+    assert_eq!(xobject_cm(&inline)[..4], xobject_cm(&img)[..4]);
+    assert_close(xobject_cm(&inline)[0], 400.0, "inline width");
+    assert_close(xobject_cm(&inline)[3], 40.0, "inline height");
+}
+
+fn inline_cm(svg_and_css: &str, name: &str) -> [f32; 6] {
+    xobject_cm(&convert(
+        &format!(r#"<body style="margin:0">{svg_and_css}</body>"#),
+        &[],
+        name,
+    ))
+}
+
+/// CSS `width`/`height` win over the attributes, which win over the viewBox, with the CSS
+/// default replaced size 300x150 as the last resort.
+#[test]
+fn an_inline_svg_is_sized_by_css_then_attributes_then_view_box_then_the_default() {
+    // CSS over attributes (the Heroicons/Lucide pattern: a class sets the size).
+    let cm = inline_cm(
+        r#"<style>.size-6 { width: 24px; height: 24px }</style>
+           <svg class="size-6" width="100" height="100" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>"#,
+        "size-css",
+    );
+    assert_close(cm[0], 24.0, "css width");
+    assert_close(cm[3], 24.0, "css height");
+
+    // Attributes (a unit-less number is px, `px` is accepted).
+    let cm = inline_cm(
+        r#"<svg width="60px" height="30" viewBox="0 0 24 24"><rect width="24" height="24"/></svg>"#,
+        "size-attr",
+    );
+    assert_close(cm[0], 60.0, "attribute width");
+    assert_close(cm[3], 30.0, "attribute height");
+
+    // One attribute: the other side follows the viewBox ratio.
+    let cm = inline_cm(
+        r#"<svg width="240" viewBox="0 0 120 30"><rect width="120" height="30"/></svg>"#,
+        "size-ratio",
+    );
+    assert_close(cm[0], 240.0, "ratio width");
+    assert_close(cm[3], 60.0, "ratio height");
+
+    // One CSS side: the other follows the ratio.
+    let cm = inline_cm(
+        r#"<svg style="width: 48px" viewBox="0 0 24 12"><rect width="24" height="12"/></svg>"#,
+        "size-css-ratio",
+    );
+    assert_close(cm[0], 48.0, "css-ratio width");
+    assert_close(cm[3], 24.0, "css-ratio height");
+
+    // viewBox alone: its own size.
+    let cm = inline_cm(
+        r#"<svg viewBox="0 0 24 12"><rect width="24" height="12"/></svg>"#,
+        "size-viewbox",
+    );
+    assert_close(cm[0], 24.0, "viewBox width");
+    assert_close(cm[3], 12.0, "viewBox height");
+
+    // Nothing at all: 300x150.
+    let cm = inline_cm(
+        r#"<svg><rect width="50" height="50"/></svg>"#,
+        "size-default",
+    );
+    assert_close(cm[0], 300.0, "default width");
+    assert_close(cm[3], 150.0, "default height");
+
+    // A percentage width is CSS: half of the 200px-wide container.
+    let cm = inline_cm(
+        r#"<div style="width: 200px"><svg width="50%" viewBox="0 0 10 10"><rect width="10" height="10"/></svg></div>"#,
+        "size-percent",
+    );
+    assert_close(cm[0], 100.0, "percentage width");
+    assert_close(cm[3], 100.0, "percentage height from the ratio");
+}
+
+/// `currentColor` is the element's CSS `color`, inherited from the parent here.
+#[test]
+fn current_color_in_an_inline_svg_is_the_css_color() {
+    let pdf = convert(
+        r#"<body style="margin:0"><div style="color: #ff0000">
+             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                  stroke="currentColor" style="width:24px;height:24px">
+               <path stroke-linecap="round" d="m4.5 12.75 6 6 9-13.5"/>
+             </svg></div></body>"#,
+        &[],
+        "current-color",
+    );
+    let content = String::from_utf8_lossy(&decompressed_stream_bytes(&pdf)).into_owned();
+    assert!(
+        content.contains("1 0 0 SCN"),
+        "the stroke should be the parent's red, content was: {content}"
+    );
+}
+
+/// An icon repeated many times is converted and embedded once.
+#[test]
+fn a_repeated_inline_svg_is_embedded_once() {
+    let icon =
+        r#"<svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="9"/></svg>"#;
+    let pdf = convert(
+        &format!(r#"<body style="margin:0">{icon}{icon}<p>{icon}</p></body>"#),
+        &[],
+        "inline-dedup",
+    );
+    assert_eq!(count_occurrences(&pdf, b"/Subtype /Form"), 1);
+    assert_xref_is_consistent(&pdf);
+}
+
+/// Descendants carrying `xlink:href` (a `<use>`), gradients with camelCase names and a
+/// `<style>` inside the SVG all survive the trip through the HTML parser.
+#[test]
+fn an_inline_svg_keeps_xlink_references_gradients_and_its_own_style() {
+    for (mode, name) in MODES {
+        let pdf = convert(
+            r##"<body style="margin:0"><p>text</p>
+                <svg viewBox="0 0 100 60" width="100" height="60">
+                  <style>.shape { stroke: #0000ff; stroke-width: 2 }</style>
+                  <defs>
+                    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0" stop-color="#ff5500"/><stop offset="1" stop-color="#0055ff"/>
+                    </linearGradient>
+                    <circle id="c" class="shape" cx="30" cy="30" r="16" fill="url(#g)"/>
+                  </defs>
+                  <use xlink:href="#c"/>
+                  <use href="#c" x="40"/>
+                </svg></body>"##,
+            mode,
+            &format!("inline-features-{name}"),
+        );
+        assert_embedded_as_vector(&pdf);
+        assert_xref_is_consistent(&pdf);
+        let content = String::from_utf8_lossy(&decompressed_stream_bytes(&pdf)).into_owned();
+        assert!(
+            content.contains("0 0 1 SCN"),
+            "{name}: the SVG's <style> should apply"
         );
     }
-    html.push_str("</body>");
-    let input = dir.join("input.html");
-    std::fs::write(&input, &html).unwrap();
+}
 
-    let result = Command::new(BIN)
-        .arg(&input)
-        .args(["--font", FONT_PATH])
-        .arg("-o")
-        .arg(dir.join("out.pdf"))
-        .output()
-        .expect("failed to run the sghtmltopdf binary");
-    let stderr = String::from_utf8_lossy(&result.stderr);
-    assert_eq!(
-        stderr.matches("<svg> element").count(),
-        1,
-        "the warning should appear once, got: {stderr}"
+/// A `<style>` inside an SVG after `<body>` has started is not a late page stylesheet
+/// (streaming mode refuses those), and does not restyle the page either.
+#[test]
+fn a_style_inside_an_inline_svg_does_not_affect_the_page_or_streaming() {
+    for (mode, name) in MODES {
+        let pdf = convert(
+            r#"<body style="margin:0"><p>text</p>
+                <svg viewBox="0 0 10 10" width="10" height="10"><style>p { color: red }</style><rect width="10" height="10"/></svg>
+               </body>"#,
+            mode,
+            &format!("inline-style-{name}"),
+        );
+        let content = String::from_utf8_lossy(&decompressed_stream_bytes(&pdf)).into_owned();
+        assert!(
+            !content.contains("1 0 0 rg"),
+            "{name}: an SVG's <style> must not recolour the page's paragraphs"
+        );
+    }
+}
+
+/// `display: block` on the `<svg>` is a block-level replaced element, and `display: none`
+/// still hides it (the sprite-sheet idiom).
+#[test]
+fn an_inline_svg_honours_display() {
+    let pdf = convert(
+        r#"<body style="margin:0"><svg style="display:none" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>
+           <svg style="display:block; width: 30px; height: 10px" viewBox="0 0 10 10"><rect width="10" height="10"/></svg></body>"#,
+        &[],
+        "display",
     );
-    // It does report how many there were.
+    assert_eq!(count_occurrences(&pdf, b"/Subtype /Form"), 1);
+    assert_close(xobject_cm(&pdf)[0], 30.0, "block svg width");
+}
+
+/// In a line of text an inline `<svg>` is an atomic inline box sitting on the baseline, like
+/// an `<img>`; its own subtree is never laid out as text.
+#[test]
+fn an_inline_svg_in_a_line_of_text_sits_on_the_baseline() {
+    use sghtmltopdf::layout::{
+        build_box_tree, layout_document, LaidOutBox, LaidOutContent, LineBox,
+    };
+
+    let dom = html::parse(
+        br#"<p>before <svg viewBox="0 0 24 24" style="width:24px;height:24px"><text>LEAK</text></svg> after</p>"#,
+    );
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(""));
+    let fonts = FontCollection::new(vec![Font::load(FONT_PATH).unwrap()]);
+    let tree = build_box_tree(&dom, &styles);
+    let laid = layout_document(
+        &tree,
+        &styles,
+        &fonts,
+        PageSettings::default().content_width(),
+    );
+
+    fn first_lines(b: &LaidOutBox) -> Option<Vec<LineBox>> {
+        match &b.content {
+            LaidOutContent::Inline(lines) => Some(lines.clone()),
+            LaidOutContent::Blocks(children) => children.iter().find_map(first_lines),
+            _ => None,
+        }
+    }
+    let lines = first_lines(&laid).expect("a paragraph");
+    assert_eq!(lines.len(), 1, "everything stays on one line");
+    let line = &lines[0];
+    assert_eq!(line.atomics.len(), 1, "the svg is one atomic inline box");
+    let svg = &line.atomics[0];
+    assert_close(svg.margin_box_width, 24.0, "svg width");
+    assert_close(svg.margin_box_height, 24.0, "svg height");
+    assert_close(svg.baseline_shift, 0.0, "baseline alignment");
     assert!(
-        stderr.contains("5 inline"),
-        "the warning should count them, got: {stderr}"
+        line.baseline >= 24.0,
+        "the 24px box sits above the baseline"
     );
-    cleanup(&dir);
+    let text: String = line.runs.iter().map(|r| r.text.as_str()).collect();
+    assert!(
+        !text.contains("LEAK"),
+        "the svg's text must not flow into the line: {text:?}"
+    );
+    assert!(
+        text.contains("before") && text.contains("after"),
+        "{text:?}"
+    );
 }
 
 /// A document with only `<img src="*.svg">` gets no inline SVG warning
