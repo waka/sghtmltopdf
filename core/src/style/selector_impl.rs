@@ -96,7 +96,13 @@ impl<'i> parser::Parser<'i> for SelectorParser {
         })
     }
 
-    /// Supports `::before`/`::after`/`::first-letter`. `::first-line` is not supported
+    /// Supports `::before`/`::after`/`::first-letter`. `::backdrop`, `::file-selector-button`,
+    /// `::placeholder`, `::selection` and `::marker` are parsed but never match (a static
+    /// PDF has no top layer, file input, empty form field, selection, or styleable marker box).
+    /// Parsing them matters because an unknown pseudo-element would otherwise make the
+    /// whole selector list an `Err`, dropping the rule: Tailwind v4's preflight writes
+    /// `*, ::after, ::before, ::backdrop, ::file-selector-button { margin: 0; ... }`.
+    /// `::first-line` is not supported
     fn parse_pseudo_element(
         &self,
         location: SourceLocation,
@@ -106,6 +112,11 @@ impl<'i> parser::Parser<'i> for SelectorParser {
             "before" => PseudoElement::Before,
             "after" => PseudoElement::After,
             "first-letter" => PseudoElement::FirstLetter,
+            "backdrop" => PseudoElement::Backdrop,
+            "file-selector-button" => PseudoElement::FileSelectorButton,
+            "placeholder" => PseudoElement::Placeholder,
+            "selection" => PseudoElement::Selection,
+            "marker" => PseudoElement::Marker,
             _ => {
                 return Err(location.new_custom_error(
                     SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name),
@@ -212,12 +223,19 @@ impl ToCss for NonTSPseudoClass {
 
 /// Pseudo-elements. Supports `::before`/`::after` (generated content, combined with a
 /// `content` declaration) and `::first-letter` (an override style for a limited set of
-/// properties). `::first-line` is not supported.
+/// properties). `::backdrop`, `::file-selector-button`, `::placeholder`, `::selection` and
+/// `::marker` are parsed only so that the rest of a selector list survives; they never
+/// match anything. `::first-line` is not supported.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PseudoElement {
     Before,
     After,
     FirstLetter,
+    Backdrop,
+    FileSelectorButton,
+    Placeholder,
+    Selection,
+    Marker,
 }
 
 impl parser::PseudoElement for PseudoElement {
@@ -234,6 +252,11 @@ impl ToCss for PseudoElement {
             Self::Before => "::before",
             Self::After => "::after",
             Self::FirstLetter => "::first-letter",
+            Self::Backdrop => "::backdrop",
+            Self::FileSelectorButton => "::file-selector-button",
+            Self::Placeholder => "::placeholder",
+            Self::Selection => "::selection",
+            Self::Marker => "::marker",
         })
     }
 }

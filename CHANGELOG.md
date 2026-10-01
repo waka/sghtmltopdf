@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- `::backdrop`, `::file-selector-button`, `::placeholder`, `::selection` and `::marker` now parse and never match, instead of being parse errors that dropped the whole selector list. Tailwind v4's preflight reset (`*, ::after, ::before, ::backdrop, ::file-selector-button { ... }`) was being discarded entirely. (#72)
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

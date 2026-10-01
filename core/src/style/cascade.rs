@@ -314,4 +314,71 @@ mod tests {
         let decls = matching_declarations(&dom, div, &ua, &author);
         assert_eq!(last_color(&decls), None);
     }
+
+    /// Pseudo-elements that can never have a box in a static PDF parse but never match, so
+    /// a selector list naming one keeps its other items (Tailwind v4's preflight reset).
+    const NEVER_MATCHING: [&str; 5] = [
+        "::backdrop",
+        "::file-selector-button",
+        "::placeholder",
+        "::selection",
+        "::marker",
+    ];
+
+    #[test]
+    fn never_matching_pseudo_elements_do_not_drop_the_rest_of_the_selector_list() {
+        let dom = html::parse(br#"<div class="foo">t</div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let ua = Stylesheet::default();
+
+        for pseudo in NEVER_MATCHING {
+            let author = parse_stylesheet(&format!(".foo, {pseudo} {{ color: rgb(6, 6, 6); }}"));
+            let decls = matching_declarations(&dom, div, &ua, &author);
+            assert_eq!(last_color(&decls), Some(rgb(6)), "{pseudo}");
+        }
+
+        // The Tailwind v4 preflight selector.
+        let author = parse_stylesheet(
+            "*, ::after, ::before, ::backdrop, ::file-selector-button { color: rgb(6, 6, 6); }",
+        );
+        let decls = matching_declarations(&dom, div, &ua, &author);
+        assert_eq!(last_color(&decls), Some(rgb(6)));
+    }
+
+    #[test]
+    fn never_matching_pseudo_elements_do_not_match_the_host_element() {
+        let dom = html::parse(br#"<div class="foo">t</div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let ua = Stylesheet::default();
+
+        for pseudo in NEVER_MATCHING {
+            let author = parse_stylesheet(&format!("div{pseudo}, .foo{pseudo} {{ color: red; }}"));
+            let decls = matching_declarations(&dom, div, &ua, &author);
+            assert_eq!(last_color(&decls), None, "{pseudo}");
+            // ... and they are not mistaken for ::before/::after/::first-letter either.
+            for p in [
+                PseudoElement::Before,
+                PseudoElement::After,
+                PseudoElement::FirstLetter,
+            ] {
+                assert!(matching_pseudo_declarations(&dom, div, p, &ua, &author).is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn never_matching_pseudo_element_inside_is_and_where_is_forgiven() {
+        let dom = html::parse(br#"<div class="foo">t</div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let ua = Stylesheet::default();
+
+        // A pseudo-element is not valid inside :is()/:where(); the forgiving list drops
+        // just that item, as it does for any other unsupported argument.
+        let author = parse_stylesheet(":is(.foo, ::placeholder) { color: rgb(6, 6, 6); }");
+        let decls = matching_declarations(&dom, div, &ua, &author);
+        assert_eq!(last_color(&decls), Some(rgb(6)));
+        let author = parse_stylesheet(":where(::placeholder) { color: red; }");
+        let decls = matching_declarations(&dom, div, &ua, &author);
+        assert_eq!(last_color(&decls), None);
+    }
 }
