@@ -30,9 +30,9 @@
 
 | プロパティ | 対応 | 備考 |
 | - | - | - |
-| `width` / `height` | ⚠️ | `auto`/`<length>`/`<percentage>`/`calc()`。`min-content`/`max-content`/`fit-content`は非対応。`height`のパーセンテージはcontaining block高さ不定として無視される |
-| `min-width` / `min-height` | ⚠️ | `<length>`/`<percentage>`/`calc()`(初期値`0`)。`auto`/`min-content`等のキーワードは非対応。`min-height`のパーセンテージは無視される |
-| `max-width` / `max-height` | ⚠️ | `none`/`<length>`/`<percentage>`/`calc()`(初期値`none`)。`min > max`のときは`min`が勝つ(仕様通り)。`max-height`のパーセンテージは無視される |
+| `width` / `height` | ⚠️ | `auto`/`<length>`/`<percentage>`/`calc()`。`min-content`/`max-content`/`fit-content`は非対応。`height`のパーセンテージは、containing blockの高さが明示されている場合のみその高さ(content box)に対して解決され、内容依存の場合は`auto`扱い。祖先をたどって`height`が確定していれば連鎖して解決される。ページ全体(`html`/`body`の`height: 100%`)・テーブルセル・flex/gridアイテム内では`auto`扱い |
+| `min-width` / `min-height` | ⚠️ | `<length>`/`<percentage>`/`calc()`(初期値`0`)。`auto`/`min-content`等のキーワードは非対応。`min-height`のパーセンテージはcontaining blockの高さが明示されている場合のみ解決され、それ以外は`0`扱い |
+| `max-width` / `max-height` | ⚠️ | `none`/`<length>`/`<percentage>`/`calc()`(初期値`none`)。`min > max`のときは`min`が勝つ(仕様通り)。`max-height`のパーセンテージはcontaining blockの高さが明示されている場合のみ解決され、それ以外は`none`扱い |
 | `aspect-ratio` | ⚠️ | `auto \| <ratio> \| auto <ratio>`。「幅確定→高さ導出」が基本で、「高さ確定→幅導出」はfloat/`inline-block`/絶対配置/`<img>`のshrink-to-fit文脈のみ(通常フローのブロックの`width: auto`はstretch優先、仕様通り)。`min-*`/`max-*`でクランプされて比が崩れた場合の再計算は行わない |
 | `margin` | ✅ | 1〜4値ショートハンド。`auto`(中央寄せ)・負値に対応 |
 | `margin-top` / `-right` / `-bottom` / `-left` | ✅ | 隣接兄弟間・親子間のマージン相殺に対応 |

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- A percentage `height`, `min-height` or `max-height` now resolves against the containing
+  block's height when that height is specified explicitly (#74), as CSS 2.1 section 10.5
+  describes. They were ignored even inside a box with a `height` in `px`, so
+  `height: 100%` or `calc(100% - 20px)` collapsed to nothing, and an `<img>` with
+  `height: 100%; width: 100%; object-fit: contain` overflowed its `height: 192px` box. The
+  value resolves against the content box, so it follows `box-sizing`, and it chains through
+  nested percentages. An absolutely positioned box resolves against the padding box of its
+  containing block. With a content-dependent containing block height the percentage still
+  behaves as `auto` (`0` for `min-height`, `none` for `max-height`). That also holds for the
+  page root (`html, body { height: 100% }`), table cells and flex or grid items.
+
 ## 0.5.1 - 2026-09-23
 
 ### Added

@@ -3398,8 +3398,12 @@ msgstr ""
 
 #: src/supports/properties.md:33
 msgid ""
-"`auto`/`<length>`/`<percentage>`/`calc()`。`min-content`/`max-content`/`fit-content`は非対応。`height`のパーセンテージはcontaining "
-"block高さ不定として無視される"
+"`auto`/`<length>`/`<percentage>`/`calc()`。`min-content`/`max-content`/`fit-"
+"content`は非対応。`height`のパーセンテージは、containing blockの高さが明示され"
+"ている場合のみその高さ(content box)に対して解決され、内容依存の場合は`auto`扱"
+"い。祖先をたどって`height`が確定していれば連鎖して解決される。ページ全体"
+"(`html`/`body`の`height: 100%`)・テーブルセル・flex/gridアイテム内では`auto`扱"
+"い"
 msgstr ""
 
 #: src/supports/properties.md:34
@@ -3408,7 +3412,9 @@ msgstr ""
 
 #: src/supports/properties.md:34
 msgid ""
-"`<length>`/`<percentage>`/`calc()`(初期値`0`)。`auto`/`min-content`等のキーワードは非対応。`min-height`のパーセンテージは無視される"
+"`<length>`/`<percentage>`/`calc()`(初期値`0`)。`auto`/`min-content`等のキー"
+"ワードは非対応。`min-height`のパーセンテージはcontaining blockの高さが明示され"
+"ている場合のみ解決され、それ以外は`0`扱い"
 msgstr ""
 
 #: src/supports/properties.md:35
@@ -3417,8 +3423,9 @@ msgstr ""
 
 #: src/supports/properties.md:35
 msgid ""
-"`none`/`<length>`/`<percentage>`/`calc()`(初期値`none`)。`min > "
-"max`のときは`min`が勝つ(仕様通り)。`max-height`のパーセンテージは無視される"
+"`none`/`<length>`/`<percentage>`/`calc()`(初期値`none`)。`min > max`のときは"
+"`min`が勝つ(仕様通り)。`max-height`のパーセンテージはcontaining blockの高さが"
+"明示されている場合のみ解決され、それ以外は`none`扱い"
 msgstr ""
 
 #: src/supports/properties.md:36

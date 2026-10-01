@@ -1830,6 +1830,7 @@ fn layout_atomic_inline(
     // A replaced element (`<img>`) gets its dimensions from its `width`/`height` attributes
     // and the image's intrinsic size. The same processing as block placement
     // (`resolve_box_geometry`) runs here too, sharing the sizing logic.
+    super::block::resolve_percentage_heights(&mut style, pos.cb_height());
     if let BoxContent::Image(image_content) = &b.content {
         super::block::apply_replaced_element_auto_size(&mut style, image_content, available_width);
     }

@@ -146,6 +146,11 @@ pub(super) struct PosCtx<'a> {
     abs_cb: AbsCB,
     /// The containing block for `fixed`: the `(width, height)` of the page's content area.
     page_size: (f32, f32),
+    /// The height of the containing block of the box about to be laid out, when it is
+    /// definite (CSS 2.1 section 10.5). A percentage `height`/`min-height`/`max-height`
+    /// resolves against it; `None` makes a percentage behave as `auto` (`0` for
+    /// `min-height`, `none` for `max-height`).
+    cb_height: Option<f32>,
     /// The absolutely positioned boxes collected.
     out: &'a mut Vec<PositionedBox>,
 }
@@ -157,14 +162,30 @@ enum AbsCB {
     /// Its origin is `(0, 0)`.
     InitialPage,
     /// A positioned ancestor's padding box (in absolute coordinates).
-    Ancestor { node: NodeId, rect: Rect },
+    /// `height` is the padding box height when the ancestor's `height` is definite. It is
+    /// only used to resolve percentage heights of the absolute box (`rect.height` stays 0).
+    Ancestor {
+        node: NodeId,
+        rect: Rect,
+        height: Option<f32>,
+    },
 }
 
 impl<'a> PosCtx<'a> {
+    /// The definite height of the current containing block, if any (see the field).
+    pub(super) fn cb_height(&self) -> Option<f32> {
+        self.cb_height
+    }
+
     pub(super) fn new(out: &'a mut Vec<PositionedBox>, page_size: (f32, f32)) -> Self {
         Self {
             abs_cb: AbsCB::InitialPage,
             page_size,
+            // The root's percentage heights stay `auto`. The initial containing block (the
+            // page area) has a definite height in the spec, but a box with a definite
+            // height is not fragmented across pages here, so `html, body { height: 100% }`
+            // would cut the document off after the first page.
+            cb_height: None,
             out,
         }
     }
@@ -398,7 +419,7 @@ fn layout_out_of_flow_child(
                 },
                 PositionedKind::AbsoluteInitial,
             ),
-            AbsCB::Ancestor { node, rect } => (
+            AbsCB::Ancestor { node, rect, .. } => (
                 rect,
                 PositionedKind::AbsoluteAncestor {
                     node,
@@ -467,6 +488,17 @@ fn layout_out_of_flow_child(
     // Lay out at `top` first (or the top of the cb if there is none).
     let margin_box_y = cb_rect.y + if has_top { top } else { 0.0 };
 
+    // A percentage height resolves against the padding box of the containing block
+    // (CSS 2.1 section 10.5), when that height is definite. `fixed` uses the page area.
+    let saved_cb_height = pos.cb_height;
+    pos.cb_height = if child_style.position == Position::Fixed {
+        (pos.page_size.1 > 0.0).then_some(pos.page_size.1)
+    } else {
+        match pos.abs_cb {
+            AbsCB::InitialPage => (pos.page_size.1 > 0.0).then_some(pos.page_size.1),
+            AbsCB::Ancestor { height, .. } => height,
+        }
+    };
     let mut float_ctx = FloatContext::new();
     let mut laid = layout_box_with_forced_width(
         child,
@@ -479,6 +511,7 @@ fn layout_out_of_flow_child(
         margin_box_y,
         pos,
     );
+    pos.cb_height = saved_cb_height;
 
     // A `bottom` setting (with no `top`) is repositioned to align to the bottom once the
     // laid-out height is known.
@@ -512,8 +545,10 @@ fn resolve_box_geometry(
     fonts: &FontCollection,
     containing_width: f32,
     forced_content_width: Option<f32>,
+    cb_height: Option<f32>,
 ) -> (ComputedStyle, EdgeSizes, EdgeSizes, EdgeSizes, f32) {
     let mut style = box_style(b, styles).into_owned();
+    resolve_percentage_heights(&mut style, cb_height);
     if let BoxContent::Image(image_content) = &b.content {
         apply_replaced_element_auto_size(&mut style, image_content, containing_width);
     }
@@ -616,8 +651,14 @@ fn layout_box_impl(
     y: f32,
     pos: &mut PosCtx,
 ) -> LaidOutBox {
-    let (style, padding, border, mut margin, content_width) =
-        resolve_box_geometry(b, styles, fonts, containing_width, forced_content_width);
+    let (style, padding, border, mut margin, content_width) = resolve_box_geometry(
+        b,
+        styles,
+        fonts,
+        containing_width,
+        forced_content_width,
+        pos.cb_height,
+    );
 
     let content_x = x + margin.left + border.left + padding.left;
     let mut content_y = y + margin.top + border.top + padding.top;
@@ -639,6 +680,12 @@ fn layout_box_impl(
     // not supported). A relative offset moves the padding box too (CSS 2.1
     // §9.4.3), so it is folded in here.
     let saved_cb = pos.abs_cb;
+    let saved_cb_height = pos.cb_height;
+    // The height of this box's content box when it is definite (an explicit `height`, or a
+    // percentage resolved against a definite containing block): what the percentage heights of
+    // its children resolve against. The block-level content kinds below that do not take part
+    // in this (table, flex and grid) reset it to `None` for their items.
+    let own_definite_height = resolve_definite_content_height(&style, &padding, &border);
     if style.position != Position::Static {
         if let Some(node) = b.node {
             pos.abs_cb = AbsCB::Ancestor {
@@ -649,10 +696,18 @@ fn layout_box_impl(
                     width: padding.left + content_width + padding.right,
                     height: 0.0,
                 },
+                height: own_definite_height.map(|h| h + padding.top + padding.bottom),
             };
         }
     }
 
+    pos.cb_height = match &b.content {
+        // An anonymous block box (no element of its own) has no height of its own to offer,
+        // so its children see the height of the box it was generated in.
+        BoxContent::Blocks(_) | BoxContent::Inline(_) if b.node.is_none() => saved_cb_height,
+        BoxContent::Blocks(_) | BoxContent::Inline(_) => own_definite_height,
+        _ => None,
+    };
     let (mut content, content_height) = match &b.content {
         BoxContent::Blocks(children) => {
             let mut cursor_y = content_y;
@@ -828,6 +883,7 @@ fn layout_box_impl(
     };
     // The descendants are laid out, so the containing block is restored.
     pos.abs_cb = saved_cb;
+    pos.cb_height = saved_cb_height;
     // Reflect the height taffy settled directly in the final layout pass
     // (specific to `layout_box_with_forced_size`).
     let mut content_height = forced_content_height.unwrap_or(content_height);
@@ -935,7 +991,7 @@ fn layout_float_child(
     pos: &mut PosCtx,
 ) -> LaidOutBox {
     let (_, padding, border, margin, child_content_width) =
-        resolve_box_geometry(child, styles, fonts, containing_width, None);
+        resolve_box_geometry(child, styles, fonts, containing_width, None, pos.cb_height);
     let margin_box_width = margin.left
         + border.left
         + padding.left
@@ -1084,9 +1140,55 @@ pub(crate) fn clamp_used_width(
     .max(0.0)
 }
 
-/// Clamping the used height by `min-height`/`max-height`. A percentage is ignored, the
-/// containing block's height being indefinite (handled the same way as an ignored percentage `height`).
-/// (handled the same way as an ignored percentage `height`).
+/// Resolve the percentage `height`/`min-height`/`max-height` of `style` against the height of
+/// its containing block (CSS 2.1 section 10.5), so the rest of the height logic only sees
+/// lengths. `cb_height` is `None` when that height is not specified explicitly (depends on the
+/// content): then a percentage `height` computes to `auto`, `min-height` to `0` and
+/// `max-height` to `none`. A `calc()` mixing a length and a percentage follows the same rule.
+pub(super) fn resolve_percentage_heights(style: &mut ComputedStyle, cb_height: Option<f32>) {
+    let has_percent = |lp: LengthPercentage| match lp {
+        LengthPercentage::Length(_) => false,
+        LengthPercentage::Percentage(_) => true,
+        LengthPercentage::Calc { percent, .. } => percent != 0.0,
+    };
+    let resolve = |lp: LengthPercentage| -> Option<LengthPercentage> {
+        if !has_percent(lp) {
+            return Some(lp);
+        }
+        cb_height.map(|h| LengthPercentage::Length(resolve_lp(lp, h)))
+    };
+    if let LengthPercentageOrAuto::LengthPercentage(lp) = style.height {
+        style.height = match resolve(lp) {
+            Some(lp) => LengthPercentageOrAuto::LengthPercentage(lp),
+            None => LengthPercentageOrAuto::Auto,
+        };
+    }
+    style.min_height = resolve(style.min_height).unwrap_or(LengthPercentage::Length(0.0));
+    if let MaxSize::LengthPercentage(lp) = style.max_height {
+        style.max_height = match resolve(lp) {
+            Some(lp) => MaxSize::LengthPercentage(lp),
+            None => MaxSize::None,
+        };
+    }
+}
+
+/// The content height of a box when its `height` is specified explicitly (percentages having
+/// been resolved by [`resolve_percentage_heights`]), clamped by `min-height`/`max-height`.
+/// `None` when the height depends on the content.
+fn resolve_definite_content_height(
+    style: &ComputedStyle,
+    padding: &EdgeSizes,
+    border: &EdgeSizes,
+) -> Option<f32> {
+    let padding_tb = padding.top + padding.bottom;
+    let border_tb = border.top + border.bottom;
+    let height = resolve_height(style, padding_tb, border_tb)?;
+    Some(clamp_used_height(style, padding_tb, border_tb, height))
+}
+
+/// Clamping the used height by `min-height`/`max-height`. A percentage that
+/// [`resolve_percentage_heights`] could not resolve has already become `0`/`none`, so only
+/// lengths are left here.
 pub(crate) fn clamp_used_height(
     style: &ComputedStyle,
     padding_tb: f32,
