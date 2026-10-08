@@ -20,12 +20,11 @@ gem "sghtmltopdf"
 
 | | 対応 |
 |---|---|
-| プラットフォーム | `x86_64-linux` / `aarch64-linux` / `x86_64-linux-musl` / `aarch64-linux-musl` / `arm64-darwin` / `x86_64-darwin` |
+| プラットフォーム | `x86_64-linux` / `aarch64-linux` / `x86_64-linux-musl` / `aarch64-linux-musl` / `arm64-darwin` / `x86_64-darwin` / `x64-mingw-ucrt` |
 | Ruby | 3.2以上 |
 
 Linuxはglibc(Debian/Ubuntu系)とmusl(Alpine)の両方があり、`gem install`が環境に合うほうを選びます。
-Windowsは対象外で、この環境ではインストールできません。
-[サーバへ委譲する](#サーバへ委譲する)という手があります。
+Windowsは`x64-mingw-ucrt`のprecompiled gemで利用できます。
 
 ## 基本
 
@@ -227,7 +226,7 @@ PDFのレンダリングはHTTPサーバを介さないので、どちらもそ�
 
 `server_url`を指定すると、変換を[HTTPサーバモード](../server/index.md)で動く
 別プロセスへ投げます。
-アプリのCPUを使いたくない場合や、gemの対応プラットフォーム外(Windowsなど)で動かす場合に使います。
+アプリのCPUを使いたくない場合や、gemの対応プラットフォーム外で動かす場合に使います。
 
 ```ruby
 Sghtmltopdf.configure do |c|

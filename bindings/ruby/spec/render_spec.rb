@@ -139,7 +139,7 @@ end
 # Confirm from the bytes that the CLI and the gem converge on the same execution path.
 RSpec.describe "matching the CLI's output" do
   # The binary `cargo build --release` produces at the repository root.
-  CLI_PATH = File.expand_path("../../../target/release/sghtmltopdf", __dir__)
+  CLI_PATH = File.expand_path("../../../target/release/sghtmltopdf#{Gem.win_platform? ? ".exe" : ""}", __dir__)
 
   before do
     skip "no CLI binary (build it with cargo build --release): #{CLI_PATH}" unless File.executable?(CLI_PATH)

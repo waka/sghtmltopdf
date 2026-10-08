@@ -28,6 +28,7 @@ jobs:
           - aarch64-linux-musl # Alpine
           - arm64-darwin
           - x86_64-darwin
+          - x64-mingw-ucrt # Windows (rb-sys-dock cross-compiles to x86_64-pc-windows-gnu)
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -81,6 +82,28 @@ jobs:
       - name: gem install and convert
         run: |
           gem install --no-document ./pkg/*.gem
+          ruby bindings/ruby/script/smoke.rb
+
+  smoke-windows:
+    needs: cross-gem
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.4"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: gem-x64-mingw-ucrt
+          path: pkg
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - name: gem install and convert
+        shell: pwsh
+        run: |
+          gem install --no-document (Get-ChildItem pkg\*.gem).FullName
           ruby bindings/ruby/script/smoke.rb
 
   # aarch64-linux: run an arm64 container under QEMU
@@ -203,6 +226,7 @@ jobs:
       - smoke-linux-musl-arm64
       - smoke-macos-arm64
       - smoke-macos-x86_64
+      - smoke-windows
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # The environment named in the trusted publisher settings on rubygems.org
@@ -221,7 +245,7 @@ jobs:
           bundler-cache: true
           cargo-cache: "false"
           working-directory: bindings/ruby
-      # Collect the six cross-built platforms into `pkg/`
+      # Collect every precompiled platform into `pkg/`.
       - uses: actions/download-artifact@v4
         with:
           pattern: gem-*
