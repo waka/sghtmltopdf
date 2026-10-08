@@ -2,6 +2,9 @@
 
 require "bundler/gem_tasks"
 require "rb_sys/extensiontask"
+require_relative "ext/sghtmltopdf/windows_build_environment"
+
+Sghtmltopdf::WindowsBuildEnvironment.configure
 
 GEMSPEC = Gem::Specification.load("sghtmltopdf.gemspec")
 
@@ -26,6 +29,7 @@ ExtensionTask.new("sghtmltopdf", GEMSPEC) do |ext|
     x86_64-linux aarch64-linux
     x86_64-linux-musl aarch64-linux-musl
     arm64-darwin x86_64-darwin
+    x64-mingw-ucrt
   ]
 end
 

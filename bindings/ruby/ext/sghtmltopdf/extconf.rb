@@ -2,6 +2,9 @@
 
 require "mkmf"
 require "rb_sys/mkmf"
+require_relative "windows_build_environment"
+
+Sghtmltopdf::WindowsBuildEnvironment.configure
 
 core = File.expand_path("../../../../core", __dir__)
 unless File.exist?(File.join(core, "Cargo.toml"))
@@ -13,7 +16,7 @@ unless File.exist?(File.join(core, "Cargo.toml"))
     so a build from source was attempted, but the source gem does not include the
     Rust core and cannot be built.
 
-    Supported platforms: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin / x86_64-darwin
+    Supported platforms: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin / x86_64-darwin / x64-mingw-ucrt
   MESSAGE
 end
 
