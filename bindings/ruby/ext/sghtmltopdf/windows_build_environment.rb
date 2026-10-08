@@ -23,10 +23,13 @@ module Sghtmltopdf
         ENV["PATH"] = ([llvm_bin] + paths.reject { |path| path == llvm_bin }).join(File::PATH_SEPARATOR)
       end
 
-      # bindgen otherwise assumes the host's MSVC ABI. rb-sys appends this value
-      # after its own arguments, so callers can still append an explicit override.
-      bindgen_args = "--target=x86_64-w64-windows-gnu"
+      # bindgen otherwise assumes the host's MSVC ABI. Leave an explicitly supplied
+      # --target in place (CI sets one) rather than prepending a duplicate; clang would
+      # take the last --target anyway, but a single source keeps the args readable.
       existing_args = ENV.fetch("BINDGEN_EXTRA_CLANG_ARGS", "")
+      return if existing_args.include?("--target=")
+
+      bindgen_args = "--target=x86_64-w64-windows-gnu"
       ENV["BINDGEN_EXTRA_CLANG_ARGS"] = [bindgen_args, existing_args].reject(&:empty?).join(" ")
     end
   end

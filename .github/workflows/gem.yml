@@ -28,6 +28,7 @@ jobs:
           - aarch64-linux-musl # Alpine
           - arm64-darwin
           - x86_64-darwin
+          - x64-mingw-ucrt # Windows (rb-sys-dock cross-compiles to x86_64-pc-windows-gnu)
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -61,35 +62,6 @@ jobs:
           path: bindings/ruby/pkg/*-${{ matrix.platform }}.gem
           if-no-files-found: error
 
-  # Windows uses RubyInstaller's UCRT/GCC ABI, so build this native gem on a Windows runner
-  # instead of attempting to cross-compile it in the Linux Docker image above.
-  windows-gem:
-    name: build x64-mingw-ucrt
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.4"
-          bundler-cache: true
-          working-directory: bindings/ruby
-      - name: Install the Rust and bindgen toolchains
-        shell: pwsh
-        run: |
-          rustup toolchain install stable-x86_64-pc-windows-gnu --profile minimal
-          choco install llvm --no-progress --yes
-          "RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu" | Add-Content $env:GITHUB_ENV
-          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Add-Content $env:GITHUB_ENV
-          "BINDGEN_EXTRA_CLANG_ARGS=--target=x86_64-w64-windows-gnu" | Add-Content $env:GITHUB_ENV
-      - name: Build the native gem
-        working-directory: bindings/ruby
-        run: ridk exec bundle exec rake native gem
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gem-x64-mingw-ucrt
-          path: bindings/ruby/pkg/*-x64-mingw-ucrt.gem
-          if-no-files-found: error
-
   # x86_64-linux: install directly on the runner
   smoke-linux:
     needs: cross-gem
@@ -113,8 +85,12 @@ jobs:
           ruby bindings/ruby/script/smoke.rb
 
   smoke-windows:
-    needs: windows-gem
+    needs: cross-gem
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ["3.2", "3.4"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -123,7 +99,7 @@ jobs:
           path: pkg
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.4"
+          ruby-version: ${{ matrix.ruby }}
       - name: gem install and convert
         shell: pwsh
         run: |

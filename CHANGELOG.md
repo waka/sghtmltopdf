@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A precompiled gem for Windows `x64-mingw-ucrt`, so the native extension installs and runs
+  in-process on RubyInstaller Ruby instead of only being reachable through a separate
+  `sghtmltopdf server`. The gem is built on a Windows runner (RubyInstaller's mingw/UCRT GCC
+  ABI differs from MSVC, so it cannot be cross-compiled in the Linux image) and smoke-tested
+  before release. Elsewhere the source gem still refuses to build with an explanatory message.
 - `display: inline-flex` is supported. The element is an inline-level box on the line, like
   `inline-block` (shrink-to-fit width, padding, border and background), and its children are
   laid out as a flex container. It used to fall back to plain `inline`, so badges and pills
