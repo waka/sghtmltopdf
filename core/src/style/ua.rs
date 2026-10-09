@@ -233,6 +233,14 @@ caption {
   text-align: center;
 }
 
+thead, tbody, tfoot, table > tr {
+  vertical-align: middle;
+}
+
+tr, td, th {
+  vertical-align: inherit;
+}
+
 th {
   text-align: center;
 }
