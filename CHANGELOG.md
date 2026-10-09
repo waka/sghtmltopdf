@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A box with `border-radius` that breaks across pages now keeps its border on every page
+  (#101). The rounded border was stroked as one closed path whose width came from the top
+  edge. Pagination zeroes the top width on later fragments, so they lost the border entirely,
+  and the first fragment got an edge along the break. The border is now left open at a break,
+  as with square corners: the sides continue onto every fragment, the first fragment rounds
+  only its top corners and the last only its bottom ones. Grid and table containers did not
+  slice at all: every fragment kept its top and bottom border and padding, and the first
+  fragment's border sat lower than the box by its top margin, border and padding. They now
+  slice like block containers.
 - Text after an `inline-block` (or `inline-flex`) box taller than the text no longer overlaps
   the box (#91). When a line holding such a box ended by wrapping or at a `<br>`, the next
   line started one text line-height lower instead of below the box, so the trailing text was

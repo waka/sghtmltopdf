@@ -1269,23 +1269,16 @@ fn flush_grid_fragment(
         return;
     }
 
-    let mut layout = container.layout;
-    layout.content.y = fragment_top
-        + container.layout.margin.top
-        + container.layout.border.top
-        + container.layout.padding.top;
-    layout.content.height = (fragment_bottom
-        - fragment_top
-        - container.layout.margin.top
-        - container.layout.border.top
-        - container.layout.padding.top)
-        .max(0.0);
-    layout.fragment = match (is_first, is_last) {
-        (true, true) => FragmentPosition::Whole,
-        (true, false) => FragmentPosition::First,
-        (false, true) => FragmentPosition::Last,
-        (false, false) => FragmentPosition::Middle,
-    };
+    // `fragment_top`/`fragment_bottom` already bound the content: the caller reserves the top
+    // margin, border and padding before the first fragment and the bottom ones after the
+    // last, so the decoration is sliced the same way as in `place_split`.
+    let layout = fragment_layout(
+        &container.layout,
+        fragment_top,
+        fragment_bottom,
+        is_first,
+        is_last,
+    );
 
     let fragment = LaidOutBox {
         node: container.node,
@@ -1531,23 +1524,16 @@ fn flush_table_fragment(
         return;
     }
 
-    let mut layout = container.layout;
-    layout.content.y = fragment_top
-        + container.layout.margin.top
-        + container.layout.border.top
-        + container.layout.padding.top;
-    layout.content.height = (fragment_bottom
-        - fragment_top
-        - container.layout.margin.top
-        - container.layout.border.top
-        - container.layout.padding.top)
-        .max(0.0);
-    layout.fragment = match (is_first, is_last) {
-        (true, true) => FragmentPosition::Whole,
-        (true, false) => FragmentPosition::First,
-        (false, true) => FragmentPosition::Last,
-        (false, false) => FragmentPosition::Middle,
-    };
+    // `fragment_top`/`fragment_bottom` already bound the content: the caller reserves the top
+    // margin, border and padding before the first fragment and the bottom ones after the
+    // last, so the decoration is sliced the same way as in `place_split`.
+    let layout = fragment_layout(
+        &container.layout,
+        fragment_top,
+        fragment_bottom,
+        is_first,
+        is_last,
+    );
 
     let fragment = LaidOutBox {
         node: container.node,
@@ -3113,5 +3099,85 @@ mod tests {
             .map(|p| p.boxes.iter().map(head_count).sum::<usize>())
             .sum();
         assert_eq!(total, 80, "the oversized header must not be duplicated");
+    }
+
+    /// Paginate `body` onto 400x200 pages with no page margin and return, page by page, the
+    /// layout of the grid or table fragment found there.
+    fn row_container_fragments(body: &str, css: &str) -> Vec<Layout> {
+        fn find(b: &LaidOutBox) -> Option<Layout> {
+            match &b.content {
+                LaidOutContent::Grid(_) | LaidOutContent::Table(_) => Some(b.layout),
+                LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                    children.iter().find_map(find)
+                }
+                _ => None,
+            }
+        }
+        let settings = PageSettings {
+            size: crate::layout::PageSize {
+                width: 400.0,
+                height: 200.0,
+            },
+            margin: EdgeSizes::default(),
+        };
+        let dom = html::parse(body.as_bytes());
+        let author = parse_stylesheet(&format!("html, body {{ margin: 0; }} {css}"));
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+        pages
+            .iter()
+            .map(|page| {
+                page.boxes
+                    .iter()
+                    .find_map(find)
+                    .expect("a fragment on every page")
+            })
+            .collect()
+    }
+
+    /// Like a block container, a grid or table split across pages slices its decoration
+    /// (`box-decoration-break: slice`): the border and padding at a break are dropped, and
+    /// the first fragment's border box starts where the container does.
+    fn assert_sliced(fragments: &[Layout]) {
+        assert_eq!(fragments.len(), 3, "the container should break twice");
+        assert_eq!(fragments[0].fragment, FragmentPosition::First);
+        assert_eq!(fragments[1].fragment, FragmentPosition::Middle);
+        assert_eq!(fragments[2].fragment, FragmentPosition::Last);
+        assert_eq!(fragments[0].border_box().y, 0.0);
+        assert_eq!(fragments[0].border.top, 4.0);
+        assert_eq!(fragments[0].padding.top, 3.0);
+        for fragment in &fragments[1..] {
+            assert_eq!(fragment.border_box().y, 0.0);
+            assert_eq!(fragment.border.top, 0.0);
+            assert_eq!(fragment.padding.top, 0.0);
+        }
+        for fragment in &fragments[..2] {
+            assert_eq!(fragment.border.bottom, 0.0);
+            assert_eq!(fragment.padding.bottom, 0.0);
+        }
+        assert_eq!(fragments[2].border.bottom, 4.0);
+        assert_eq!(fragments[2].padding.bottom, 3.0);
+    }
+
+    #[test]
+    fn a_grid_split_across_pages_slices_its_border() {
+        let rows = r#"<div class="row"></div>"#.repeat(8);
+        let fragments = row_container_fragments(
+            &format!(r#"<div class="grid">{rows}</div>"#),
+            ".grid { display: grid; border: 4px solid black; padding: 3px 0; } \
+             .row { height: 50px; }",
+        );
+        assert_sliced(&fragments);
+    }
+
+    #[test]
+    fn a_table_split_across_pages_slices_its_border() {
+        let rows = "<tr><td></td></tr>".repeat(8);
+        let fragments = row_container_fragments(
+            &format!("<table>{rows}</table>"),
+            "table { border: 4px solid black; padding: 3px 0; border-spacing: 0; } \
+             td { height: 50px; padding: 0; }",
+        );
+        assert_sliced(&fragments);
     }
 }

@@ -27,8 +27,8 @@
 //! edges that differ) falls back to the per-edge drawing above.
 //!
 //! A box fragmented by pagination (see [`crate::layout::FragmentPosition`]) does not apply
-//! `border-radius` to a continuing edge (one touching a break)
-//! (the rounding is suppressed using the information layout passed as `Layout::fragment`).
+//! `border-radius` to a continuing edge (one touching a break), and a rounded border is left
+//! open there (the information layout passed as `Layout::fragment`).
 //!
 //! - Bold and italic do not require a separate font file with those glyph shapes: the
 //!   regular shapes are filled and outlined (faux bold) or the text matrix is sheared (faux
@@ -2516,7 +2516,9 @@ fn render_rounded_decoration(
         return;
     }
 
-    let thickness = layout.border.top;
+    // A continuing fragment has its top or bottom width zeroed by pagination, but the side
+    // widths always survive, so they give the thickness.
+    let thickness = layout.border.left;
     if thickness <= 0.0 || style.border_top_style == BorderStyle::None {
         return;
     }
@@ -2535,13 +2537,12 @@ fn render_rounded_decoration(
         content.set_dash_pattern([], 0.0);
         content.set_line_width(band);
         for offset in [band / 2.0, thickness - band / 2.0] {
-            rounded_rect_path(
+            rounded_border_path(
                 content,
-                x0 + offset,
-                y_top - offset,
-                x1 - offset,
-                y_bottom + offset,
+                (x0, y_top, x1, y_bottom),
+                offset,
                 shrink_radii(radii, offset),
+                layout.fragment,
             );
             content.stroke();
         }
@@ -2553,15 +2554,126 @@ fn render_rounded_decoration(
     let inset = thickness / 2.0;
     content.set_line_width(thickness);
     apply_border_style_dash(content, style.border_top_style, thickness);
-    rounded_rect_path(
+    rounded_border_path(
         content,
-        x0 + inset,
-        y_top - inset,
-        x1 - inset,
-        y_bottom + inset,
+        (x0, y_top, x1, y_bottom),
+        inset,
         shrink_radii(radii, inset),
+        layout.fragment,
     );
     content.stroke();
+}
+
+/// Build the stroke path of a uniform rounded border whose centre line sits `inset` inside the
+/// border box `(x0, y_top, x1, y_bottom)` (PDF space). A whole box gets a closed rounded
+/// rectangle. A fragment of a box split by pagination (`box-decoration-break: slice`) has no
+/// border at the break, so its path is left open there: the sides run all the way to the
+/// fragment's edge, a `First` fragment draws only its top, a `Last` fragment only its bottom,
+/// and a `Middle` fragment just the two sides. `radii` must already come from
+/// [`effective_radii`], which leaves the corners at a break square.
+fn rounded_border_path(
+    content: &mut RenderTarget<'_>,
+    (x0, y_top, x1, y_bottom): (f32, f32, f32, f32),
+    inset: f32,
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+    fragment: FragmentPosition,
+) {
+    let has_top = matches!(fragment, FragmentPosition::Whole | FragmentPosition::First);
+    let has_bottom = matches!(fragment, FragmentPosition::Whole | FragmentPosition::Last);
+    let left = x0 + inset;
+    let right = x1 - inset;
+    let top = if has_top { y_top - inset } else { y_top };
+    let bottom = if has_bottom {
+        y_bottom + inset
+    } else {
+        y_bottom
+    };
+
+    if has_top && has_bottom {
+        rounded_rect_path(content, left, top, right, bottom, radii);
+        return;
+    }
+
+    let max_rx = ((right - left) / 2.0).max(0.0);
+    let max_ry = ((top - bottom) / 2.0).max(0.0);
+    let clamp = |(rx, ry): CornerRadiusPx| (rx.clamp(0.0, max_rx), ry.clamp(0.0, max_ry));
+    let (tl, tr, br, bl) = radii;
+
+    if has_top {
+        // Up the left side, across the top, and down the right side.
+        let (rx_tl, ry_tl) = clamp(tl);
+        let (rx_tr, ry_tr) = clamp(tr);
+        content.move_to(left, bottom);
+        content.line_to(left, top - ry_tl);
+        if rx_tl > 0.0 || ry_tl > 0.0 {
+            let kx = rx_tl * BEZIER_KAPPA;
+            let ky = ry_tl * BEZIER_KAPPA;
+            content.cubic_to(
+                left,
+                top - ry_tl + ky,
+                left + rx_tl - kx,
+                top,
+                left + rx_tl,
+                top,
+            );
+        }
+        content.line_to(right - rx_tr, top);
+        if rx_tr > 0.0 || ry_tr > 0.0 {
+            let kx = rx_tr * BEZIER_KAPPA;
+            let ky = ry_tr * BEZIER_KAPPA;
+            content.cubic_to(
+                right - rx_tr + kx,
+                top,
+                right,
+                top - ry_tr + ky,
+                right,
+                top - ry_tr,
+            );
+        }
+        content.line_to(right, bottom);
+    } else if has_bottom {
+        // Down the right side, across the bottom, and up the left side.
+        let (rx_br, ry_br) = clamp(br);
+        let (rx_bl, ry_bl) = clamp(bl);
+        content.move_to(right, top);
+        content.line_to(right, bottom + ry_br);
+        if rx_br > 0.0 || ry_br > 0.0 {
+            let kx = rx_br * BEZIER_KAPPA;
+            let ky = ry_br * BEZIER_KAPPA;
+            content.cubic_to(
+                right,
+                bottom + ry_br - ky,
+                right - rx_br + kx,
+                bottom,
+                right - rx_br,
+                bottom,
+            );
+        }
+        content.line_to(left + rx_bl, bottom);
+        if rx_bl > 0.0 || ry_bl > 0.0 {
+            let kx = rx_bl * BEZIER_KAPPA;
+            let ky = ry_bl * BEZIER_KAPPA;
+            content.cubic_to(
+                left + rx_bl - kx,
+                bottom,
+                left,
+                bottom + ry_bl - ky,
+                left,
+                bottom + ry_bl,
+            );
+        }
+        content.line_to(left, top);
+    } else {
+        content.move_to(left, bottom);
+        content.line_to(left, top);
+        content.move_to(right, top);
+        content.line_to(right, bottom);
+    }
 }
 
 /// Whether all four edges' `border-width`/`border-style`/`border-color` match.
@@ -4950,6 +5062,99 @@ mod tests {
             !text.contains(" re\n"),
             "rounded box should not use a plain rectangle"
         );
+    }
+
+    /// Paginate a rounded, bordered box three pages tall onto 400x200 pages with no page
+    /// margin, and return each page's decompressed content stream.
+    fn rounded_box_split_across_pages(box_css: &str) -> Vec<String> {
+        use crate::layout::{EdgeSizes, PageSize};
+
+        let settings = PageSettings {
+            size: PageSize {
+                width: 400.0,
+                height: 200.0,
+            },
+            margin: EdgeSizes {
+                top: 0.0,
+                right: 0.0,
+                bottom: 0.0,
+                left: 0.0,
+            },
+        };
+        let fonts = test_fonts();
+        let rows = r#"<div class="row"></div>"#.repeat(8);
+        let dom = html::parse(format!(r#"<div class="box">{rows}</div>"#).as_bytes());
+        let author = parse_stylesheet(&format!(
+            "html, body {{ margin: 0; }} .row {{ height: 50px; }} .box {{ {box_css} }}"
+        ));
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let pages = paginate_document(&dom, &styles, &fonts, &settings);
+        assert_eq!(pages.len(), 3, "the box should break twice");
+        pages
+            .iter()
+            .map(|page| {
+                let bytes = encode_pdf(
+                    std::slice::from_ref(page),
+                    &styles,
+                    &HashMap::new(),
+                    &fonts,
+                    &settings,
+                );
+                String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rounded_border_is_sliced_open_at_page_breaks() {
+        let pages =
+            rounded_box_split_across_pages("border: 4px solid rgb(0, 0, 0); border-radius: 8px;");
+        let [first, middle, last] = &pages[..] else {
+            unreachable!()
+        };
+
+        // The first and last fragments stroke a rounded border that is left open at the break
+        // (a closed path would draw an edge along it): the first rounds only its top corners,
+        // the last only its bottom ones.
+        for (name, page) in [("first", first), ("last", last)] {
+            assert_eq!(
+                count_occurrences(page.as_bytes(), b"\nS\n"),
+                1,
+                "the {name} fragment should stroke its border once"
+            );
+            assert!(
+                !page.contains("h\nS\n"),
+                "the {name} fragment's border should be left open at the break"
+            );
+            assert_eq!(count_occurrences(page.as_bytes(), b" c\n"), 2);
+        }
+        // The sides run to the fragment's edge at the break (the stroke's centre line is 2px
+        // inside the 4px border; the first fragment ends 154px down the 200px page).
+        assert!(first.contains("2 46 m\n2 192 l\n"), "{first}");
+        assert!(last.contains("398 200 m\n398 154 l\n"), "{last}");
+
+        // The middle fragment has no rounded corner left, so it paints its two sides as
+        // straight edges and nothing across the top or bottom.
+        assert_eq!(count_occurrences(middle.as_bytes(), b" c\n"), 0);
+        assert_eq!(
+            count_occurrences(middle.as_bytes(), b"\nf\n"),
+            2,
+            "{middle}"
+        );
+    }
+
+    #[test]
+    fn rounded_double_border_is_sliced_open_at_page_breaks() {
+        let pages =
+            rounded_box_split_across_pages("border: 6px double rgb(0, 0, 0); border-radius: 8px;");
+        for page in [&pages[0], &pages[2]] {
+            assert_eq!(
+                count_occurrences(page.as_bytes(), b"\nS\n"),
+                2,
+                "both bands of the double border should be stroked"
+            );
+            assert!(!page.contains("h\nS\n"));
+        }
     }
 
     #[test]
