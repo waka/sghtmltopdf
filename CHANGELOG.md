@@ -42,6 +42,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `:host` and `:host()` parse as pseudo-classes that never match, so a selector list that names
+  one is no longer dropped (#102). Tailwind v4 declares its whole theme on `:root, :host` and
+  its preflight on `html, :host`; since custom properties cascade (#75), the theme rule never
+  applied and every utility built on a theme variable (spacing, colours, font sizes and
+  weights, line heights) fell back. A document has no shadow trees, so they never match.
+  `:host-context()` is still a parse error, as in Firefox and Safari.
 - Text after an `inline-block` (or `inline-flex`) box taller than the text no longer overlaps
   the box (#91). When a line holding such a box ended by wrapping or at a `<br>`, the next
   line started one text line-height lower instead of below the box, so the trailing text was

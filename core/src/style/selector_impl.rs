@@ -62,6 +62,17 @@ impl<'i> parser::Parser<'i> for SelectorParser {
         true
     }
 
+    /// Enable `:host` and `:host()`.
+    ///
+    /// They only match a shadow host from inside its shadow tree, and a document here has no
+    /// shadow trees, so they never match (the `selectors` crate returns no match when the
+    /// matching context has no shadow host). Parsing them matters for the same reason as
+    /// `::backdrop`: an unknown pseudo-class makes the whole selector list an `Err`, and
+    /// Tailwind v4 declares its whole theme on `:root, :host` and its preflight on `html, :host`.
+    fn parse_host(&self) -> bool {
+        true
+    }
+
     /// Non-structural pseudo-classes such as `:hover` are supported at parse time (treating
     /// them as never matching is [`super::element_ref::ElementRef::match_non_ts_pseudo_class`]'s job).
     ///

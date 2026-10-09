@@ -418,4 +418,53 @@ mod tests {
         let decls = matching_declarations(&dom, div, &ua, &author);
         assert_eq!(last_color(&decls), None);
     }
+
+    /// `:host` and `:host()` only match a shadow host from inside its shadow tree. There are
+    /// no shadow trees here, so they parse but never match.
+    const HOST_SELECTORS: [&str; 3] = [":host", ":host(.foo)", ":host(div)"];
+
+    #[test]
+    fn host_does_not_drop_the_rest_of_the_selector_list() {
+        let dom = html::parse(br#"<div class="foo">t</div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let html_el = find(&dom, dom.document(), "html").expect("html not found");
+        let ua = Stylesheet::default();
+
+        for host in HOST_SELECTORS {
+            let author = parse_stylesheet(&format!(".foo, {host} {{ color: rgb(6, 6, 6); }}"));
+            let decls = matching_declarations(&dom, div, &ua, &author);
+            assert_eq!(last_color(&decls), Some(rgb(6)), "{host}");
+        }
+
+        // Tailwind v4's theme and preflight selectors.
+        for selector in [":root, :host", "html, :host"] {
+            let author = parse_stylesheet(&format!("{selector} {{ color: rgb(6, 6, 6); }}"));
+            let decls = matching_declarations(&dom, html_el, &ua, &author);
+            assert_eq!(last_color(&decls), Some(rgb(6)), "{selector}");
+        }
+        let author = parse_stylesheet("@layer theme { :root, :host { color: rgb(6, 6, 6); } }");
+        let decls = matching_declarations(&dom, html_el, &ua, &author);
+        assert_eq!(last_color(&decls), Some(rgb(6)));
+    }
+
+    #[test]
+    fn host_never_matches() {
+        let dom = html::parse(br#"<div class="foo">t</div>"#);
+        let ua = Stylesheet::default();
+
+        for tag in ["html", "body", "div"] {
+            let element = find(&dom, dom.document(), tag).expect("element not found");
+            for host in HOST_SELECTORS {
+                for selector in [
+                    host.to_string(),
+                    format!("{host} div"),
+                    format!("{host} > *"),
+                ] {
+                    let author = parse_stylesheet(&format!("{selector} {{ color: red; }}"));
+                    let decls = matching_declarations(&dom, element, &ua, &author);
+                    assert_eq!(last_color(&decls), None, "{selector} on <{tag}>");
+                }
+            }
+        }
+    }
 }

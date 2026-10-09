@@ -533,3 +533,36 @@ fn custom_properties_on_body_reach_streamed_top_level_elements() {
         );
     }
 }
+
+// ---- `:host` in Tailwind v4's theme (issue #102) ----
+
+#[test]
+fn a_theme_declared_on_root_and_host_applies() {
+    // Tailwind v4 declares every theme variable on `:root, :host`, inside `@layer theme`.
+    let body = r#"<div class="probe">X</div>"#;
+    let probe = ".probe { margin-left: var(--shift, 0px) }";
+    for theme in [
+        ":root { --shift: 120px }",
+        ":root, :host { --shift: 120px }",
+        "@layer theme { :root, :host { --shift: 120px } }",
+    ] {
+        assert_eq!(
+            margin_left_of(body, &format!("{theme} {probe}"), "probe"),
+            120.0,
+            "{theme}"
+        );
+    }
+}
+
+#[test]
+fn a_preflight_rule_on_html_and_host_applies() {
+    // Tailwind v4's preflight puts `html, :host { ... }`.
+    let (dom, laid) = layout(
+        r#"<div class="probe">X</div>"#,
+        "body { margin: 0 } html, :host { padding-left: 120px }",
+    );
+    let mut divs = Vec::new();
+    find_all_tags(&dom, dom.document(), "div", &mut divs);
+    let div = find_laid_out(&laid, divs[0]).unwrap();
+    assert_eq!(div.layout.content.x, 120.0);
+}
