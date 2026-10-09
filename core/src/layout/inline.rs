@@ -359,24 +359,17 @@ fn layout_inline_content_in_flow(
     // and boxes such as `<img>` accumulate separately into `current_runs`/`current_atomics`,
     // so these are held as x coordinates rather than indices, to apply the same rule to both.
     let mut word_boundaries: Vec<f32> = Vec::new();
-    // The line height demanded by a `<br>` when the previous item was a forced break.
-    // Used to add one empty line for a trailing `<br>`.
-    let mut trailing_break_height: Option<f32> = None;
 
     for item in items {
         let (word, word_space_before) = match item {
             InlineItem::Word {
                 chars,
                 space_before,
-            } => {
-                trailing_break_height = None;
-                (chars, space_before)
-            }
+            } => (chars, space_before),
             InlineItem::Atomic {
                 span_index,
                 space_before,
             } => {
-                trailing_break_height = None;
                 let Some(atomic) = spans.get(span_index).and_then(|s| s.atomic.as_deref()) else {
                     continue;
                 };
@@ -520,7 +513,6 @@ fn layout_inline_content_in_flow(
                 {
                     cursor_y = ctx.clearance(clear, cursor_y);
                 }
-                trailing_break_height = Some(break_height);
                 continue;
             }
         };
@@ -679,18 +671,6 @@ fn layout_inline_content_in_flow(
             line_available_width,
             &word_boundaries,
         );
-    } else if let Some(break_height) = trailing_break_height {
-        // A trailing `<br>` leaves one empty line (the same behaviour as the major browsers).
-        let (left, _) = line_band(float_ctx, cursor_y, break_height, origin_x, available_width);
-        lines.push(finish_line(
-            Vec::new(),
-            Vec::new(),
-            0.0,
-            left,
-            cursor_y,
-            break_height,
-            fonts,
-        ));
     }
 
     // Merge runs of identical appearance only after `text-align` has been applied.
@@ -3022,14 +3002,20 @@ mod tests {
     }
 
     #[test]
-    fn a_trailing_br_leaves_one_empty_line() {
-        // The same behaviour as the major browsers.
-        let (_, spans, styles) = spans_for("a<br>", "");
+    fn a_trailing_br_ends_the_line_without_adding_one() {
+        // As in browsers: `a<br>` is one line, `a<br><br>` two and `<br>` alone one empty line.
         let fonts = dejavu_only();
-        let lines = layout_inline_content(&spans, &styles, &fonts, 5000.0, 0.0, 0.0, None);
+        let texts = |html: &str| {
+            let (_, spans, styles) = spans_for(html, "");
+            line_texts(&layout_inline_content(
+                &spans, &styles, &fonts, 5000.0, 0.0, 0.0, None,
+            ))
+        };
 
-        assert_eq!(line_texts(&lines), vec!["a", ""]);
-        assert!(lines[1].rect.height > 0.0);
+        assert_eq!(texts("a<br>"), vec!["a"]);
+        assert_eq!(texts("a<br><br>"), vec!["a", ""]);
+        assert_eq!(texts("<br>"), vec![""]);
+        assert_eq!(texts("<br><br>"), vec!["", ""]);
     }
 
     #[test]

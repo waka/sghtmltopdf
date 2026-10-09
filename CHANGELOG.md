@@ -42,6 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `<br>` at the end of a block no longer adds an empty line after it. `text<br>` took two
+  lines and `<div><br></div>` was twice as tall as in browsers, where a trailing `<br>` only
+  ends its line (`text<br><br>` is two lines).
 - Text after an `inline-block` (or `inline-flex`) box taller than the text no longer overlaps
   the box (#91). When a line holding such a box ended by wrapping or at a `<br>`, the next
   line started one text line-height lower instead of below the box, so the trailing text was
