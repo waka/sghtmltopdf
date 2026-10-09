@@ -925,6 +925,9 @@ fn flatten_spans(
         // non-inherited properties, so using it directly would paint the block's background too
         // (see the comment in `box_tree::collect_spans_with_background`).
         style.background_color = span.background_color;
+        if span.outside_inline_element {
+            style.vertical_align = VerticalAlign::Baseline;
+        }
         if span.is_first_letter {
             apply_first_letter_style(&mut style);
         }

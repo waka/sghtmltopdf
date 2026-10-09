@@ -178,3 +178,28 @@ fn cells_are_vertically_centred_by_default() {
         "the one-line cell should sit in the middle of the row ({short_mid} vs {tall_mid})"
     );
 }
+
+#[test]
+fn a_cells_vertical_align_does_not_make_its_text_line_taller() {
+    // The text node directly in the cell clones the cell's `vertical-align`; it applies to the
+    // cell, so the row is as tall as with `baseline`.
+    let html_src = r#"<table><tr><td>a</td><td>b</td></tr></table>"#;
+    let row_height = |align: &str| {
+        let css = format!("body {{ margin: 0; }} td {{ vertical-align: {align}; }}");
+        let (dom, laid) = layout(html_src, &css);
+        let mut tds = Vec::new();
+        find_all_tags(&dom, dom.document(), "td", &mut tds);
+        find_laid_out(&laid, tds[0])
+            .expect("cell not found")
+            .layout
+            .margin_box_height()
+    };
+    let baseline = row_height("baseline");
+    for align in ["middle", "top", "bottom"] {
+        assert!(
+            (row_height(align) - baseline).abs() < 0.01,
+            "{align}: {} vs baseline {baseline}",
+            row_height(align)
+        );
+    }
+}

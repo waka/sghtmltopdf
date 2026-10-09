@@ -247,6 +247,11 @@ pub struct InlineSpan {
     /// the computed style of the text node, which has inherited even the
     /// `position` of the block.
     pub relative_insets: Vec<RelativeInset>,
+    /// Whether this is text sitting directly in the block container, outside any inline
+    /// element. Its text node's computed style has cloned the block's `vertical-align` (a
+    /// table cell's `middle`, say), which applies to the cell and must not shift the text
+    /// within its line, so the run is laid out at `baseline` (`layout::inline`).
+    pub outside_inline_element: bool,
 }
 
 /// The `top`/`right`/`bottom`/`left` specified on a `position: relative`
@@ -275,7 +280,10 @@ impl RelativeInset {
 impl InlineSpan {
     /// An ordinary text run (with no decoration from an enclosing inline element).
     fn text(node: NodeId, text: String) -> Self {
-        Self::text_in_inline_context(node, text, &InlineContext::default())
+        Self {
+            outside_inline_element: false,
+            ..Self::text_in_inline_context(node, text, &InlineContext::default())
+        }
     }
 
     /// An ordinary text run (carrying information inherited from an enclosing inline element).
@@ -289,6 +297,7 @@ impl InlineSpan {
             link: context.link.clone(),
             background_color: context.background_color,
             relative_insets: context.relative_insets.clone(),
+            outside_inline_element: !context.inside_inline_element,
         }
     }
 
@@ -303,6 +312,7 @@ impl InlineSpan {
             link: None,
             background_color: RgbaColor::TRANSPARENT,
             relative_insets: Vec::new(),
+            outside_inline_element: false,
         }
     }
 
@@ -319,6 +329,7 @@ impl InlineSpan {
             link: None,
             background_color: RgbaColor::TRANSPARENT,
             relative_insets: Vec::new(),
+            outside_inline_element: false,
         }
     }
 }
@@ -335,6 +346,8 @@ struct InlineContext {
     /// What the enclosing `position: relative` inline elements specify,
     /// outermost first.
     relative_insets: Vec<RelativeInset>,
+    /// Whether any inline element encloses the node.
+    inside_inline_element: bool,
 }
 
 impl Default for InlineContext {
@@ -343,6 +356,7 @@ impl Default for InlineContext {
             link: None,
             background_color: RgbaColor::TRANSPARENT,
             relative_insets: Vec::new(),
+            inside_inline_element: false,
         }
     }
 }
@@ -681,6 +695,7 @@ fn apply_first_letter(node: NodeId, style: &ComputedStyle, spans: &mut Vec<Inlin
             link: spans[span_index].link.clone(),
             background_color: spans[span_index].background_color,
             relative_insets: spans[span_index].relative_insets.clone(),
+            outside_inline_element: spans[span_index].outside_inline_element,
         },
     );
 }
@@ -1446,6 +1461,7 @@ fn collect_spans_in_context(
             // follow are painted with it (when nested, the inner one wins; a simplification
             // of CSS background layering). An `<a href>` link is likewise carried down to the descendants.
             let mut context = context.clone();
+            context.inside_inline_element = true;
             if let Some(background) = styles
                 .get(&node)
                 .map(|s| s.background_color)
