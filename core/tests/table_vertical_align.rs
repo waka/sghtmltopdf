@@ -122,9 +122,10 @@ fn vertical_align_bottom_pushes_shorter_cell_content_down_end_to_end() {
 }
 
 #[test]
-fn vertical_align_baseline_is_the_default_and_aligns_mixed_font_sizes_end_to_end() {
+fn vertical_align_baseline_aligns_mixed_font_sizes_end_to_end() {
     let html_src = r#"<table><tr><td class="small">Ay</td><td class="large">Ay</td></tr></table>"#;
-    let css = "body { margin: 0; } .small { font-size: 12px; } .large { font-size: 36px; }";
+    let css = "body { margin: 0; } td { vertical-align: baseline; } \
+               .small { font-size: 12px; } .large { font-size: 36px; }";
 
     let (dom, laid) = layout(html_src, css);
     let mut tds = Vec::new();
@@ -144,6 +145,61 @@ fn vertical_align_baseline_is_the_default_and_aligns_mixed_font_sizes_end_to_end
 
     assert!(
         (baseline_y(small_cell) - baseline_y(large_cell)).abs() < 0.5,
-        "baseline should be shared across cells with different font sizes by default"
+        "baseline should be shared across cells with different font sizes"
     );
+}
+
+#[test]
+fn cells_are_vertically_centred_by_default() {
+    // The UA stylesheet's `tbody, tr { vertical-align: middle }` reaches the cells through
+    // `td { vertical-align: inherit }`, as in the HTML spec and browsers.
+    let html_src = r#"<table><tr><td>a</td><td>a<br>b<br>c</td></tr></table>"#;
+    let css = "body { margin: 0; }";
+
+    let (dom, laid) = layout(html_src, css);
+    let mut tds = Vec::new();
+    find_all_tags(&dom, dom.document(), "td", &mut tds);
+    let short = find_laid_out(&laid, tds[0]).expect("short cell not found");
+    let tall = find_laid_out(&laid, tds[1]).expect("tall cell not found");
+
+    let LaidOutContent::Inline(tall_lines) = &tall.content else {
+        panic!("expected inline content");
+    };
+    let LaidOutContent::Inline(short_lines) = &short.content else {
+        panic!("expected inline content");
+    };
+    let short_mid = short_lines[0].rect.y + short_lines[0].rect.height / 2.0;
+    let tall_mid = (tall_lines[0].rect.y
+        + tall_lines.last().unwrap().rect.y
+        + tall_lines.last().unwrap().rect.height)
+        / 2.0;
+    assert!(
+        (short_mid - tall_mid).abs() < 0.5,
+        "the one-line cell should sit in the middle of the row ({short_mid} vs {tall_mid})"
+    );
+}
+
+#[test]
+fn a_cells_vertical_align_does_not_make_its_text_line_taller() {
+    // The text node directly in the cell clones the cell's `vertical-align`; it applies to the
+    // cell, so the row is as tall as with `baseline`.
+    let html_src = r#"<table><tr><td>a</td><td>b</td></tr></table>"#;
+    let row_height = |align: &str| {
+        let css = format!("body {{ margin: 0; }} td {{ vertical-align: {align}; }}");
+        let (dom, laid) = layout(html_src, &css);
+        let mut tds = Vec::new();
+        find_all_tags(&dom, dom.document(), "td", &mut tds);
+        find_laid_out(&laid, tds[0])
+            .expect("cell not found")
+            .layout
+            .margin_box_height()
+    };
+    let baseline = row_height("baseline");
+    for align in ["middle", "top", "bottom"] {
+        assert!(
+            (row_height(align) - baseline).abs() < 0.01,
+            "{align}: {} vs baseline {baseline}",
+            row_height(align)
+        );
+    }
 }

@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Table cells are vertically centred by default, as in browsers. The UA stylesheet now has
+  the HTML spec's `thead, tbody, tfoot, table > tr { vertical-align: middle }` and
+  `tr, td, th { vertical-align: inherit }`, so a cell without its own `vertical-align` no
+  longer sits at the top of a row made taller by another cell. Set
+  `td { vertical-align: baseline }` to keep the previous alignment.
+- Text directly inside a table cell or `inline-block` with `vertical-align: middle`, `top` or
+  `bottom` is no longer shifted within its own line. The text took on the box's
+  `vertical-align`, which applies to the box itself, so each line grew taller than in
+  browsers (a table row of 14px text by about 2px).
 - Text after an `inline-block` (or `inline-flex`) box taller than the text no longer overlaps
   the box (#91). When a line holding such a box ended by wrapping or at a `<br>`, the next
   line started one text line-height lower instead of below the box, so the trailing text was
