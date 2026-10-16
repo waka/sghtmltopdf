@@ -1053,6 +1053,7 @@ struct StreamingState<S: Sink> {
     start_x: f32,
     /// The starting Y coordinate of the next top-level element (the accumulated height so far).
     cursor_y: f32,
+    previous_margin_bottom: Option<f32>,
     /// The page geometry (used to compute the overlay areas).
     page_settings: PageSettings,
     /// The layout result of a header/footer HTML that does not depend on the page number.
@@ -1448,6 +1449,7 @@ impl<S: Sink> Engine<S> {
             content_width: body_content_width,
             start_x,
             cursor_y: start_y,
+            previous_margin_bottom: None,
             page_settings,
             overlay_cache: OverlayCache::default(),
             warned_font_families: Vec::new(),
@@ -1525,6 +1527,15 @@ impl<S: Sink> Engine<S> {
             return Ok(());
         };
 
+        let style = state.styles.get(&node).cloned().unwrap_or_default();
+        let in_flow = style.float == crate::style::Float::None && !style.position.is_out_of_flow();
+        if in_flow {
+            if let Some(previous_bottom) = state.previous_margin_bottom {
+                let top = resolve_lpa_or_zero(style.margin_top, state.content_width);
+                state.cursor_y -= previous_bottom + top
+                    - crate::layout::collapse_adjacent_margins(previous_bottom, top);
+            }
+        }
         let laid_out = layout_document_from(
             &item_box,
             &state.styles,
@@ -1534,6 +1545,11 @@ impl<S: Sink> Engine<S> {
             state.cursor_y,
         );
         state.cursor_y += laid_out.layout.margin_box_height();
+        if in_flow {
+            // Keep the effective bottom margin after parent/child collapsing, just as
+            // the batch block-layout loop does between normal-flow siblings.
+            state.previous_margin_bottom = Some(laid_out.layout.margin.bottom);
+        }
 
         // Layout is already complete and this DOM subtree (its text content, attributes and
         // so on) is never read again, so it can be freed immediately without waiting for the
@@ -2596,6 +2612,31 @@ mod tests {
         let decompressed = decompressed_stream_bytes(&bytes);
         assert!(count_occurrences(&decompressed, b"<0031>") > 0);
         assert!(count_occurrences(&bytes, b"/Subtype /Form") > 0);
+    }
+
+    #[test]
+    fn streaming_collapses_adjacent_top_level_margins() {
+        for (bottom, top, gap) in [(10, 10, 10), (20, 10, 20), (20, -10, 10), (-20, -10, -20)] {
+            let mut engine = Engine::new(
+                EngineOptions {
+                    mode: Mode::Streaming,
+                    fonts: vec![font_spec()],
+                    disable_system_fonts: true,
+                    ..EngineOptions::default()
+                },
+                MemorySink::new(),
+            );
+            let html = format!("<style>body {{ margin:0; padding:1px; }} div {{ height:40px; }} \
+                #one {{ margin:0 0 {bottom}px; }} #two {{ margin:{top}px 0 0; }}</style>\
+                <body><div id='one'></div><span style='display:none'></span><div id='two'></div><p>pending</p>");
+            engine.feed(html.as_bytes()).unwrap();
+            let state = engine.streaming.as_ref().unwrap();
+            assert_eq!(
+                state.cursor_y,
+                (81 + gap) as f32,
+                "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
+            );
+        }
     }
 
     #[test]

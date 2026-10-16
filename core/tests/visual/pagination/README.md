@@ -43,7 +43,13 @@ The default is an exact comparison at 96 DPI (`--tolerance 0`). `--case` is repe
 
 These are manual/opt-in visual tests; no new dependencies are added to the Rust test suite or normal builds. System-font discovery is disabled and fixture heading/table font weights are normal, so different batch/streaming fallback-font discovery does not obscure pagination comparisons.
 
-## Initial results
+## Results after the streaming spacing fix
+
+Against local main `369efa3`, **all 32 cases and all 256 page pairs match pixel-for-pixel** with PyMuPDF 1.26.7 at 96 DPI and zero tolerance.
+
+The fix carries adjacent top-level sibling margins across streamed elements and preserves their overlapping layout coordinates during pagination, rather than stacking margin-box heights. Positive, unequal, mixed-sign, and negative margins have regression coverage, including hidden intervening elements and forced page breaks. The spacing defect also reproduces in main's streaming mode without a TOC, so it predates the TOC implementation.
+
+### Initial results before the fix
 
 At local main `369efa3` versus streaming `4be7d2f`, PyMuPDF 1.26.7 at 96 DPI with exact pixels:
 
@@ -52,7 +58,7 @@ At local main `369efa3` versus streaming `4be7d2f`, PyMuPDF 1.26.7 at 96 DPI wit
 - CSS counters/selectors, three-digit offsets, disabled TOC links, and uncompressed output match.
 - `empty-toc` and `empty-toc-cover-offset` differ on the first body page: the second top-level paragraph is 7.5 PDF points lower in streaming.
 - `multi-toc` and `multi-toc-cover-offset` differ on body pages: vertical spacing accumulates between top-level blocks (7.5 PDF points per boundary in the inspected first body page). The TOC pages match.
-- All four differing cases have equal page counts and extracted text. These fixtures expose body-layout spacing differences, rather than differences in the inspected page-number text or TOC placement. They are intentionally retained as failing visual comparisons, not hidden by a relaxed threshold.
+- All four differing cases have equal page counts and extracted text. These fixtures expose body-layout spacing differences, rather than differences in the inspected page-number text or TOC placement. They were retained as failing visual comparisons until the spacing fix, rather than hidden by a relaxed threshold.
 
 The initial run first exposed differing heading fonts under system discovery; disabling discovery and using normal weights isolated the spacing differences above. No renderer changes were made as part of creating these fixtures.
 
