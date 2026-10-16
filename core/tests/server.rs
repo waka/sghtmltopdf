@@ -197,10 +197,10 @@ fn unknown_paths_and_methods_are_reported() {
 
 #[test]
 fn a_render_error_is_reported_as_a_server_error() {
-    // Using `counter(pages)` in streaming mode is a rendering error.
+    // Body decorations still require batch mode.
     let server = TestServer::start(&[]);
     let html = r#"<html><head><style>
-            @page { @bottom-center { content: counter(pages); } }
+            body { background: red; }
         </style></head><body><p>x</p></body></html>"#;
     let status = status_of(ureq::post(server.url("/pdf?streaming")).send(html));
     assert_eq!(status, 500);
@@ -277,14 +277,16 @@ fn a_too_large_body_is_rejected_in_stream_mode_too() {
 fn inline_html_headers_and_footers_are_allowed_per_request() {
     let server = TestServer::start(&[]);
     for option in ["header-html-content", "footer-html-content"] {
-        let url = server.url(&format!(
-            "/pdf?no-pdf-compression&{option}=%3Cdiv%3E%5Btopage%5D%3C%2Fdiv%3E"
-        ));
-        let mut response = ureq::post(url)
-            .send("<p>First</p><p style=\"break-before:page\">Second</p>")
-            .unwrap();
-        let bytes = response.body_mut().read_to_vec().unwrap();
-        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
-        assert!(count_occurrences(&bytes, b"<0032>") > 0);
+        for mode in ["", "&streaming", "&stream=1"] {
+            let url = server.url(&format!(
+                "/pdf?no-pdf-compression&{option}=%3Cdiv%3E%5Btopage%5D%3C%2Fdiv%3E{mode}"
+            ));
+            let mut response = ureq::post(url)
+                .send("<p>First</p><p style=\"break-before:page\">Second</p>")
+                .unwrap();
+            let bytes = response.body_mut().read_to_vec().unwrap();
+            assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
+            assert!(count_occurrences(&bytes, b"<0032>") > 0);
+        }
     }
 }

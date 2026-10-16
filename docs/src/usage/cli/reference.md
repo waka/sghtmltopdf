@@ -172,7 +172,7 @@ sghtmltopdf report.html --cover cover.html --toc --footer-center "[page]"
 | オプション | 既定 | 説明 |
 |---|---|---|
 | `--cover <PATH>` | | 表紙にするHTML。ページ番号に数えず、ヘッダー/フッターも出さない |
-| `--toc` | オフ | 目次を本文の前に挿入する(ストリーミングモードでは使えない) |
+| `--toc` | オフ | 目次を本文の前に挿入する(ストリーミングモードでも対応) |
 | `--toc-header-text <TEXT>` | `Table of Contents` | 目次の`<h1>` |
 | `--toc-level-indentation <WIDTH>` | `1em` | 階層1段ごとのインデント |
 | `--toc-text-size-shrink <REAL>` | `0.8` | 階層1段ごとの文字サイズ比 |

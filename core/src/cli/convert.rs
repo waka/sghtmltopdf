@@ -223,6 +223,7 @@ fn engine_error(e: EngineError<io::Error>) -> ConvertError {
         e @ EngineError::DepthLimitExceeded { .. } => ConvertError::Input(e.to_string()),
         e @ EngineError::NodeLimitExceeded { .. } => ConvertError::Input(e.to_string()),
         e @ EngineError::TimedOut => ConvertError::Timeout(e.to_string()),
+        e @ EngineError::PageNumberOverflow(_) => ConvertError::Render(e.to_string()),
         EngineError::MediaLoad(msg) => {
             ConvertError::Input(format!("failed to fetch a resource: {msg}"))
         }

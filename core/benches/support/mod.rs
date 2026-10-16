@@ -146,7 +146,7 @@ pub struct Fixture {
     pub name: &'static str,
     pub file: &'static str,
     /// Can be rendered in `Mode::Streaming` without hitting a hard error
-    /// (`counter(pages)`, `<body>` decorations, trailing `<style>`, ...).
+    /// (`<body>` decorations, trailing `<style>`, ...).
     pub streaming: bool,
     /// Loads images, stylesheets or fonts from disk. Such fixtures cannot be
     /// posted to the HTTP server, which disables local file access.

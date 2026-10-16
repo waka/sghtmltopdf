@@ -13,8 +13,8 @@ mod table;
 mod white_space;
 
 pub(crate) use block::{
-    has_visible_decoration, resolve_border, resolve_lpa_or_zero, resolve_padding,
-    resolve_width_and_horizontal_margins,
+    collapse_adjacent_margins, has_visible_decoration, resolve_border, resolve_lpa_or_zero,
+    resolve_padding, resolve_width_and_horizontal_margins,
 };
 pub use block::{
     layout_document, layout_document_from, LaidOutBox, LaidOutContent, LaidOutTable,
