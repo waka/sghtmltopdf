@@ -42,6 +42,11 @@ def cases():
         ("uncompressed", "chapters.html", "cover-two-pages.html", 10, "html", ["--no-pdf-compression"]),
     ]:
         result.append(dict(name=name, body=body, toc=True, cover=cover, offset=offset, decoration=decoration, extra=extra))
+    for toc in [False, True]:
+        result.append(dict(name=f"negative-origin-toc-{int(toc)}", body="negative-origin.html",
+                           toc=toc, cover=None, offset=0, decoration="css"))
+    result.append(dict(name="toc-css-without-total", body="css-current-page.html",
+                       toc=True, cover="cover-two-pages.html", offset=10, decoration="css"))
     return result
 
 

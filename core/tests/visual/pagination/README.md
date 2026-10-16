@@ -27,7 +27,7 @@ The 24-case base matrix covers every combination of:
 - page offset 0 / 10;
 - simple CLI headers/footers / HTML headers/footers with current and total page numbers.
 
-Eight additional cases cover empty heading lists, multi-page TOCs, offsets near digit boundaries (98 and 998), CSS page counters and `:first`/`:left`/`:right` margin-box selectors, disabled TOC links, and uncompressed PDF output. Body headings include explicit and automatic destinations, nested levels, and forward/backward document links.
+Eleven additional cases cover empty heading lists, multi-page TOCs, offsets near digit boundaries (98 and 998), CSS page counters and `:first`/`:left`/`:right` margin-box selectors, disabled TOC links, and uncompressed PDF output. They also cover static/current-page CSS margin boxes without total counters in TOC mode, and negative margins crossing the content origin with and without a TOC. Body headings include explicit and automatic destinations, nested levels, and forward/backward document links.
 
 ## Focused runs
 
@@ -45,7 +45,7 @@ These are manual/opt-in visual tests; no new dependencies are added to the Rust 
 
 ## Results after the streaming spacing fix
 
-Against local main `369efa3`, **all 32 cases and all 256 page pairs match pixel-for-pixel** with PyMuPDF 1.26.7 at 96 DPI and zero tolerance.
+Against local main `369efa3`, **all 35 cases and all 264 page pairs match pixel-for-pixel** with PyMuPDF 1.26.7 at 96 DPI and zero tolerance.
 
 The fix carries adjacent top-level sibling margins across streamed elements and preserves their overlapping layout coordinates during pagination, rather than stacking margin-box heights. Positive, unequal, mixed-sign, and negative margins have regression coverage, including hidden intervening elements and forced page breaks. The spacing defect also reproduces in main's streaming mode without a TOC, so it predates the TOC implementation.
 

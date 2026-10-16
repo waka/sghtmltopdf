@@ -12,8 +12,8 @@ class VisualComparisonTests(unittest.TestCase):
         from compare import FIXTURES
 
         matrix = cases()
-        self.assertEqual(len(matrix), 32)
-        self.assertEqual(len({case["name"] for case in matrix}), 32)
+        self.assertEqual(len(matrix), 35)
+        self.assertEqual(len({case["name"] for case in matrix}), 35)
         for case in matrix:
             self.assertTrue((FIXTURES / case["body"]).is_file())
             if case["cover"]:

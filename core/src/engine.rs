@@ -785,14 +785,48 @@ fn build_toc_pages<E>(
 fn record_streaming_headings<S: Sink>(
     writer: &StreamingPdfWriter<S>,
     page: &crate::layout::Page,
-    pending: &mut HashMap<String, TocHeading>,
+    pending: &mut HashMap<NodeId, TocHeading>,
     headings: &mut Vec<TocHeading>,
 ) {
-    for name in writer.page_anchor_names(page) {
-        if let Some(mut heading) = pending.remove(&name) {
-            heading.body_page = writer.body_page_count();
+    fn walk(
+        b: &LaidOutBox,
+        body_page: usize,
+        pending: &mut HashMap<NodeId, TocHeading>,
+        headings: &mut Vec<TocHeading>,
+    ) {
+        if let Some(mut heading) = b.node.and_then(|node| pending.remove(&node)) {
+            heading.body_page = body_page;
             headings.push(heading);
         }
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for child in children {
+                    walk(child, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Grid(grid) => {
+                for child in grid.rows.iter().flat_map(|row| &row.items) {
+                    walk(child, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Table(table) => {
+                if let Some(caption) = &table.caption {
+                    walk(caption, body_page, pending, headings);
+                }
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    walk(cell, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Inline(lines) => {
+                for atomic in lines.iter().flat_map(|line| &line.atomics) {
+                    walk(&atomic.content, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Image(_) => {}
+        }
+    }
+    for b in &page.boxes {
+        walk(b, writer.body_page_count(), pending, headings);
     }
 }
 
@@ -1075,7 +1109,7 @@ struct StreamingState<S: Sink> {
     writer: StreamingPdfWriter<S>,
     page_offset: usize,
     headings: Vec<TocHeading>,
-    pending_headings: HashMap<String, TocHeading>,
+    pending_headings: HashMap<NodeId, TocHeading>,
     heading_serial: usize,
     /// The cache memoising `<img>` fetch and decode results within the document.
     image_cache: ImageAssetCache,
@@ -1561,16 +1595,14 @@ impl<S: Sink> Engine<S> {
                 .map(|(node, id)| (node, anchor_destination_name(&id)))
                 .collect();
         if options.toc.enabled {
-            for (_, heading) in collect_headings(
+            for (heading_node, heading) in collect_headings(
                 &parser.dom(),
                 [std::slice::from_ref(&laid_out)],
                 &mut anchors,
                 state.heading_serial,
             ) {
                 state.heading_serial += 1;
-                state
-                    .pending_headings
-                    .insert(heading.anchor.clone(), heading);
+                state.pending_headings.insert(heading_node, heading);
             }
         }
         state.writer.extend_anchor_names(anchors);
@@ -2635,6 +2667,102 @@ mod tests {
                 state.cursor_y,
                 (81 + gap) as f32,
                 "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_toc_preserves_css_margin_boxes_without_totals() {
+        for content in ["'X'", "counter(page)"] {
+            let html = format!(
+                "<style>@page {{ @bottom-center {{ content: {content}; }} }}</style>\
+                 <h1>Heading</h1><p>Body</p>"
+            );
+            let mut outputs = Vec::new();
+            for mode in [Mode::Batch, Mode::Streaming] {
+                let mut options = EngineOptions {
+                    mode,
+                    fonts: vec![font_spec()],
+                    disable_system_fonts: true,
+                    toc: TocSettings {
+                        enabled: true,
+                        build_html: Rc::new(|_| "<p>Contents</p>".into()),
+                        ..TocSettings::default()
+                    },
+                    ..EngineOptions::default()
+                };
+                options.output.compress = false;
+                let mut engine = Engine::new(options, MemorySink::new());
+                engine.feed(html.as_bytes()).unwrap();
+                outputs.push(engine.finish().unwrap());
+            }
+            assert_eq!(
+                count_occurrences(&outputs[1], b" TJ\n"),
+                count_occurrences(&outputs[0], b" TJ\n"),
+                "deferred body margin box must match batch text drawing: {content}"
+            );
+            assert_eq!(count_occurrences(&outputs[1], b" TJ\n"), 5);
+        }
+    }
+
+    #[test]
+    fn streaming_toc_keeps_duplicate_ids_as_separate_headings() {
+        for separate_pages in [false, true] {
+            let captured = Rc::new(std::cell::RefCell::new(Vec::new()));
+            let copy = captured.clone();
+            let options = EngineOptions {
+                mode: Mode::Streaming,
+                fonts: vec![font_spec()],
+                disable_system_fonts: true,
+                toc: TocSettings {
+                    enabled: true,
+                    build_html: Rc::new(move |headings| {
+                        *copy.borrow_mut() = headings.to_vec();
+                        "<p>Contents</p>".into()
+                    }),
+                    ..TocSettings::default()
+                },
+                ..EngineOptions::default()
+            };
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(b"<body><h1 id='x'>A</h1>").unwrap();
+            let break_style = if separate_pages {
+                "break-before:page"
+            } else {
+                ""
+            };
+            engine
+                .feed(format!("<h1 id='x' style='{break_style}'>B</h1><h1>C</h1>").as_bytes())
+                .unwrap();
+            let bytes = engine.finish().unwrap();
+            let headings = captured.borrow();
+            assert_eq!(
+                headings
+                    .iter()
+                    .map(|h| (h.title.as_str(), h.body_page))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("A", 2),
+                    ("B", if separate_pages { 3 } else { 2 }),
+                    ("C", if separate_pages { 3 } else { 2 })
+                ]
+            );
+            assert_eq!(headings[0].anchor, headings[1].anchor);
+            let text = String::from_utf8_lossy(&bytes);
+            let kids = text
+                .split("/Kids [")
+                .nth(1)
+                .unwrap()
+                .split(']')
+                .next()
+                .unwrap();
+            let body_page_id = kids.split_whitespace().nth(3).unwrap();
+            assert!(
+                text.contains(&format!(
+                    "/{} [{} 0 R /XYZ",
+                    headings[0].anchor, body_page_id
+                )),
+                "duplicate destinations must still resolve to the first heading"
             );
         }
     }

@@ -212,14 +212,6 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.links.anchor_names = names;
     }
 
-    pub(crate) fn page_anchor_names(&self, page: &Page) -> Vec<String> {
-        let mut positions = Vec::new();
-        for b in &page.boxes {
-            collect_anchor_positions(b, &self.links.anchor_names, &self.settings, &mut positions);
-        }
-        positions.into_iter().map(|(name, ..)| name).collect()
-    }
-
     pub(crate) fn shift_deferred_page_numbers(&mut self, offset: usize) -> Option<()> {
         for (_, number) in &mut self.deferred_decorations {
             *number = number.checked_add(offset)?;
@@ -602,17 +594,15 @@ impl<S: Sink> StreamingPdfWriter<S> {
                     &self.image_ids,
                 );
             }
-            if self.defer_overlays || crate::style::rules_use_page_count(&self.page_rules) {
-                render_margin_boxes(
-                    &mut target,
-                    &self.settings,
-                    fonts,
-                    &self.page_rules,
-                    page_number,
-                    Some(total),
-                    &text_fonts,
-                );
-            }
+            render_margin_boxes(
+                &mut target,
+                &self.settings,
+                fonts,
+                &self.page_rules,
+                page_number,
+                Some(total),
+                &text_fonts,
+            );
             let bytes = content.finish();
             let bytes = if self.output.compress {
                 deflate(&bytes)

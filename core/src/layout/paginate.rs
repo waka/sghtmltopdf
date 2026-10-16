@@ -289,7 +289,7 @@ impl StreamingPaginator {
             // Preserve layout's overlapping margin boxes across calls, matching
             // place_split's sibling traversal instead of stacking their heights.
             if let Some(shift) = self.shift_reference {
-                self.cursor = (margin_box_top(item) - shift).max(0.0);
+                self.cursor = margin_box_top(item) - shift;
             }
             place_box(item, self.page_height, &mut state, &mut self.cursor);
             self.shift_reference =
@@ -3053,6 +3053,30 @@ mod tests {
         for (batched, streamed) in batched_pages.iter().zip(streamed_pages.iter()) {
             assert_eq!(batched.boxes.len(), streamed.boxes.len());
         }
+    }
+
+    #[test]
+    fn streaming_paginator_preserves_negative_content_coordinates() {
+        let dom = html::parse(b"<style>body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }</style><div id='one'>A</div><div id='two'>B</div>");
+        let author = parse_stylesheet(
+            "body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }",
+        );
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let fonts = test_fonts();
+        let nodes = crate::html::collect_anchor_targets(&dom);
+        let mut paginator = StreamingPaginator::new(100.0);
+        let mut y = 0.0;
+        for (node, _) in nodes {
+            let tree = build_box_for_element(&dom, &styles, node).unwrap();
+            let mut laid = layout_document_from(&tree, &styles, &fonts, 200.0, 0.0, y);
+            y += laid.layout.margin_box_height();
+            assert!(paginator.push_item(&mut laid).is_empty());
+        }
+        let pages = paginator.finish();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].boxes.len(), 2);
+        assert_eq!(pages[0].boxes[0].layout.content.y, 0.0);
+        assert_eq!(pages[0].boxes[1].layout.content.y, -40.0);
     }
 
     #[test]
