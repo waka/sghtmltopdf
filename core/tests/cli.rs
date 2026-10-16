@@ -1462,18 +1462,102 @@ fn page_offset_shifts_the_numbering() {
 }
 
 #[test]
-fn toc_is_rejected_in_streaming_mode() {
-    let out = Command::new(BIN)
-        .arg(SAMPLE_HTML)
-        .arg("--font")
-        .arg(FONT_PATH)
-        .args(["--streaming", "--toc"])
-        .arg("-o")
-        .arg(temp_output_path("streaming-toc"))
-        .output()
-        .expect("failed to run sghtmltopdf binary");
-    assert_eq!(out.status.code(), Some(3));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--toc"));
+fn toc_works_in_streaming_mode() {
+    let bytes = run_cli_with(TOC_DOC_HTML, &["--streaming", "--toc"], "streaming-toc");
+    assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 3);
+    assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), 3);
+    assert!(count_occurrences(&bytes, b"/Dests") > 0);
+}
+
+#[test]
+fn streaming_toc_handles_empty_headings_and_disabled_links() {
+    for (html, extra, links, name) in [
+        (PLAIN_HTML, Vec::new(), 0, "streaming-toc-empty"),
+        (
+            TOC_DOC_HTML,
+            vec!["--disable-toc-links"],
+            0,
+            "streaming-toc-no-links",
+        ),
+    ] {
+        let mut args = vec!["--streaming", "--toc"];
+        args.extend(extra);
+        let bytes = run_cli_with(html, &args, name);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), links);
+        assert_eq!(
+            count_occurrences(&bytes, b"/MediaBox"),
+            if html == PLAIN_HTML { 2 } else { 3 }
+        );
+    }
+}
+
+#[test]
+fn streaming_cover_toc_and_html_totals_work_together() {
+    let dir = std::env::temp_dir().join(format!(
+        "sghtmltopdf-streaming-frontmatter-{}",
+        std::process::id()
+    ));
+    let cover = write_temp_html(
+        &dir,
+        "cover.html",
+        "<p>cover</p><p style='break-before:page'>cover two</p>",
+    );
+    let footer = write_temp_html(&dir, "footer.html", "<p>[page] / [topage]</p>");
+    for compressed in [false, true] {
+        let mut args = vec![
+            "--streaming",
+            "--toc",
+            "--cover",
+            cover.to_str().unwrap(),
+            "--footer-html",
+            footer.to_str().unwrap(),
+            "--page-offset",
+            "10",
+        ];
+        if !compressed {
+            args.push("--no-pdf-compression");
+        }
+        let bytes = run_cli_with(
+            TOC_DOC_HTML,
+            &args,
+            if compressed {
+                "frontmatter-compressed"
+            } else {
+                "frontmatter-plain"
+            },
+        );
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 5);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), 3);
+        assert_eq!(
+            count_occurrences(&bytes, b"/Subtype /Form"),
+            2,
+            "only body pages receive deferred HTML footers"
+        );
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn streaming_page_offset_overflow_is_reported() {
+    let offset = usize::MAX.to_string();
+    for toc in [false, true] {
+        let output = temp_output_path(if toc { "overflow-toc" } else { "overflow-body" });
+        let mut command = Command::new(BIN);
+        command.arg(SAMPLE_HTML).args([
+            "--font",
+            FONT_PATH,
+            "--streaming",
+            "--page-offset",
+            &offset,
+        ]);
+        if toc {
+            command.arg("--toc");
+        }
+        let out = command.arg("-o").arg(&output).output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("overflowed"));
+        std::fs::remove_file(output).ok();
+    }
 }
 
 #[test]

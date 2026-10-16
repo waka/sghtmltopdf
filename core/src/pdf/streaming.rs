@@ -39,6 +39,14 @@ use super::options::PdfOutputOptions;
 
 const PDF_HEADER: &[u8] = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PageRole {
+    Cover,
+    Toc,
+    #[default]
+    Body,
+}
+
 /// A writer emitting the PDF bytes to a `Sink` as each page is settled.
 ///
 /// `new` writes the file header immediately, `write_page` is called as each page is settled,
@@ -58,6 +66,9 @@ pub struct StreamingPdfWriter<S: Sink> {
     font_plan: FontPlan,
     usages: Vec<FontUsage>,
     page_ids: Vec<Ref>,
+    cover_page_ids: Vec<Ref>,
+    toc_page_ids: Vec<Ref>,
+    body_page_ids: Vec<Ref>,
     settings: PageSettings,
     /// The document-wide map of image Refs, keyed on `Rc::as_ptr` (the identity of the decode
     /// result). Unlike fonts, images need no cross-page usage tally (subsetting), so this is
@@ -91,6 +102,7 @@ pub struct StreamingPdfWriter<S: Sink> {
     ///   headers/footers are drawn
     /// * `None`: not specified (the number of pages written so far, plus 1)
     pending_page_number: Option<Option<usize>>,
+    pending_page_role: PageRole,
     defer_overlays: bool,
     /// Forward references only; no body layout or content is retained.
     deferred_decorations: Vec<(Ref, usize)>,
@@ -149,6 +161,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             font_plan,
             usages,
             page_ids: Vec::new(),
+            cover_page_ids: Vec::new(),
+            toc_page_ids: Vec::new(),
+            body_page_ids: Vec::new(),
             settings,
             image_ids: HashMap::new(),
             failed_svg_ids: HashSet::new(),
@@ -160,6 +175,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             output,
             pending_overlays: Vec::new(),
             pending_page_number: None,
+            pending_page_role: PageRole::Body,
             defer_overlays: false,
             deferred_decorations: Vec::new(),
         };
@@ -184,8 +200,39 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.page_ids.len()
     }
 
+    pub fn body_page_count(&self) -> usize {
+        self.body_page_ids.len()
+    }
+
+    pub(crate) fn extend_anchor_names(&mut self, names: HashMap<NodeId, String>) {
+        self.links.anchor_names.extend(names);
+    }
+
+    pub(crate) fn replace_anchor_names(&mut self, names: HashMap<NodeId, String>) {
+        self.links.anchor_names = names;
+    }
+
+    pub(crate) fn page_anchor_names(&self, page: &Page) -> Vec<String> {
+        let mut positions = Vec::new();
+        for b in &page.boxes {
+            collect_anchor_positions(b, &self.links.anchor_names, &self.settings, &mut positions);
+        }
+        positions.into_iter().map(|(name, ..)| name).collect()
+    }
+
+    pub(crate) fn shift_deferred_page_numbers(&mut self, offset: usize) -> Option<()> {
+        for (_, number) in &mut self.deferred_decorations {
+            *number = number.checked_add(offset)?;
+        }
+        Some(())
+    }
+
     pub fn set_page_overlays(&mut self, overlays: Vec<PageOverlay>) {
         self.pending_overlays = overlays;
+    }
+
+    pub fn set_next_page_role(&mut self, role: PageRole) {
+        self.pending_page_role = role;
     }
 
     /// Defer HTML overlays until the final page count is known.
@@ -310,6 +357,11 @@ impl<S: Sink> StreamingPdfWriter<S> {
         let page_id = self.alloc.next();
         let content_id = self.alloc.next();
         self.page_ids.push(page_id);
+        match std::mem::replace(&mut self.pending_page_role, PageRole::Body) {
+            PageRole::Cover => self.cover_page_ids.push(page_id),
+            PageRole::Toc => self.toc_page_ids.push(page_id),
+            PageRole::Body => self.body_page_ids.push(page_id),
+        }
 
         let mut content = Content::new();
         // The CSS px to PDF pt conversion is done by the page's overall CTM. Every coordinate
@@ -492,7 +544,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
         fonts: &FontCollection,
         mut overlays_for_page: impl FnMut(usize, usize) -> Result<Vec<PageOverlay>, E>,
     ) -> Result<(), E> {
-        let total = self.page_count();
+        let total = self.toc_page_ids.len() + self.body_page_ids.len();
         for (id, page_number) in std::mem::take(&mut self.deferred_decorations) {
             // Run the fallible callback even for CSS-only decorations so callers can cancel.
             let overlays = overlays_for_page(page_number, total)?;
@@ -624,11 +676,19 @@ impl<S: Sink> StreamingPdfWriter<S> {
             self.write_chunk(id, &chunk)?;
         }
 
+        let logical_page_ids: Vec<Ref> = self
+            .cover_page_ids
+            .iter()
+            .chain(&self.toc_page_ids)
+            .chain(&self.body_page_ids)
+            .copied()
+            .collect();
+
         let mut chunk = Chunk::new();
         chunk
             .pages(self.pages_tree_id)
-            .kids(self.page_ids.iter().copied())
-            .count(self.page_ids.len() as i32);
+            .kids(logical_page_ids.iter().copied())
+            .count(logical_page_ids.len() as i32);
         self.write_chunk(self.pages_tree_id, &chunk)?;
 
         // The named destinations are resolved here, once every page has been written.
@@ -765,6 +825,55 @@ mod tests {
             .windows(needle.len())
             .filter(|w| *w == needle)
             .count()
+    }
+
+    #[test]
+    fn deferred_numbering_excludes_covers_and_includes_late_toc_pages() {
+        let fonts = test_fonts();
+        let mut writer = StreamingPdfWriter::new(
+            &fonts,
+            PageSettings::default(),
+            MemorySink::new(),
+            Vec::new(),
+            LinkSettings::default(),
+        )
+        .unwrap();
+        let page = Page::default();
+        for _ in 0..2 {
+            writer.set_next_page_role(PageRole::Cover);
+            writer.set_next_page_number(None);
+            writer
+                .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, None)
+                .unwrap();
+        }
+        writer.defer_page_overlays(true);
+        for number in [11, 12] {
+            writer.set_next_page_number(Some(number));
+            writer
+                .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, None)
+                .unwrap();
+        }
+        writer.shift_deferred_page_numbers(2).unwrap();
+        writer.defer_page_overlays(false);
+        for number in [11, 12] {
+            writer.set_next_page_role(PageRole::Toc);
+            writer.set_next_page_number(Some(number));
+            writer
+                .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, Some(4))
+                .unwrap();
+        }
+        let mut seen = Vec::new();
+        writer
+            .write_deferred_decorations(&fonts, |page, total| {
+                seen.push((page, total));
+                Ok::<_, std::io::Error>(Vec::new())
+            })
+            .unwrap();
+        assert_eq!(seen, vec![(13, 4), (14, 4)]);
+        let bytes = writer.finish(&fonts).unwrap();
+        assert!(String::from_utf8_lossy(&bytes)
+            .trim_end()
+            .ends_with("%%EOF"));
     }
 
     #[test]
