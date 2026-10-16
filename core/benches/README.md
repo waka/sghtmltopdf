@@ -75,7 +75,7 @@ each (`--test`) there to catch a bench that stopped working.
 
 `fixtures/*.html`, one document per feature area. Each is a few pages long so
 every stage has measurable work. Two flags in `support/mod.rs` describe each
-fixture: `streaming` (no `counter(pages)`, `<body>` decorations, or trailing
+fixture: `streaming` (no `<body>` decorations or trailing
 `<style>`, so it can run in streaming mode) and `local_assets` (reads images,
 CSS, or fonts from disk, so it cannot be posted to the HTTP server).
 

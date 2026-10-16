@@ -64,8 +64,9 @@ pub enum Mode {
     /// parsed, then release it, so memory does not grow with the document.
     ///
     /// Features that need the whole document are rejected with
-    /// [`EngineError::UnsupportedInStreamingMode`]: `counter(pages)`, a `<style>` after
-    /// `<body>` has started, and the like.
+    /// [`EngineError::UnsupportedInStreamingMode`]: a table of contents, a `<style>` after
+    /// `<body>` has started, and the like. Total-dependent margin boxes and HTML
+    /// headers/footers are written at finalization using forward-referenced PDF forms.
     Streaming,
 }
 
@@ -276,7 +277,7 @@ pub struct HeaderFooterHtml {
 pub struct HeaderFooterPlaceholders {
     /// Replaced with the current page number.
     pub page_token: String,
-    /// Replaced with the total number of pages. Not available in [`Mode::Streaming`].
+    /// Replaced with the total number of pages, including in [`Mode::Streaming`].
     pub total_pages_token: String,
 }
 
@@ -299,10 +300,12 @@ impl HeaderFooterHtml {
             })
     }
 
-    /// Whether it uses `[topage]` (the total page count). It cannot be determined under
-    /// `Mode::Streaming`, so it is an error there.
+    /// Whether it uses the total page count, requiring deferred overlays in streaming mode.
     #[doc(hidden)]
     pub fn uses_total_pages(&self) -> bool {
+        if self.placeholders.total_pages_token.is_empty() {
+            return false;
+        }
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
             .flatten()
@@ -1167,21 +1170,6 @@ impl<S: Sink> Engine<S> {
             &root_properties,
         );
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
-        if rules_use_page_count(&page_rules) {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "counter(pages) in an @page margin box cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-        // `[topage]` in `--header-html`/`--footer-html` is unusable for the same reason.
-        if self.options.header_footer_html.uses_total_pages() {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "[topage] in --header-html/--footer-html cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
         // A table of contents cannot be built until the whole body has been paginated.
         if self.options.toc.enabled {
             return Err(EngineError::UnsupportedInStreamingMode(
@@ -1308,7 +1296,7 @@ impl<S: Sink> Engine<S> {
             .metadata
             .fill_title_from_document(find_document_title(&self.parser.dom()));
 
-        let writer = StreamingPdfWriter::with_options(
+        let mut writer = StreamingPdfWriter::with_options(
             &fonts,
             page_settings,
             sink,
@@ -1323,6 +1311,7 @@ impl<S: Sink> Engine<S> {
             output,
         )
         .map_err(EngineError::Io)?;
+        writer.defer_page_overlays(self.options.header_footer_html.uses_total_pages());
         let image_cache = ImageAssetCache::with_fetcher(
             ImageFetcher::new(base_dir.to_path_buf(), self.options.allow_remote_assets)
                 .with_base_href(base_href)
@@ -1458,9 +1447,10 @@ impl<S: Sink> Engine<S> {
         let mut laid_out = laid_out;
         let pages = state.paginator.push_item(&mut laid_out);
         for page in &pages {
-            if !options.header_footer_html.is_empty() {
+            if !options.header_footer_html.is_empty()
+                && !options.header_footer_html.uses_total_pages()
+            {
                 let page_number = state.writer.page_count() + 1;
-                // Under `Mode::Streaming` the total page count is unknown, so `[topage]` comes out empty.
 
                 let overlays = build_page_overlays(
                     &options.header_footer_html,
@@ -1487,9 +1477,7 @@ impl<S: Sink> Engine<S> {
             }
             state
                 .writer
-                // `Mode::Streaming` cannot know the total page count in principle, so it is
-                // always `None` (a use of `counter(pages)` has already been rejected in
-                // `init_streaming_state`).
+                // Total-dependent decorations are defined after the last page.
                 .write_page(
                     page,
                     &state.styles,
@@ -1553,7 +1541,9 @@ impl<S: Sink> Engine<S> {
                     }
                 }
                 for page in paginator.finish() {
-                    if !self.options.header_footer_html.is_empty() {
+                    if !self.options.header_footer_html.is_empty()
+                        && !self.options.header_footer_html.uses_total_pages()
+                    {
                         let page_number = writer.page_count() + 1;
                         let overlays = build_page_overlays(
                             &self.options.header_footer_html,
@@ -1581,6 +1571,35 @@ impl<S: Sink> Engine<S> {
                         .write_page(&page, &styles, &background_images, &fonts, None)
                         .map_err(EngineError::Io)?;
                 }
+                writer.write_deferred_decorations(&fonts, |page, total| {
+                    check_deadline(self.options.deadline)?;
+                    let overlays = if self.options.header_footer_html.uses_total_pages() {
+                        build_page_overlays(
+                            &self.options.header_footer_html,
+                            &fonts,
+                            &page_settings,
+                            page,
+                            Some(total),
+                            &overlay_fetcher(),
+                            &DocumentImageCache::new(),
+                            &mut overlay_cache,
+                            self.options.content.load_images,
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    if self.options.content.abort_on_media_error {
+                        if let Some(err) = overlay_cache
+                            .images
+                            .as_ref()
+                            .and_then(ImageAssetCache::had_errors)
+                        {
+                            return Err(EngineError::MediaLoad(err));
+                        }
+                    }
+                    check_deadline(self.options.deadline)?;
+                    Ok(overlays)
+                })?;
                 writer.finish(&fonts).map_err(EngineError::Io)
             }
             None => {
@@ -1977,7 +1996,7 @@ mod tests {
         // leave 200 elements' worth (over 400 entries) in `styles`. Freeing them as each page
         // is flushed keeps it to roughly the most recent unflushed page's worth (a few dozen entries).
 
-        let mut html_src = String::from("<style>.item { height: 100px; margin: 0; }</style><body>");
+        let mut html_src = String::from("<style>@page { @bottom-center { content: counter(pages); } } .item { height: 100px; margin: 0; }</style><body>");
         for i in 0..200 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
         }
@@ -2342,21 +2361,61 @@ mod tests {
     }
 
     #[test]
-    fn counter_pages_in_a_margin_box_is_rejected_in_streaming_mode() {
+    fn counter_pages_in_a_margin_box_is_supported_in_streaming_mode() {
         let options = EngineOptions {
             mode: Mode::Streaming,
             fonts: vec![font_spec()],
             ..EngineOptions::default()
         };
         let mut engine = Engine::new(options, MemorySink::new());
-        match engine.feed(
-            b"<html><head><style>\
+        engine
+            .feed(
+                b"<html><head><style>\
                 @page { @bottom-center { content: counter(pages); } }\
               </style></head><body><p>x</p></body></html>",
-        ) {
-            Err(EngineError::UnsupportedInStreamingMode(_)) => {}
-            other => panic!("expected UnsupportedInStreamingMode, got {other:?}"),
+            )
+            .unwrap();
+        let bytes = engine.finish().unwrap();
+        let decompressed = decompressed_stream_bytes(&bytes);
+        assert!(count_occurrences(&decompressed, b"<0031>") > 0);
+        assert!(count_occurrences(&bytes, b"/Subtype /Form") > 0);
+    }
+
+    #[test]
+    fn streaming_deferred_media_error_aborts_before_writing_any_decoration() {
+        struct ObservedSink(Rc<std::cell::RefCell<Vec<u8>>>);
+        impl Sink for ObservedSink {
+            type Output = ();
+            type Error = std::io::Error;
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+                self.0.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            fn finish(self) -> Result<(), Self::Error> {
+                Ok(())
+            }
         }
+        let bytes = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut options = EngineOptions {
+            mode: Mode::Streaming,
+            fonts: vec![font_spec()],
+            header_footer_html: HeaderFooterHtml {
+                footer: Some("<p>[topage]<img src=\"data:image/png;base64,invalid\"></p>".into()),
+                placeholders: HeaderFooterPlaceholders {
+                    page_token: "[page]".into(),
+                    total_pages_token: "[topage]".into(),
+                },
+                ..HeaderFooterHtml::default()
+            },
+            ..EngineOptions::default()
+        };
+        options.content.abort_on_media_error = true;
+        let mut engine = Engine::new(options, ObservedSink(bytes.clone()));
+        engine.feed(b"<p>first</p><p style=\"break-before:page\">second</p><p style=\"break-before:page\">third</p>").unwrap();
+        assert!(matches!(engine.finish(), Err(EngineError::MediaLoad(_))));
+        let bytes = bytes.borrow();
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 3);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Form"), 0);
     }
 
     #[test]

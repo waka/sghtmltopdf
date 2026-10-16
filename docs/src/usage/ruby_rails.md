@@ -357,5 +357,5 @@ end
 Sghtmltopdf.render(html, streaming: true)
 ```
 
-その代わり、文書全体を見ないと決まらないもの(`toc`・`counter(pages)`・`<body>`より後の`<style>`など)が使えません。
+その代わり、`toc`・`<body>`より後の`<style>`などが使えません。`counter(pages)`や`[topage]`は、総ページ数が確定してから装飾を描画することで対応しています。
 制約の一覧は[ストリーミングモード](./cli/streaming.md)を参照してください。

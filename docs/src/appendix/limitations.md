@@ -79,7 +79,7 @@
 
 ## ストリーミングモード固有の制限
 
-`--streaming`を使う場合は、総ページ数(`counter(pages)`・`[topage]`)や目次(`--toc`)などが使えなくなります。
+`--streaming`を使う場合は、目次(`--toc`)などが使えなくなります。総ページ数(`counter(pages)`・`[topage]`)には対応しています。
 詳細は[ストリーミングモード](../usage/cli/streaming.md)を参照してください。
 
 ## 今後について

@@ -15,7 +15,6 @@ sghtmltopdf big.html -o big.pdf --streaming
 
 | 使えないもの | 理由 |
 |---|---|
-| `counter(pages)` / ヘッダー・フッターの`[topage]` | 総ページ数は1パスでは決まらない |
 | `--toc` | 同上(目次には本文のページ番号が要る) |
 | `<html>`/`<body>`自身の背景色・枠線 | 複数ページにまたがる装飾の再現が必要になる |
 | `<body>`より後の`<style>` / `<link rel="stylesheet">` | 既に書き出したページへ遡って適用できない |
@@ -42,11 +41,18 @@ sghtmltopdf big.html -o big.pdf --streaming
 以下はストリーミングモードでも通常どおり使えます。
 
 * `--cover`(表紙)
-* ヘッダー/フッター(`[page]`まで。`[topage]`は不可)
+* ヘッダー/フッター(`[page]`・`[topage]`、HTMLも対応)
+* `@page`のmargin box内の`counter(page)`・`counter(pages)`
 * ページ設定・PDFメタデータ
 * `--grayscale` / `--dpi` / `--zoom`
 * コンテンツ挙動のオプション(`--no-images`等)
 * `break-before`/`break-after`/`break-inside`・`orphans`/`widows`などの[ページ分割](../../supports/pagination.md)
+
+総ページ数が必要な装飾は、先行参照するPDF Form XObjectとして最後に書き出します。
+本文のページはその都度書き出して解放するため、シークや本文全体の保持は不要です。
+保持する追加情報はページごとの参照とページ番号で、装飾も1ページずつ描画します。
+既存オブジェクトを書き換えないので、増分更新や2個目の相互参照表も不要です。
+PDFは最後の相互参照表とトレーラーを書き終えてから完成します。
 
 ## メモリと処理時間
 

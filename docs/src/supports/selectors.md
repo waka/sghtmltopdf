@@ -131,7 +131,7 @@
 | - | - | - |
 | `@media` | ⚠️ | メディアタイプのみを評価する。`screen`(および`not screen`以外の否定)はブロックごと無視し、`print`/`all`/タイプ省略は適用する。`(min-width: ...)`のような特性クエリは評価せず読み飛ばす(=タイプさえ合致すれば中身が適用される) |
 | `@page` | ⚠️ | `size`(キーワード/`<length>{1,2}`/`landscape`/`portrait`)と`margin`系に対応。`:first`/`:left`/`:right`擬似クラス単体に対応し、名前付きページ(`@page intro`)・`:blank`・複合擬似クラス(`:first:left`)は非対応 |
-| `@page`内のmargin box | ⚠️ | `@top-left-corner`/`@top-left`/`@top-center`/`@top-right`…の16種すべて。`content`のテキスト描画のみで、背景色・枠線等の装飾は非対応。`counter(page)`/`counter(pages)`でページ番号を出力できる(`counter(pages)`はストリーミングモードでは非対応) |
+| `@page`内のmargin box | ⚠️ | `@top-left-corner`/`@top-left`/`@top-center`/`@top-right`…の16種すべて。`content`のテキスト描画のみで、背景色・枠線等の装飾は非対応。`counter(page)`/`counter(pages)`でページ番号を出力できる(ストリーミングモードにも対応) |
 | `@font-face` | ⚠️ | `font-family`/`src`/`unicode-range`/`font-weight`/`font-style`ディスクリプタに対応(`src`の`local()`・`format()`/`tech()`付き`url()`も受理)。`font-display`等その他のディスクリプタは無視。フォントファイルはTTF/OTFのみで、WOFF/WOFF2は非対応 |
 | `@import` | ✅ | ネスト(深さ上限16、超過分はその1件だけ無視)・循環参照の検出に対応。`@import url(...) screen;`のようなメディアクエリ条件は評価せず常に取り込む |
 | `@charset` | ❌ | 入力はUTF-8前提 |
@@ -156,4 +156,4 @@
 * `<body>`開始後の`<style>`タグはエラー: `EngineError::UnsupportedInStreamingMode`を返す。
   黙って見た目が崩れるのを避けるため、`<style>`は`<head>`に集約する
 * `position: absolute`/`fixed`は無視される
-* `counter(pages)`(総ページ数)は使えない
+* `counter(pages)`(総ページ数)はPDF完成時に描画することで対応する

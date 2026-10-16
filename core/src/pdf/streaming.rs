@@ -9,7 +9,9 @@
 //! `pdf_writer::Pdf` keeps the xref and trailer construction in a private implementation, so
 //! we write to the `Sink` a `Chunk` (a self-contained byte string per object) at a time,
 //! record `(Ref, the offset it was written at)` ourselves, and assemble the xref and trailer
-//! in [`StreamingPdfWriter::finish`].
+//! in [`StreamingPdfWriter::finish`]. Total-dependent decorations use forward-referenced
+//! Form XObjects defined only after the page count is known. No objects are rewritten,
+//! so a single final xref suffices even for non-seekable sinks.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -26,10 +28,10 @@ use crate::style::{ComputedStyle, PageRule};
 use super::color_font::{write_color_fonts, FontPlan};
 use super::document::{
     alpha_gs_resource_name, collect_anchor_positions, collect_image_uses, collect_link_areas,
-    collect_margin_box_usage, collect_opacity_uses, collect_usage, file_identifier, render_box,
-    render_header_footer_rules, render_margin_boxes, render_page_overlay, write_document_info,
-    write_link_annotation, write_resources, LinkSettings, PageOverlay, RefAllocator, RenderTarget,
-    TextFonts, ALPHA_STEPS,
+    collect_margin_box_usage, collect_opacity_uses, collect_usage, file_identifier,
+    form_resource_name, render_box, render_header_footer_rules, render_margin_boxes,
+    render_page_overlay, write_document_info, write_link_annotation, write_resources, LinkSettings,
+    PageOverlay, RefAllocator, RenderTarget, TextFonts, ALPHA_STEPS,
 };
 use super::font::{deflate, embed_font_streaming_chunks, FontUsage};
 use super::img::{embed_image_streaming_chunks, ids_for_image, ImageIds, PreparedImage};
@@ -89,6 +91,9 @@ pub struct StreamingPdfWriter<S: Sink> {
     ///   headers/footers are drawn
     /// * `None`: not specified (the number of pages written so far, plus 1)
     pending_page_number: Option<Option<usize>>,
+    defer_overlays: bool,
+    /// Forward references only; no body layout or content is retained.
+    deferred_decorations: Vec<(Ref, usize)>,
 }
 
 impl<S: Sink> StreamingPdfWriter<S> {
@@ -155,6 +160,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
             output,
             pending_overlays: Vec::new(),
             pending_page_number: None,
+            defer_overlays: false,
+            deferred_decorations: Vec::new(),
         };
         for (step, id) in alpha_gs_ids.into_iter().enumerate() {
             let a = step as f32 / ALPHA_STEPS as f32;
@@ -181,6 +188,11 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.pending_overlays = overlays;
     }
 
+    /// Defer HTML overlays until the final page count is known.
+    pub(crate) fn defer_page_overlays(&mut self, defer: bool) {
+        self.defer_overlays = defer;
+    }
+
     /// Set the page number of the next page written explicitly.
     ///
     /// `Some(n)` treats it as that number; `None` makes it a page with no number (a cover),
@@ -193,9 +205,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
     /// glyphs used are only accumulated internally as a lightweight [`FontUsage`], so `page`
     /// (the layout result) may be discarded after the call.
     ///
-    /// `total_pages` is the total page count for `counter(pages)` (always `None` under
-    /// `Mode::Streaming`, where it cannot be known in principle; a pre-counted value is
-    /// passed only under `Mode::Batch` when `@page` uses `counter(pages)`).
+    /// `total_pages` can supply a pre-counted total. When absent, total-dependent
+    /// margin boxes are emitted as forward-referenced forms at finalization.
     pub fn write_page(
         &mut self,
         page: &Page,
@@ -213,6 +224,14 @@ impl<S: Sink> StreamingPdfWriter<S> {
             .flatten()
             .unwrap_or_else(|| self.page_ids.len() + 1);
 
+        let defer_margins = self.defer_overlays
+            || (total_pages.is_none() && crate::style::rules_use_page_count(&self.page_rules));
+        let decoration_id = (numbered && (defer_margins || self.defer_overlays)).then(|| {
+            let id = self.alloc.next();
+            self.deferred_decorations.push((id, page_number));
+            id
+        });
+
         for b in &page.boxes {
             collect_usage(b, fonts, &mut self.usages);
         }
@@ -227,7 +246,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 collect_usage(b, fonts, &mut self.usages);
             }
         }
-        if numbered {
+        if numbered && !defer_margins {
             collect_margin_box_usage(
                 &self.settings,
                 fonts,
@@ -338,15 +357,20 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 self.output.header_line,
                 self.output.footer_line,
             );
-            render_margin_boxes(
-                &mut target,
-                &self.settings,
-                fonts,
-                &self.page_rules,
-                page_number,
-                total_pages,
-                &text_fonts,
-            );
+            if !defer_margins {
+                render_margin_boxes(
+                    &mut target,
+                    &self.settings,
+                    fonts,
+                    &self.page_rules,
+                    page_number,
+                    total_pages,
+                    &text_fonts,
+                );
+            }
+        }
+        if let Some(id) = decoration_id {
+            content.x_object(Name(form_resource_name(id).as_bytes()));
         }
         let content_bytes = content.finish();
         let stream_bytes = if self.output.compress {
@@ -402,7 +426,11 @@ impl<S: Sink> StreamingPdfWriter<S> {
             self.write_chunk(id, &chunk)?;
         }
 
-        let form_refs: Vec<Ref> = pending_forms.iter().map(|(id, _)| *id).collect();
+        let form_refs: Vec<Ref> = pending_forms
+            .iter()
+            .map(|(id, _)| *id)
+            .chain(decoration_id)
+            .collect();
         let mut chunk = Chunk::new();
         {
             let mut p = chunk.page(page_id);
@@ -456,9 +484,119 @@ impl<S: Sink> StreamingPdfWriter<S> {
         Ok(())
     }
 
+    /// Define the forward-referenced decorations, one page at a time, before font subsetting.
+    /// The callback runs before every form, including CSS-only forms; an error stops output
+    /// before that form is written and propagates unchanged to the caller.
+    pub(crate) fn write_deferred_decorations<E: From<S::Error>>(
+        &mut self,
+        fonts: &FontCollection,
+        mut overlays_for_page: impl FnMut(usize, usize) -> Result<Vec<PageOverlay>, E>,
+    ) -> Result<(), E> {
+        let total = self.page_count();
+        for (id, page_number) in std::mem::take(&mut self.deferred_decorations) {
+            // Run the fallible callback even for CSS-only decorations so callers can cancel.
+            let overlays = overlays_for_page(page_number, total)?;
+            collect_margin_box_usage(
+                &self.settings,
+                fonts,
+                &self.page_rules,
+                page_number,
+                Some(total),
+                &mut self.usages,
+            );
+            let mut images = Vec::new();
+            for overlay in &overlays {
+                for b in &overlay.boxes {
+                    collect_usage(b, fonts, &mut self.usages);
+                    collect_image_uses(b, &overlay.background_images, &mut images);
+                }
+            }
+            let mut image_refs = Vec::new();
+            for image in &images {
+                let Some((ids, is_new)) = ids_for_image(
+                    &mut self.alloc,
+                    &mut self.image_ids,
+                    &mut self.failed_svg_ids,
+                    image,
+                ) else {
+                    continue;
+                };
+                let root = ids.root;
+                let embedded = if is_new {
+                    embed_image_streaming_chunks(image, ids, self.output.grayscale)
+                } else {
+                    Vec::new()
+                };
+                for embed in &embedded {
+                    self.write_objects(&embed.chunk, &embed.offsets)?;
+                }
+                image_refs.push(root);
+            }
+            let mut content = Content::new();
+            let mut target = RenderTarget::new(&mut content, self.output.grayscale);
+            let text_fonts = TextFonts {
+                any_color: self.usages.iter().any(|u| u.color_font_count() > 0),
+                remaps: None,
+                plan: &self.font_plan,
+                usages: &self.usages,
+            };
+            for overlay in &overlays {
+                render_page_overlay(
+                    &mut target,
+                    overlay,
+                    fonts,
+                    &text_fonts,
+                    &self.alpha_gs_names,
+                    &self.image_ids,
+                );
+            }
+            if self.defer_overlays || crate::style::rules_use_page_count(&self.page_rules) {
+                render_margin_boxes(
+                    &mut target,
+                    &self.settings,
+                    fonts,
+                    &self.page_rules,
+                    page_number,
+                    Some(total),
+                    &text_fonts,
+                );
+            }
+            let bytes = content.finish();
+            let bytes = if self.output.compress {
+                deflate(&bytes)
+            } else {
+                bytes
+            };
+            let mut chunk = Chunk::new();
+            {
+                let mut form = chunk.form_xobject(id, &bytes);
+                form.bbox(PdfRect::new(
+                    0.0,
+                    0.0,
+                    self.settings.size.width,
+                    self.settings.size.height,
+                ));
+                if self.output.compress {
+                    form.filter(Filter::FlateDecode);
+                }
+                write_resources(
+                    form.resources(),
+                    &self.font_plan,
+                    &image_refs,
+                    &[],
+                    &self.alpha_gs_names,
+                    &self.alpha_gs_ids,
+                );
+            }
+            self.write_chunk(id, &chunk)?;
+        }
+        Ok(())
+    }
+
     /// Write out every remaining object (font embedding, the page tree, the catalog, the xref
     /// and the trailer) and call `sink.finish()`.
     pub fn finish(mut self, fonts: &FontCollection) -> Result<S::Output, S::Error> {
+        self.write_deferred_decorations(fonts, |_, _| Ok::<_, S::Error>(Vec::new()))?;
         let usages = std::mem::take(&mut self.usages);
         for (index, font) in fonts.fonts().iter().enumerate() {
             let Some(simple) = self.font_plan.simple(index) else {
@@ -716,6 +854,171 @@ mod tests {
 
         assert_eq!(count_occurrences(&bytes, b"/MediaBox"), pages.len());
         assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 1);
+    }
+
+    #[test]
+    fn deferred_totals_preserve_alignment_selectors_and_xref_offsets() {
+        struct AppendOnlySink(Rc<std::cell::RefCell<Vec<u8>>>);
+        impl Sink for AppendOnlySink {
+            type Output = Vec<u8>;
+            type Error = std::io::Error;
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+                self.0.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            fn finish(self) -> Result<Self::Output, Self::Error> {
+                Ok(self.0.borrow().clone())
+            }
+        }
+        let written = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let dom = html::parse(b"<p>body</p>");
+        let ua = user_agent_stylesheet();
+        let author = parse_stylesheet(
+            r#"@page { @bottom-right { content: counter(page) " / " counter(pages); } }
+               @page :first { @top-center { content: "first " counters(pages, "."); } }
+               @page :left { @bottom-right { content: "left " counter(pages); } }"#,
+        );
+        let styles = compute_styles(&dom, &ua, &author);
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+        let pages = paginate_document(&dom, &styles, &fonts, &settings);
+        let output = PdfOutputOptions {
+            compress: false,
+            ..PdfOutputOptions::default()
+        };
+        let mut writer = StreamingPdfWriter::with_options(
+            &fonts,
+            settings,
+            AppendOnlySink(written.clone()),
+            author.page_rules.clone(),
+            LinkSettings::default(),
+            output,
+        )
+        .unwrap();
+        for _ in 0..12 {
+            writer
+                .write_page(&pages[0], &styles, &HashMap::new(), &fonts, None)
+                .unwrap();
+        }
+        let prefix = written.borrow().clone();
+        assert_eq!(count_occurrences(&prefix, b"/MediaBox"), 12);
+        assert_eq!(count_occurrences(&prefix, b"/Subtype /Form"), 0);
+        assert_eq!(writer.deferred_decorations.len(), 12);
+        assert_eq!(
+            writer
+                .offsets
+                .iter()
+                .filter(|(id, _)| writer.page_ids.contains(id))
+                .count(),
+            12
+        );
+        let deferred = writer.deferred_decorations.clone();
+        let mut callbacks = 0;
+        writer
+            .write_deferred_decorations(&fonts, |_, _| {
+                callbacks += 1;
+                Ok::<_, std::io::Error>(Vec::new())
+            })
+            .unwrap();
+        assert_eq!(callbacks, 12, "CSS-only pages must allow cancellation too");
+        let text_fonts = TextFonts {
+            any_color: false,
+            remaps: None,
+            plan: &writer.font_plan,
+            usages: &writer.usages,
+        };
+        let mut expected = Vec::new();
+        for (_, number) in &deferred {
+            let mut content = Content::new();
+            render_margin_boxes(
+                &mut RenderTarget::new(&mut content, false),
+                &settings,
+                &fonts,
+                &author.page_rules,
+                *number,
+                Some(12),
+                &text_fonts,
+            );
+            expected.push(content.finish());
+        }
+        let bytes = writer.finish(&fonts).unwrap();
+        assert!(
+            bytes.starts_with(&prefix),
+            "already-written bytes must never change"
+        );
+        for content in expected {
+            assert!(
+                count_occurrences(&bytes, &content) > 0,
+                "final form must match known-total rendering"
+            );
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        let xref = text
+            .rsplit_once("startxref\n")
+            .unwrap()
+            .1
+            .lines()
+            .next()
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        assert_eq!(&bytes[xref..xref + 5], b"xref\n");
+        let xref_text = std::str::from_utf8(&bytes[xref..]).unwrap();
+        let mut lines = xref_text.lines();
+        assert_eq!(lines.next(), Some("xref"));
+        let size = lines
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
+        lines.next();
+        for id in 1..size {
+            let offset = lines.next().unwrap()[..10].parse::<usize>().unwrap();
+            assert!(bytes[offset..].starts_with(format!("{id} 0 obj").as_bytes()));
+        }
+        assert!(bytes.ends_with(b"%%EOF"));
+    }
+
+    #[test]
+    fn deferred_decorations_stop_immediately_when_callback_fails() {
+        let dom = html::parse(b"<p>body</p>");
+        let ua = user_agent_stylesheet();
+        let author = parse_stylesheet("@page { @bottom-center { content: counter(pages); } }");
+        let styles = compute_styles(&dom, &ua, &author);
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+        let pages = paginate_document(&dom, &styles, &fonts, &settings);
+        for fail_at in [1, 2] {
+            let mut writer = StreamingPdfWriter::new(
+                &fonts,
+                settings,
+                MemorySink::new(),
+                author.page_rules.clone(),
+                LinkSettings::default(),
+            )
+            .unwrap();
+            for _ in 0..3 {
+                writer
+                    .write_page(&pages[0], &styles, &HashMap::new(), &fonts, None)
+                    .unwrap();
+            }
+            let before = writer.offsets.len();
+            let mut calls = 0;
+            let result = writer.write_deferred_decorations(&fonts, |_, _| {
+                calls += 1;
+                if calls == fail_at {
+                    Err(crate::engine::EngineError::<std::io::Error>::TimedOut)
+                } else {
+                    Ok(Vec::new())
+                }
+            });
+            assert!(matches!(result, Err(crate::engine::EngineError::TimedOut)));
+            assert_eq!(calls, fail_at);
+            assert_eq!(writer.offsets.len() - before, fail_at - 1);
+        }
     }
 
     #[test]
