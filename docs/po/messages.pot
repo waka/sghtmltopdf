@@ -5759,7 +5759,7 @@ msgstr ""
 
 #: src/supports/images.md:154
 msgid ""
-"`width`/`height`属性とCSSの`width`/`height`に対応します。どちらも無指定なら画像の内在サイズを使い、片方だけ指定すればアスペクト比を保って他方を導出します"
+"`width`/`height`属性とCSSの`width`/`height`に対応します。どちらも無指定なら画像の内在サイズを使い、片方だけ指定すればアスペクト比を保って他方を導出します。属性はCSSで上書きできます(`img { height: auto }`など)"
 msgstr ""
 
 #: src/supports/images.md:155

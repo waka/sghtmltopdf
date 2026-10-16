@@ -1325,12 +1325,25 @@ pub(crate) fn aspect_ratio_width(
     padding: &EdgeSizes,
     border: &EdgeSizes,
 ) -> Option<f32> {
+    let content_height = resolve_height(
+        style,
+        padding.top + padding.bottom,
+        border.top + border.bottom,
+    )?;
+    aspect_ratio_width_for_height(style, padding, border, content_height)
+}
+
+/// The content width `aspect-ratio` gives for `content_height`. `None` without a ratio.
+fn aspect_ratio_width_for_height(
+    style: &ComputedStyle,
+    padding: &EdgeSizes,
+    border: &EdgeSizes,
+    content_height: f32,
+) -> Option<f32> {
     let ratio = style.aspect_ratio.ratio?;
-    let padding_tb = padding.top + padding.bottom;
-    let border_tb = border.top + border.bottom;
-    let content_height = resolve_height(style, padding_tb, border_tb)?;
     if style.box_sizing == BoxSizing::BorderBox {
-        let border_box_height = content_height + padding_tb + border_tb;
+        let border_box_height =
+            content_height + padding.top + padding.bottom + border.top + border.bottom;
         Some(
             (border_box_height * ratio - padding.left - padding.right - border.left - border.right)
                 .max(0.0),
@@ -1358,8 +1371,8 @@ fn resolve_height(style: &ComputedStyle, padding_tb: f32, border_tb: f32) -> Opt
 
 /// Only where both `width` and `height` of a replaced element (`<img>`) are `auto`, apply a
 /// simplified version of CSS2.2 sections 10.3.2 and 10.6.2 (resolution from a replaced
-/// element's intrinsic size): decide from the HTML attributes (`width`/`height`) first and the
-/// intrinsic size (on a successful decode) second, deriving the other side from the ratio.
+/// element's intrinsic size): use the intrinsic size (on a successful decode), clamped with
+/// its ratio kept.
 ///
 /// Where CSS gives exactly one of `width`/`height` explicitly, the other is derived from the
 /// used ratio (the `aspect-ratio` setting, or the intrinsic ratio when there is none).
@@ -1389,34 +1402,24 @@ pub(super) fn apply_replaced_element_auto_size(
     }
     if !height_is_auto {
         // A settled height with `width: auto`. `width: auto` on a replaced element is
-        // shrink-to-fit (not an ordinary block's stretch), so the width follows from the ratio.
-        if let Some(width) = aspect_ratio_width(style, &padding, &border) {
+        // shrink-to-fit (not an ordinary block's stretch), so the width follows from the ratio
+        // and the clamped height.
+        let padding_tb = padding.top + padding.bottom;
+        let border_tb = border.top + border.bottom;
+        let width = resolve_height(style, padding_tb, border_tb)
+            .map(|height| clamp_used_height(style, padding_tb, border_tb, height))
+            .and_then(|height| aspect_ratio_width_for_height(style, &padding, &border, height));
+        if let Some(width) = width {
             style.width = LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(width));
         }
         return;
     }
 
-    // Both `auto`: decide from the HTML attributes (`width`/`height`) first and the intrinsic
-    // size (on a successful decode) second, deriving the other side from the aspect ratio when
-    // only one value is available (a simplified CSS2.2 sections 10.3.2 and 10.6.2).
-    let attr_size = (
-        image.attr_width.map(|w| w as f32),
-        image.attr_height.map(|h| h as f32),
-    );
-    let intrinsic_size = image
+    // Both `auto`: the intrinsic size (0x0 if the image failed).
+    let (width, height) = image
         .image
         .as_ref()
-        .map(|prepared| (prepared.width, prepared.height));
-
-    let (width, height) = match attr_size {
-        (Some(w), Some(h)) => (w, h),
-        (Some(w), None) => (
-            w,
-            derive_via_aspect_ratio(w, intrinsic_size.map(|(iw, ih)| (ih, iw))),
-        ),
-        (None, Some(h)) => (derive_via_aspect_ratio(h, intrinsic_size), h),
-        (None, None) => intrinsic_size.unwrap_or((0.0, 0.0)),
-    };
+        .map_or((0.0, 0.0), |prepared| (prepared.width, prepared.height));
 
     // An `aspect-ratio` given without `auto` (`aspect-ratio: 16 / 9`, say) wins over the
     // intrinsic ratio. The width stays intrinsic and only the height is redecided by the ratio.
@@ -1426,22 +1429,16 @@ pub(super) fn apply_replaced_element_auto_size(
         aspect_ratio_height(style, &padding, &border, width).unwrap_or(height)
     };
 
-    // HTML `width`/`height` attributes are presentational hints, i.e. not `auto` in CSS terms,
-    // so only a size taken from the image itself goes through the ratio-preserving table.
-    // Clamping the two axes independently afterwards would distort the image.
-    let (width, height) = if attr_size == (None, None) {
-        let (w, h) =
-            constrain_replaced_size(style, containing_width, &padding, &border, width, height);
-        // `width`/`height` are read as border-box lengths under `box-sizing: border-box`, but
-        // a size taken from the image is the content box.
-        if style.box_sizing == BoxSizing::BorderBox {
-            (
-                w + padding.left + padding.right + border.left + border.right,
-                h + padding.top + padding.bottom + border.top + border.bottom,
-            )
-        } else {
-            (w, h)
-        }
+    // Clamp both axes together so the ratio is kept.
+    let (width, height) =
+        constrain_replaced_size(style, containing_width, &padding, &border, width, height);
+    // `width`/`height` are read as border-box lengths under `box-sizing: border-box`, but a
+    // size taken from the image is the content box.
+    let (width, height) = if style.box_sizing == BoxSizing::BorderBox {
+        (
+            width + padding.left + padding.right + border.left + border.right,
+            height + padding.top + padding.bottom + border.top + border.bottom,
+        )
     } else {
         (width, height)
     };
@@ -1555,19 +1552,6 @@ fn constrain_replaced_size(
 fn intrinsic_ratio(image: &ImageBoxContent) -> Option<f32> {
     let prepared = image.image.as_ref()?;
     (prepared.height > 0.0).then(|| prepared.width / prepared.height)
-}
-
-/// From `known` (the length of one known side), derive the other side preserving the aspect
-/// ratio, using `ratio_basis` (the intrinsic length of the unknown side and of the known one).
-/// Returns 0 when there is no intrinsic size (the decode failed) or the known side's
-/// intrinsic length is 0 (which the caller reads as "size unknown").
-fn derive_via_aspect_ratio(known: f32, ratio_basis: Option<(f32, f32)>) -> f32 {
-    match ratio_basis {
-        Some((other_intrinsic, known_intrinsic)) if known_intrinsic > 0.0 => {
-            known * other_intrinsic / known_intrinsic
-        }
-        _ => 0.0,
-    }
 }
 
 /// Apply parent/child and empty-block margin collapsing.
@@ -2752,8 +2736,6 @@ mod tests {
     fn image_with_no_attrs_uses_intrinsic_size_when_decoded() {
         let tree = image_box(ImageBoxContent {
             image: Some(image_prepared(200.0, 100.0)),
-            attr_width: None,
-            attr_height: None,
         });
         let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
 
@@ -2762,72 +2744,12 @@ mod tests {
     }
 
     #[test]
-    fn image_width_attr_only_derives_height_via_aspect_ratio() {
-        // The intrinsic size is 200x100 (2:1). With only width=50px given -> height=25px.
-        let tree = image_box(ImageBoxContent {
-            image: Some(image_prepared(200.0, 100.0)),
-            attr_width: Some(50),
-            attr_height: None,
-        });
-        let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
-
-        assert_eq!(laid.layout.content.width, 50.0);
-        assert_eq!(laid.layout.content.height, 25.0);
-    }
-
-    #[test]
-    fn image_height_attr_only_derives_width_via_aspect_ratio() {
-        let tree = image_box(ImageBoxContent {
-            image: Some(image_prepared(200.0, 100.0)),
-            attr_width: None,
-            attr_height: Some(40),
-        });
-        let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
-
-        assert_eq!(laid.layout.content.height, 40.0);
-        assert_eq!(laid.layout.content.width, 80.0);
-    }
-
-    #[test]
-    fn image_with_both_attrs_ignores_the_intrinsic_aspect_ratio() {
-        let tree = image_box(ImageBoxContent {
-            image: Some(image_prepared(200.0, 100.0)),
-            attr_width: Some(10),
-            attr_height: Some(10),
-        });
-        let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
-
-        assert_eq!(laid.layout.content.width, 10.0);
-        assert_eq!(laid.layout.content.height, 10.0);
-    }
-
-    #[test]
     fn failed_image_with_no_attrs_collapses_to_zero_size() {
-        let tree = image_box(ImageBoxContent {
-            image: None,
-            attr_width: None,
-            attr_height: None,
-        });
+        let tree = image_box(ImageBoxContent { image: None });
         let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
 
         assert_eq!(laid.layout.content.width, 0.0);
         assert_eq!(laid.layout.content.height, 0.0);
-    }
-
-    #[test]
-    fn failed_image_with_explicit_attrs_still_reserves_the_specified_space() {
-        // Even on a failed fetch, width/height attributes make it an empty box of that size
-        // (reserving the space so the content that follows does not suddenly shift).
-
-        let tree = image_box(ImageBoxContent {
-            image: None,
-            attr_width: Some(50),
-            attr_height: Some(50),
-        });
-        let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
-
-        assert_eq!(laid.layout.content.width, 50.0);
-        assert_eq!(laid.layout.content.height, 50.0);
     }
 
     #[test]
@@ -2836,8 +2758,6 @@ mod tests {
         // replaced element does not (it uses its intrinsic size as-is).
         let tree = image_box(ImageBoxContent {
             image: Some(image_prepared(50.0, 50.0)),
-            attr_width: None,
-            attr_height: None,
         });
         let laid = layout_document(&tree, &HashMap::new(), &test_fonts(), 800.0);
 

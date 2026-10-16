@@ -962,9 +962,9 @@ fn compute_content_width(
 ///
 /// This is its used width, not the image's natural width: an explicit `width` (or one derived
 /// from `height` and the aspect ratio) clamped by `min-width`/`max-width`, and otherwise the
-/// `width`/`height` attributes or the natural size, as `apply_replaced_element_auto_size`
-/// resolves it for the final layout. A percentage `width` cannot resolve while the container's
-/// size is still being determined, so it is treated as `auto` (CSS Sizing 3 5.2.1: a cyclic
+/// natural size, as `apply_replaced_element_auto_size` resolves it for the final layout.
+/// A percentage `width` cannot resolve while the container's size is still being
+/// determined, so it is treated as `auto` (CSS Sizing 3 5.2.1: a cyclic
 /// percentage on a replaced element's width contributes as `auto` to max-content). A percentage
 /// `max-width` (Tailwind's `img { max-width: 100% }`) is treated as `none` for the same reason.
 /// Browsers also let such a replaced element shrink to 0 for min-content; the measure shared
@@ -993,13 +993,8 @@ fn replaced_natural_content_width(style: &ComputedStyle, image: &ImageBoxContent
     let LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(width)) = style.width
     else {
         // A settled `height` with no intrinsic ratio (the decode failed) leaves the width
-        // `auto`. The final layout then shrinks to this same measure, so keep the attribute
-        // (or natural) width it has always used rather than collapsing to 0.
-        return image
-            .attr_width
-            .map(|w| w as f32)
-            .or_else(|| image.image.as_ref().map(|img| img.width))
-            .unwrap_or(0.0);
+        // `auto`. The final layout then shrinks to this same measure, so keep the natural width.
+        return image.image.as_ref().map_or(0.0, |img| img.width);
     };
     let width = if style.box_sizing == BoxSizing::BorderBox {
         (width - padding_lr - border_lr).max(0.0)

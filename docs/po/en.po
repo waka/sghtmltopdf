@@ -7832,11 +7832,13 @@ msgstr ""
 #: src/supports/images.md:154
 msgid ""
 "`width`/`height`属性とCSSの`width`/`height`に対応します。どちらも無指定なら画"
-"像の内在サイズを使い、片方だけ指定すればアスペクト比を保って他方を導出します"
+"像の内在サイズを使い、片方だけ指定すればアスペクト比を保って他方を導出しま"
+"す。属性はCSSで上書きできます(`img { height: auto }`など)"
 msgstr ""
 "The `width` and `height` attributes and the CSS `width` and `height` are "
 "both honoured. With neither, the intrinsic size is used; with only one, the "
-"other is derived while keeping the aspect ratio"
+"other is derived while keeping the aspect ratio. CSS overrides the attributes "
+"(`img { height: auto }`, say)"
 
 #: src/supports/images.md:155
 msgid ""

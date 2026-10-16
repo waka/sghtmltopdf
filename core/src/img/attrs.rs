@@ -1,12 +1,6 @@
 //! Extraction of DOM attributes from `<img>` elements.
 //!
-//! `width`/`height` here means the HTML attributes (unitless integer px), not the CSS values.
-//!
-//! The HTML spec's "rules for parsing non-negative integers" skip leading whitespace,
-//! then read digits for as long as they continue and ignore the rest (the whole string
-//! does not have to be digits). That is why a value with a unit, such as `width="100px"`,
-//! is read as `100` by browsers. We match that: instead of a whole-string match like
-//! `str::parse`, we take only the leading run of digits.
+//! `width`/`height` are not read here; they become CSS hints in `style::presentational`.
 
 use html5ever::Attribute;
 
@@ -17,10 +11,6 @@ use crate::html::{Dom, NodeData, NodeId};
 pub struct ImgAttrs {
     /// Value of the `src` attribute (an empty string becomes `None`, so it never lands here).
     pub src: String,
-    /// Value of the `width` attribute (in px; `None` if absent or non-numeric).
-    pub width: Option<u32>,
-    /// Value of the `height` attribute (in px; `None` if absent or non-numeric).
-    pub height: Option<u32>,
     /// Value of the `alt` attribute. `None` if the attribute is absent; an explicitly empty
     /// value such as `alt=""` is kept as `Some(String::new())`, following the HTML
     /// convention of distinguishing decorative `alt=""` from an unset attribute.
@@ -42,16 +32,9 @@ pub fn read_img_attrs(dom: &Dom, node: NodeId) -> Option<ImgAttrs> {
     let src = find_attr(attrs, "src")
         .map(|value| value.to_string())
         .filter(|s| !s.is_empty())?;
-    let width = read_pixel_attr(attrs, "width");
-    let height = read_pixel_attr(attrs, "height");
     let alt = find_attr(attrs, "alt").map(|value| value.to_string());
 
-    Some(ImgAttrs {
-        src,
-        width,
-        height,
-        alt,
-    })
+    Some(ImgAttrs { src, alt })
 }
 
 fn find_attr<'a>(attrs: &'a [Attribute], name: &str) -> Option<&'a str> {
@@ -59,26 +42,6 @@ fn find_attr<'a>(attrs: &'a [Attribute], name: &str) -> Option<&'a str> {
         .iter()
         .find(|attr| &*attr.name.local == name)
         .map(|attr| attr.value.as_ref())
-}
-
-fn read_pixel_attr(attrs: &[Attribute], name: &str) -> Option<u32> {
-    find_attr(attrs, name).and_then(parse_non_negative_integer_prefix)
-}
-
-/// A simplified version of the HTML spec's "rules for parsing non-negative integers":
-/// skip leading whitespace, then read as many digits as follow and interpret them as
-/// decimal (everything after the first non-digit is ignored).
-/// `None` if there is no digit at all. A leading `-` never starts collecting digits, so it naturally yields `None`.
-fn parse_non_negative_integer_prefix(value: &str) -> Option<u32> {
-    let digits: String = value
-        .trim_start()
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    if digits.is_empty() {
-        return None;
-    }
-    digits.parse::<u32>().ok()
 }
 
 #[cfg(test)]
@@ -103,8 +66,6 @@ mod tests {
 
         let attrs = read_img_attrs(&dom, img).expect("expected Some");
         assert_eq!(attrs.src, "logo.png");
-        assert_eq!(attrs.width, Some(120));
-        assert_eq!(attrs.height, Some(40));
         assert_eq!(attrs.alt.as_deref(), Some("Company logo"));
     }
 
@@ -114,8 +75,6 @@ mod tests {
         let img = find(&dom, dom.document(), "img").expect("img not found");
 
         let attrs = read_img_attrs(&dom, img).expect("expected Some");
-        assert_eq!(attrs.width, None);
-        assert_eq!(attrs.height, None);
         assert_eq!(attrs.alt, None);
     }
 
@@ -126,41 +85,6 @@ mod tests {
 
         let attrs = read_img_attrs(&dom, img).expect("expected Some");
         assert_eq!(attrs.alt.as_deref(), Some(""));
-    }
-
-    #[test]
-    fn width_and_height_accept_a_trailing_unit_suffix() {
-        // Per the HTML spec, a width/height attribute value is read only up to its leading
-        // run of digits, so values with a unit such as `100px` or `50%` are effectively
-        // read as px (matching what browsers actually do).
-        let dom = html::parse(br#"<img src="logo.png" width="100px" height="50%">"#);
-        let img = find(&dom, dom.document(), "img").expect("img not found");
-
-        let attrs = read_img_attrs(&dom, img).expect("expected Some");
-        assert_eq!(attrs.width, Some(100));
-        assert_eq!(attrs.height, Some(50));
-    }
-
-    #[test]
-    fn width_ignores_leading_and_trailing_whitespace() {
-        let dom = html::parse(br#"<img src="logo.png" width=" 42 ">"#);
-        let img = find(&dom, dom.document(), "img").expect("img not found");
-
-        let attrs = read_img_attrs(&dom, img).expect("expected Some");
-        assert_eq!(attrs.width, Some(42));
-    }
-
-    #[test]
-    fn non_numeric_width_and_height_are_none() {
-        let dom = html::parse(br#"<img src="logo.png" width="huge" height="-1">"#);
-        let img = find(&dom, dom.document(), "img").expect("img not found");
-
-        let attrs = read_img_attrs(&dom, img).expect("expected Some");
-        assert_eq!(attrs.width, None);
-        assert_eq!(
-            attrs.height, None,
-            "negative numbers are not valid non-negative integers"
-        );
     }
 
     #[test]

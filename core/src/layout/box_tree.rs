@@ -157,9 +157,6 @@ pub struct ImageBoxContent {
     /// SSRF block, an undecodable image; all treated alike) it is `None`, and layout treats
     /// this as an empty replaced element.
     pub image: Option<std::rc::Rc<crate::pdf::PreparedImage>>,
-    /// The values of the `width`/`height` attributes (px, from the HTML attributes)
-    pub attr_width: Option<u32>,
-    pub attr_height: Option<u32>,
 }
 
 /// The sequence of rows collected from a `display: table` element, plus an optional `caption`.
@@ -619,10 +616,6 @@ fn build_inline_svg_box_content(
     }
     ImageBoxContent {
         image: image_cache.get_or_decode_inline_svg(&markup).ok(),
-        // The `width`/`height` attributes are already part of the document handed to the SVG
-        // renderer (they decide the intrinsic size) or become CSS hints (`presentational`).
-        attr_width: None,
-        attr_height: None,
     }
 }
 
@@ -631,15 +624,9 @@ fn build_image_box_content(
     node: NodeId,
     image_cache: &ImageAssetCache,
 ) -> ImageBoxContent {
-    let attrs = crate::img::read_img_attrs(dom, node);
-    let image = attrs
-        .as_ref()
-        .and_then(|a| image_cache.get_or_decode(&a.src).ok());
-    ImageBoxContent {
-        image,
-        attr_width: attrs.as_ref().and_then(|a| a.width),
-        attr_height: attrs.as_ref().and_then(|a| a.height),
-    }
+    let image =
+        crate::img::read_img_attrs(dom, node).and_then(|a| image_cache.get_or_decode(&a.src).ok());
+    ImageBoxContent { image }
 }
 
 /// `list_item_start` is the starting value when counting `display: list-item` children

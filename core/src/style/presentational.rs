@@ -89,6 +89,9 @@ pub(super) fn presentational_hint_declarations(
         }
         "col" | "colgroup" => push_length(&mut css, "width", attr(attrs, "width")),
         "img" => {
+            // As hints, author CSS such as `height: auto` overrides them.
+            push_dimension(&mut css, "width", attr(attrs, "width"));
+            push_dimension(&mut css, "height", attr(attrs, "height"));
             if let Some(border) = attr(attrs, "border").and_then(parse_pixels) {
                 css.push_str(&format!("border: {border}px solid currentColor;"));
             }
@@ -199,6 +202,29 @@ fn push_length(css: &mut String, property: &str, value: Option<&str>) {
     if let Some(px) = parse_pixels(value) {
         css.push_str(&format!("{property}: {px}px;"));
     }
+}
+
+/// An `<img>` size attribute, read like browsers do: `"100px"` is 100px, `"50%"` is 50%.
+fn push_dimension(css: &mut String, property: &str, value: Option<&str>) {
+    let Some(value) = value else { return };
+    let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
+    let digits = |s: &str| s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    let mut end = digits(value);
+    if end == 0 {
+        return;
+    }
+    if value[end..].starts_with('.') {
+        end += 1 + digits(&value[end + 1..]);
+    }
+    let Ok(number) = value[..end].trim_end_matches('.').parse::<f32>() else {
+        return;
+    };
+    let unit = if value[end..].starts_with('%') {
+        "%"
+    } else {
+        "px"
+    };
+    css.push_str(&format!("{property}: {number}{unit};"));
 }
 
 /// An `<svg>` `width`/`height` attribute: a number, optionally with a CSS length unit or `%`
@@ -618,6 +644,53 @@ mod tests {
         )));
     }
 
+    fn img_width_hint(attrs: &str) -> Option<SpecifiedLengthPercentageOrAuto> {
+        hints_for(&format!(r#"<img src="a.png" {attrs}>"#), "img")
+            .into_iter()
+            .find_map(|d| match d {
+                PropertyDeclaration::Width(w) => Some(w),
+                _ => None,
+            })
+    }
+
+    #[test]
+    fn img_size_attributes_map_to_width_and_height() {
+        let hints = hints_for(r#"<img src="a.png" width="32" height="24">"#, "img");
+        assert_eq!(
+            hints.iter().find_map(|d| match d {
+                PropertyDeclaration::Width(w) => px_of(w),
+                _ => None,
+            }),
+            Some(32.0)
+        );
+        assert_eq!(
+            hints.iter().find_map(|d| match d {
+                PropertyDeclaration::Height(h) => px_of(h),
+                _ => None,
+            }),
+            Some(24.0)
+        );
+    }
+
+    #[test]
+    fn img_size_attributes_follow_the_dimension_value_rules() {
+        let px = |attrs: &str| img_width_hint(attrs).as_ref().and_then(px_of);
+        // Anything after the number is ignored.
+        assert_eq!(px(r#"width="100px""#), Some(100.0));
+        assert_eq!(px(r#"width=" 42 ""#), Some(42.0));
+        assert_eq!(px(r#"width="12.5""#), Some(12.5));
+        assert_eq!(px(r#"width="0""#), Some(0.0));
+        assert_eq!(
+            img_width_hint(r#"width="50%""#)
+                .as_ref()
+                .and_then(percent_of),
+            Some(0.5)
+        );
+        assert!(img_width_hint(r#"width="huge""#).is_none());
+        assert!(img_width_hint(r#"width="-1""#).is_none());
+        assert!(img_width_hint(r#"width="""#).is_none());
+    }
+
     #[test]
     fn an_element_without_presentational_attributes_produces_nothing() {
         assert!(hints_for(r#"<p class="x">text</p>"#, "p").is_empty());
@@ -641,6 +714,25 @@ mod tests {
             TextAlign::Right,
             "author CSS must win over a presentational attribute"
         );
+    }
+
+    #[test]
+    fn author_height_auto_cancels_the_img_height_attribute() {
+        use crate::style::values::{LengthPercentage, LengthPercentageOrAuto};
+        use crate::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+
+        let dom = html::parse(br#"<img src="a.png" width="32" height="24">"#);
+        let styles = compute_styles(
+            &dom,
+            &user_agent_stylesheet(),
+            &parse_stylesheet("img { height: auto; }"),
+        );
+        let img = find(&dom, dom.document(), "img").expect("img not found");
+        assert_eq!(
+            styles[&img].width,
+            LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(32.0))
+        );
+        assert_eq!(styles[&img].height, LengthPercentageOrAuto::Auto);
     }
 
     #[test]

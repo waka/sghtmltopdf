@@ -465,6 +465,138 @@ fn an_inline_image_keeps_its_ratio_under_max_height() {
     assert_eq!((content.width, content.height), (16.0, 12.0));
 }
 
+#[test]
+fn max_height_keeps_the_ratio_of_an_image_with_a_css_height() {
+    assert_eq!(
+        image_size("img { height: 24px; max-height: 12px; }"),
+        (16.0, 12.0)
+    );
+}
+
+// ===== `<img>` sized by its `width`/`height` attributes (#86) =====
+
+fn attr_image_size(attrs: &str, css: &str) -> (f32, f32) {
+    let html_src = format!(r#"<img src="{}" {attrs}>"#, jpeg_data_uri());
+    let (dom, laid) = layout(&html_src, &format!("body {{ margin: 0; }} {css}"));
+    let content = content_box(&dom, &laid, "img", 0);
+    (content.width, content.height)
+}
+
+#[test]
+fn a_width_attribute_derives_the_height_from_the_intrinsic_ratio() {
+    assert_eq!(attr_image_size(r#"width="64""#, ""), (64.0, 48.0));
+}
+
+#[test]
+fn a_height_attribute_derives_the_width_from_the_intrinsic_ratio() {
+    assert_eq!(attr_image_size(r#"height="48""#, ""), (64.0, 48.0));
+}
+
+#[test]
+fn both_size_attributes_win_over_the_intrinsic_ratio() {
+    assert_eq!(
+        attr_image_size(r#"width="10" height="10""#, ""),
+        (10.0, 10.0)
+    );
+}
+
+#[test]
+fn max_width_keeps_the_ratio_of_an_image_sized_by_its_width_attribute() {
+    assert_eq!(
+        attr_image_size(r#"width="32""#, "img { max-width: 16px; }"),
+        (16.0, 12.0)
+    );
+    assert_eq!(
+        attr_image_size(r#"width="32""#, "img { max-width: 16px; height: auto; }"),
+        (16.0, 12.0)
+    );
+}
+
+#[test]
+fn height_auto_overrides_the_height_attribute() {
+    assert_eq!(
+        attr_image_size(
+            r#"width="32" height="24""#,
+            "img { max-width: 16px; height: auto; }"
+        ),
+        (16.0, 12.0)
+    );
+}
+
+#[test]
+fn without_height_auto_the_height_attribute_stays_in_effect() {
+    // Same as browsers: only the width is clamped.
+    assert_eq!(
+        attr_image_size(r#"width="32" height="24""#, "img { max-width: 16px; }"),
+        (16.0, 24.0)
+    );
+}
+
+#[test]
+fn max_height_keeps_the_ratio_of_an_image_sized_by_its_height_attribute() {
+    assert_eq!(
+        attr_image_size(r#"height="24""#, "img { max-height: 12px; }"),
+        (16.0, 12.0)
+    );
+}
+
+#[test]
+fn a_width_attribute_is_kept_when_css_sets_only_the_height() {
+    assert_eq!(
+        attr_image_size(r#"width="40""#, "img { height: 60px; }"),
+        (40.0, 60.0)
+    );
+}
+
+#[test]
+fn the_responsive_image_pattern_scales_an_image_with_size_attributes_down() {
+    let html_src = format!(
+        r#"<div class="narrow"><img src="{}" width="32" height="24"></div>"#,
+        jpeg_data_uri()
+    );
+    let (dom, laid) = layout(
+        &html_src,
+        "body { margin: 0; } .narrow { width: 16px; } img { max-width: 100%; height: auto; }",
+    );
+    let content = content_box(&dom, &laid, "img", 0);
+    assert_eq!((content.width, content.height), (16.0, 12.0));
+}
+
+#[test]
+fn a_percentage_width_attribute_resolves_against_the_containing_block() {
+    let html_src = format!(
+        r#"<div class="box"><img src="{}" width="50%"></div>"#,
+        jpeg_data_uri()
+    );
+    let (dom, laid) = layout(&html_src, "body { margin: 0; } .box { width: 40px; }");
+    let content = content_box(&dom, &laid, "img", 0);
+    assert_eq!((content.width, content.height), (20.0, 15.0));
+}
+
+#[test]
+fn a_flex_item_image_sized_by_its_attributes_keeps_its_ratio_under_max_width() {
+    let html_src = format!(
+        r#"<div class="row"><img src="{}" width="32" height="24"></div>"#,
+        jpeg_data_uri()
+    );
+    let (dom, laid) = layout(
+        &html_src,
+        "body { margin: 0; } .row { display: flex; } img { max-width: 16px; height: auto; }",
+    );
+    let content = content_box(&dom, &laid, "img", 0);
+    assert_eq!((content.width, content.height), (16.0, 12.0));
+}
+
+#[test]
+fn a_failed_image_still_reserves_the_space_of_its_size_attributes() {
+    let (dom, laid) = layout(
+        r#"<img src="data:image/png;base64,AAAA" width="50" height="50">"#,
+        "body { margin: 0; }",
+    );
+    let content = content_box(&dom, &laid, "img", 0);
+    assert_eq!((content.width, content.height), (50.0, 50.0));
+}
+
 // ===== flex =====
 
 #[test]
