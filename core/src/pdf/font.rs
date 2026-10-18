@@ -492,6 +492,37 @@ pub(super) fn maybe_deflate(data: &[u8], compress: bool) -> Vec<u8> {
     }
 }
 
+/// Reuses compressor state and output capacity while keeping each PDF stream independent.
+pub(super) struct StreamCompressor {
+    encoder: ZlibEncoder<Vec<u8>>,
+    spare: Vec<u8>,
+}
+
+impl StreamCompressor {
+    pub fn new() -> Self {
+        Self {
+            encoder: ZlibEncoder::new(Vec::new(), Compression::default()),
+            spare: Vec::new(),
+        }
+    }
+
+    pub fn compress(&mut self, data: &[u8]) -> Vec<u8> {
+        self.encoder.write_all(data).expect("in-memory compression");
+        self.encoder
+            .reset(std::mem::take(&mut self.spare))
+            .expect("in-memory compression")
+    }
+
+    pub fn recycle(&mut self, mut bytes: Vec<u8>) {
+        // Do not retain unusually large page streams for the rest of the document.
+        if bytes.capacity() > 1024 * 1024 {
+            return;
+        }
+        bytes.clear();
+        self.spare = bytes;
+    }
+}
+
 pub(super) fn deflate(data: &[u8]) -> Vec<u8> {
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
     encoder
@@ -505,6 +536,38 @@ pub(super) fn deflate(data: &[u8]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compressor_does_not_retain_oversized_output_buffers() {
+        let mut compressor = StreamCompressor::new();
+        compressor.recycle(Vec::with_capacity(1024 * 1024 + 1));
+        assert_eq!(compressor.spare.capacity(), 0);
+        compressor.recycle(Vec::with_capacity(1024));
+        assert!(compressor.spare.capacity() >= 1024);
+    }
+
+    #[test]
+    fn reused_compressor_produces_identical_independent_zlib_streams() {
+        use std::io::Read;
+        let mut compressor = StreamCompressor::new();
+        let large: Vec<u8> = (0..100_000).map(|n| (n * 37) as u8).collect();
+        for input in [
+            b"first stream".as_slice(),
+            &large,
+            b"",
+            b"different stream",
+            &large,
+        ] {
+            let bytes = compressor.compress(input);
+            assert_eq!(bytes, deflate(input));
+            let mut decoded = Vec::new();
+            flate2::read::ZlibDecoder::new(bytes.as_slice())
+                .read_to_end(&mut decoded)
+                .unwrap();
+            assert_eq!(decoded, input);
+            compressor.recycle(bytes);
+        }
+    }
 
     #[test]
     fn deflate_shrinks_compressible_data() {
