@@ -86,12 +86,27 @@ cat invoice.html | sghtmltopdf - -o - > invoice.pdf
 |---|---|---|
 | `--title <TEXT>` | HTMLの`<title>` | PDFの`/Title` |
 | `--author` / `--subject` / `--keywords <TEXT>` | | Info辞書の各項目(sghtmltopdf独自) |
+| `--creator <TEXT>` | | Info辞書の`/Creator`(XMPでは`xmp:CreatorTool`)。文書を作ったアプリケーション名 |
+| `--creation-date <DATE>` | 現在時刻 | `/CreationDate`と`/ModDate`に書く作成日時。ISO 8601(下記) |
 | `-d`, `--dpi <DPI>` | 96 | CSS pxを何dpiとして解釈するか。`72`にすると1px=1pt |
 | `--zoom <FACTOR>` | 1.0 | 拡大率。`--dpi`の係数に掛かる |
 | `-g`, `--grayscale` | オフ | 塗り・線をグレースケール化(sRGB相対輝度) |
 | `--no-pdf-compression` | オフ | PDFオブジェクトのFlate圧縮を止める(画像データは対象外) |
 
-`/Producer`と`/CreationDate`は常に書かれます。
+`/Producer`と`/CreationDate`、`/ModDate`は常に書かれます。
+`/ModDate`は`/CreationDate`と同じ値です(ファイルは1度しか書かれず、更新されないため)。
+
+`--creation-date`には`2026-10-22`、`2026-10-22T10:30:00+02:00`、`2026-10-22T08:30:00Z`のような
+ISO 8601の日付または日時を渡します。オフセットはUTCに直して書かれ、
+オフセットの無い時刻はUTCとして読みます。小数秒は切り捨てます。
+日時を指定すると、同じ入力・同じオプションから常に同じバイト列のPDFができます
+(通常出力でもストリーミングでも。トレーラの`/ID`は日時とメタデータから作るため)。
+指定しなければ、これまでどおり現在時刻が使われます。
+
+カタログの`/Metadata`には、Info辞書と同じ内容のXMPストリームも書かれます
+(`dc:title`、`dc:creator`、`dc:description`、`pdf:Keywords`、`xmp:CreatorTool`、`pdf:Producer`、
+`xmp:CreateDate`、`xmp:ModifyDate`)。圧縮はされず、値はXMLとしてエスケープされたUTF-8です。
+指定されなかった項目は書かれません。PDF/Aの識別情報(`pdfaid`)はまだ書きません。
 
 > グレースケールの限界
 >

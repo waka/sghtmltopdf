@@ -8,7 +8,7 @@ use clap::{ArgAction, ArgMatches, Args, Parser, ValueEnum};
 
 use crate::engine::{ContentOptions, GenericFamily, LocalAccess, Mode};
 use crate::layout::{PageSettings, PageSize};
-use crate::pdf::{DocumentMetadata, PdfOutputOptions};
+use crate::pdf::{unix_from_iso8601, DocumentMetadata, PdfOutputOptions};
 
 use super::header_footer::{MarginBoxText, SimpleHeaderFooter};
 use super::toc::TocOptions;
@@ -241,6 +241,14 @@ pub struct ConvertArgs {
     #[arg(long, value_name = "TEXT")]
     pub keywords: Option<String>,
 
+    /// PDF creator (/Creator in the Info dictionary)
+    #[arg(long, value_name = "TEXT")]
+    pub creator: Option<String>,
+
+    /// Creation date as ISO 8601, in place of the current time (/CreationDate and /ModDate)
+    #[arg(long, value_name = "DATE", value_parser = parse_creation_date)]
+    pub creation_date: Option<i64>,
+
     /// What dpi a CSS px is read as (default 96; 72 makes 1px = 1pt)
     #[arg(short = 'd', long, value_name = "DPI", default_value_t = 96.0)]
     pub dpi: f32,
@@ -466,6 +474,11 @@ pub enum LogLevel {
     Info,
 }
 
+/// The `--creation-date` value parser: an ISO 8601 date or date-time, as UNIX seconds.
+fn parse_creation_date(value: &str) -> Result<i64, String> {
+    unix_from_iso8601(value)
+}
+
 /// The papers `--page-size` accepts. The same set of keywords that CSS
 /// `@page { size: ... }` accepts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -597,6 +610,8 @@ impl ConvertArgs {
                 author: self.author.clone(),
                 subject: self.subject.clone(),
                 keywords: self.keywords.clone(),
+                creator: self.creator.clone(),
+                creation_date: self.creation_date,
             },
             compress: !self.no_pdf_compression,
             scale: PdfOutputOptions::scale_from_dpi_and_zoom(self.dpi, self.zoom),

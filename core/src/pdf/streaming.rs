@@ -26,14 +26,16 @@ use crate::style::{ComputedStyle, PageRule};
 use super::color_font::{write_color_fonts, FontPlan};
 use super::document::{
     alpha_gs_resource_name, collect_anchor_positions, collect_image_uses, collect_link_areas,
-    collect_margin_box_usage, collect_opacity_uses, collect_usage, file_identifier, render_box,
+    collect_margin_box_usage, collect_opacity_uses, collect_usage, render_box,
     render_header_footer_rules, render_margin_boxes, render_page_overlay, write_document_info,
     write_link_annotation, write_resources, LinkSettings, PageOverlay, RefAllocator, RenderTarget,
     TextFonts, ALPHA_STEPS,
 };
+use super::file_id::{id_entry, FileIdHasher};
 use super::font::{deflate, embed_font_streaming_chunks, FontUsage};
 use super::img::{embed_image_streaming_chunks, ids_for_image, ImageIds, PreparedImage};
 use super::options::PdfOutputOptions;
+use super::xmp::xmp_packet;
 
 const PDF_HEADER: &[u8] = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n";
 
@@ -44,6 +46,8 @@ const PDF_HEADER: &[u8] = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n";
 pub struct StreamingPdfWriter<S: Sink> {
     sink: S,
     output_len: usize,
+    /// The `/ID` hash, fed every byte before the trailer.
+    id_hasher: FileIdHasher,
     offsets: Vec<(Ref, usize)>,
     alloc: RefAllocator,
     catalog_id: Ref,
@@ -122,6 +126,8 @@ impl<S: Sink> StreamingPdfWriter<S> {
         output: PdfOutputOptions,
     ) -> Result<Self, S::Error> {
         sink.write(PDF_HEADER)?;
+        let mut id_hasher = FileIdHasher::new();
+        id_hasher.update(PDF_HEADER);
 
         let mut alloc = RefAllocator::default();
         let catalog_id = alloc.next();
@@ -137,6 +143,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
         let mut writer = Self {
             sink,
             output_len: PDF_HEADER.len(),
+            id_hasher,
             offsets: Vec::new(),
             alloc,
             catalog_id,
@@ -511,6 +518,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             self.write_chunk(dests_id, &chunk)?;
         }
 
+        // One instant for the Info dictionary, the XMP stream and the `/ID`.
+        let datetime = self.output.metadata.datetime();
+        let metadata_id = self.alloc.next();
         let mut chunk = Chunk::new();
         {
             let mut catalog = chunk.indirect(self.catalog_id).start::<Catalog>();
@@ -518,8 +528,13 @@ impl<S: Sink> StreamingPdfWriter<S> {
             if let Some(dests_id) = dests_id {
                 catalog.destinations(dests_id);
             }
+            catalog.metadata(metadata_id);
         }
         self.write_chunk(self.catalog_id, &chunk)?;
+
+        let mut chunk = Chunk::new();
+        chunk.metadata(metadata_id, &xmp_packet(&self.output.metadata, datetime));
+        self.write_chunk(metadata_id, &chunk)?;
 
         let info_id = self.alloc.next();
         let mut chunk = Chunk::new();
@@ -528,6 +543,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 .indirect(info_id)
                 .start::<pdf_writer::writers::DocumentInfo>(),
             &self.output.metadata,
+            datetime,
         );
         self.write_chunk(info_id, &chunk)?;
 
@@ -551,6 +567,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
         }
         let bytes = chunk.as_bytes();
         self.output_len += bytes.len();
+        self.id_hasher.update(bytes);
         self.sink.write(bytes)
     }
 
@@ -572,16 +589,13 @@ impl<S: Sink> StreamingPdfWriter<S> {
         for (_, offset) in &self.offsets {
             buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
         }
-        // `/ID` (the file identifier) is built the same way as in the batch writer.
-        // We write the trailer ourselves here rather than through `pdf_writer::Pdf`, so it is
-        // written directly as a hex string (the same value as a byte string).
-        let id: String = file_identifier(&self.output.metadata, self.page_ids.len())
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
+        // `/ID` (the file identifier) hashes the bytes written so far, as the batch writer does
+        // with everything before its trailer. We write the trailer ourselves here rather than
+        // through `pdf_writer::Pdf`, so it is written directly as hex strings.
+        let id = id_entry(&self.id_hasher.digest());
         buf.extend_from_slice(
             format!(
-                "trailer\n<< /Size {size} /Root {} 0 R /Info {} 0 R /ID [<{id}> <{id}>] >>\n",
+                "trailer\n<< /Size {size} /Root {} 0 R /Info {} 0 R {id} >>\n",
                 self.catalog_id.get(),
                 info_id.get()
             )
