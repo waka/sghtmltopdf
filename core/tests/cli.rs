@@ -647,6 +647,78 @@ fn the_title_option_wins_over_the_html_title() {
 }
 
 #[test]
+fn the_html_lang_becomes_the_catalog_language() {
+    // Both writers put `<html lang>` in the catalog as written, region included.
+    for (args, mode) in [(&[][..], "batch"), (&["--streaming"][..], "streaming")] {
+        for (lang, expected) in [
+            ("pl", Some("/Lang (pl)")),
+            ("en-GB", Some("/Lang (en-GB)")),
+            ("  de-AT \n", Some("/Lang (de-AT)")),
+            ("", None),
+            ("   ", None),
+            // Not a language tag: nothing is better than an invalid /Lang.
+            ("p(l", None),
+        ] {
+            let html = format!(
+                "<html lang=\"{lang}\"><head><title>t</title></head><body><p>x</p></body></html>"
+            );
+            let bytes = run_cli_with(&html, args, &format!("lang-{mode}"));
+            match expected {
+                Some(entry) => assert_eq!(
+                    count_occurrences(&bytes, entry.as_bytes()),
+                    1,
+                    "{mode}: lang {lang:?}"
+                ),
+                None => assert_eq!(
+                    count_occurrences(&bytes, b"/Lang"),
+                    0,
+                    "{mode}: lang {lang:?}"
+                ),
+            }
+        }
+
+        let none = run_cli_with(PLAIN_HTML, args, &format!("lang-none-{mode}"));
+        assert_eq!(count_occurrences(&none, b"/Lang"), 0, "{mode}: no lang");
+    }
+}
+
+#[test]
+fn a_header_document_does_not_set_the_language() {
+    let dir = std::env::temp_dir().join(format!(
+        "sghtmltopdf-e2e-lang-header-{}",
+        std::process::id()
+    ));
+    let header = write_temp_html(
+        &dir,
+        "header.html",
+        r#"<html lang="fr"><body><p>HDR</p></body></html>"#,
+    );
+    let main = r#"<html lang="pl"><body><p>x</p></body></html>"#;
+    let no_lang = "<html><body><p>x</p></body></html>";
+    let header = header.to_str().unwrap();
+    for args in [&[][..], &["--streaming"][..]] {
+        let mut args = args.to_vec();
+        args.extend(["--header-html", header]);
+        let bytes = run_cli_with(main, &args, "lang-header-pl");
+        assert_eq!(count_occurrences(&bytes, b"/Lang (pl)"), 1);
+        assert_eq!(count_occurrences(&bytes, b"/Lang (fr)"), 0);
+        let bytes = run_cli_with(no_lang, &args, "lang-header-none");
+        assert_eq!(count_occurrences(&bytes, b"/Lang"), 0);
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn only_the_lang_of_the_html_element_counts() {
+    // A `lang` on another element, or in a header document, does not set the document's.
+    let html = r#"<html><body><p lang="fr">x</p></body></html>"#;
+    for args in [&[][..], &["--streaming"][..]] {
+        let bytes = run_cli_with(html, args, "lang-inner");
+        assert_eq!(count_occurrences(&bytes, b"/Lang"), 0);
+    }
+}
+
+#[test]
 fn author_subject_and_keywords_are_written_when_given() {
     let bytes = run_cli_with(
         PLAIN_HTML,

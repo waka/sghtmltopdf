@@ -4,7 +4,7 @@
 //! result, so they can be carried around together. The CLI's `--title`,
 //! `--no-pdf-compression`, `--grayscale`, `--dpi` and `--zoom` all end up here.
 
-/// The document metadata written to the PDF Info dictionary.
+/// The document metadata written to the PDF Info dictionary, and the language to its catalog.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct DocumentMetadata {
@@ -16,6 +16,8 @@ pub struct DocumentMetadata {
     pub subject: Option<String>,
     /// `/Keywords`.
     pub keywords: Option<String>,
+    /// The catalog's `/Lang`, from `<html lang>` (resolved by the caller).
+    pub language: Option<String>,
 }
 
 impl DocumentMetadata {
@@ -24,6 +26,17 @@ impl DocumentMetadata {
         if self.title.is_none() {
             self.title = document_title.filter(|t| !t.trim().is_empty());
         }
+    }
+
+    /// Adopt the `<html lang>` as the document language. It is kept as written (`en-GB`)
+    /// minus surrounding whitespace; an empty value, or one that cannot be a language tag
+    /// (ASCII letters, digits and hyphens only), writes nothing.
+    pub fn fill_language_from_document(&mut self, document_language: Option<String>) {
+        self.language = document_language
+            .map(|lang| lang.trim().to_string())
+            .filter(|lang| {
+                !lang.is_empty() && lang.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+            });
     }
 }
 
@@ -210,5 +223,24 @@ mod tests {
         let mut meta = DocumentMetadata::default();
         meta.fill_title_from_document(Some("   ".to_string()));
         assert_eq!(meta.title, None);
+    }
+
+    #[test]
+    fn the_document_language_is_kept_as_written_when_it_can_be_a_language_tag() {
+        let language = |lang: &str| {
+            let mut meta = DocumentMetadata::default();
+            meta.fill_language_from_document(Some(lang.to_string()));
+            meta.language
+        };
+        assert_eq!(language("pl").as_deref(), Some("pl"));
+        assert_eq!(language(" en-GB\n").as_deref(), Some("en-GB"));
+        assert_eq!(language(""), None);
+        assert_eq!(language("   "), None);
+        assert_eq!(language("p(l"), None);
+        assert_eq!(language("język"), None);
+
+        let mut meta = DocumentMetadata::default();
+        meta.fill_language_from_document(None);
+        assert_eq!(meta.language, None);
     }
 }

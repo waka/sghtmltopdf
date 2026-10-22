@@ -406,6 +406,9 @@ pub fn encode_pdf_with_options(
     if let Some(dests_id) = dests_id {
         catalog.destinations(dests_id);
     }
+    if let Some(language) = output.metadata.language.as_deref() {
+        catalog.lang(TextStr(language));
+    }
     catalog.finish();
 
     let info_id = alloc.next();

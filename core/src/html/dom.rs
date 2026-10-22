@@ -97,6 +97,23 @@ pub fn is_stylesheet_link(attrs: &[Attribute]) -> bool {
         })
 }
 
+/// The `lang` attribute of the root `<html>` element (for `/Lang` in the PDF catalog).
+/// Only the root counts: a `lang` further down does not set the document language.
+pub fn find_document_language(dom: &Dom) -> Option<String> {
+    dom.children(dom.document()).find_map(|node| {
+        let NodeData::Element { name, attrs, .. } = &dom.node(node).data else {
+            return None;
+        };
+        if &*name.local != "html" {
+            return None;
+        }
+        attrs
+            .iter()
+            .find(|attr| &*attr.name.local == "lang")
+            .map(|attr| attr.value.to_string())
+    })
+}
+
 /// Text of the first `<title>` in the document (for `/Title` in the PDF Info dictionary).
 /// Used as the fallback when `--title` is not given.
 pub fn find_document_title(dom: &Dom) -> Option<String> {

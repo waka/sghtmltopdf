@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use pdf_writer::writers::Catalog;
-use pdf_writer::{Chunk, Content, Filter, Finish, Name, Rect as PdfRect, Ref};
+use pdf_writer::{Chunk, Content, Filter, Finish, Name, Rect as PdfRect, Ref, TextStr};
 
 use crate::fonts::FontCollection;
 use crate::html::NodeId;
@@ -517,6 +517,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             catalog.pages(self.pages_tree_id);
             if let Some(dests_id) = dests_id {
                 catalog.destinations(dests_id);
+            }
+            if let Some(language) = self.output.metadata.language.as_deref() {
+                catalog.lang(TextStr(language));
             }
         }
         self.write_chunk(self.catalog_id, &chunk)?;

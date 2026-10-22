@@ -21,7 +21,7 @@
       "alloc_bytes": 45658459,
       "peak_live_bytes": 25098514,
       "pages": 3,
-      "pdf_bytes": 68089
+      "pdf_bytes": 68102
     },
     {
       "name": "engine/batch/block_layout",
@@ -141,7 +141,7 @@
       "alloc_bytes": 42138042,
       "peak_live_bytes": 25544433,
       "pages": 1,
-      "pdf_bytes": 76626
+      "pdf_bytes": 76639
     },
     {
       "name": "engine/batch/real_invoice",
@@ -181,7 +181,7 @@
       "alloc_bytes": 44973891,
       "peak_live_bytes": 24914371,
       "pages": 3,
-      "pdf_bytes": 68284
+      "pdf_bytes": 68297
     },
     {
       "name": "engine/streaming/block_layout",

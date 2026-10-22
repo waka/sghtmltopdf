@@ -93,6 +93,8 @@ cat invoice.html | sghtmltopdf - -o - > invoice.pdf
 
 `/Producer`と`/CreationDate`は常に書かれます。
 
+HTMLの`<html lang>`は、PDFカタログの`/Lang`(文書の言語)になります。`en-GB`のような地域つきのタグもそのまま書かれ、`lang`が空または無ければ`/Lang`は書かれません。ヘッダー/フッターのHTMLは影響せず、本文のHTMLだけが決めます。
+
 > グレースケールの限界
 >
 > JPEG(`/DCTDecode`のパススルー)とCMYK画像はデコーダを持たないため、変換されずカラーのまま残ります。
