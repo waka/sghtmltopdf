@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+body { margin: 0; font-family: sans-serif; }
+h1 { font-weight: normal; }
+@page { @top-center { content: "STATIC HEADER"; } @bottom-center { content: "PAGE " counter(page); } }
+@page :first { @top-center { content: "FIRST PAGE"; } }
+</style></head><body><h1>First heading</h1><p>First body page.</p>
+<h1 style="break-before:page">Second heading</h1><p>Second body page.</p></body></html>

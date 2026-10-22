@@ -1641,7 +1641,7 @@ fn apply_margin_collapse(
 /// Find the gap resulting from collapsing two adjacent margins (CSS2.1 section 8.3.1).
 /// With both non-negative it is the larger; with both negative it is the smaller (the larger
 /// in absolute value); with mixed signs it is their plain sum (the largest positive plus the smallest negative).
-fn collapse_adjacent_margins(a: f32, b: f32) -> f32 {
+pub(crate) fn collapse_adjacent_margins(a: f32, b: f32) -> f32 {
     let positive = a.max(0.0).max(b.max(0.0));
     let negative = a.min(0.0).min(b.min(0.0));
     positive + negative

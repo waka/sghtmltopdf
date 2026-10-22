@@ -1,0 +1,14 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+h1, h2, th { font-weight: normal; }
+body { font-family: sans-serif; font-size: 14px; color: #243247; margin: 0; }
+h1 { color: #174d80; font-size: 24px; margin: 0 0 14px; }
+h2 { color: #397764; font-size: 19px; margin: 12px 0; }
+p { line-height: 1.4; margin: 10px 0; }
+section { padding: 12px; border: 2px solid #b7c9dd; }
+.new-page { break-before: page; }
+.label { background: #e5eff9; padding: 12px; }
+table { border-collapse: collapse; width: 100%; } td, th { padding: 8px; border: 1px solid #9caec2; }
+</style></head><body>
+<section><h1 id="introduction">01 Introduction</h1><p class="label">BODY PAGE ONE - this must follow every cover and TOC page.</p><p>Compare heading position, color, margins, and page numbering.</p><h2>Automatic destination</h2><p>This heading has no explicit ID. Its TOC link must still work.</p><p><a href="#conclusion">Jump to conclusion</a></p></section>
+<section class="new-page"><h1 id="details">02 Details</h1><p class="label">BODY PAGE TWO</p><h2 id="measurements">Measurements</h2><table><tr><th>Item</th><th>Value</th></tr><tr><td>North</td><td>123.45</td></tr><tr><td>South</td><td>678.90</td></tr></table><p>Explicit page breaks make visual differences easy to locate.</p></section>
+<section class="new-page"><h1 id="conclusion">03 Conclusion</h1><p class="label">BODY PAGE THREE</p><h2>Final checks</h2><p>Totals include TOC and body, but never covers or the page offset.</p><p><a href="#introduction">Back to introduction</a></p></section></body></html>

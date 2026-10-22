@@ -163,6 +163,10 @@ pub fn find_base_href(dom: &Dom) -> Option<String> {
 /// If the same name appears more than once, the first in document order wins
 /// (as the HTML spec requires).
 pub fn collect_anchor_targets(dom: &Dom) -> Vec<(NodeId, String)> {
+    collect_anchor_targets_in_subtree(dom, dom.document())
+}
+
+pub(crate) fn collect_anchor_targets_in_subtree(dom: &Dom, root: NodeId) -> Vec<(NodeId, String)> {
     fn walk(dom: &Dom, node: NodeId, out: &mut Vec<(NodeId, String)>) {
         if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
             let is_anchor_element = &*name.local == "a";
@@ -184,7 +188,7 @@ pub fn collect_anchor_targets(dom: &Dom) -> Vec<(NodeId, String)> {
         }
     }
     let mut out = Vec::new();
-    walk(dom, dom.document(), &mut out);
+    walk(dom, root, &mut out);
     out
 }
 

@@ -39,8 +39,8 @@ use crate::layout::{
     PageSettings, Rect, StreamingPaginator,
 };
 use crate::pdf::{
-    anchor_destination_name, ImageAssetCache, LinkSettings, PageOverlay, PdfOutputOptions,
-    PreparedImage, StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, ImageAssetCache, LinkSettings, PageOverlay, PageRole,
+    PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -64,8 +64,11 @@ pub enum Mode {
     /// parsed, then release it, so memory does not grow with the document.
     ///
     /// Features that need the whole document are rejected with
-    /// [`EngineError::UnsupportedInStreamingMode`]: `counter(pages)`, a `<style>` after
-    /// `<body>` has started, and the like.
+    /// [`EngineError::UnsupportedInStreamingMode`]: a `<style>` after
+    /// `<body>` has started, and the like. Total-dependent margin boxes and HTML
+    /// headers/footers are written at finalization using forward-referenced PDF forms.
+    /// A TOC retains heading metadata only; its pages are written last but ordered before
+    /// the body in the final page tree.
     Streaming,
 }
 
@@ -276,7 +279,7 @@ pub struct HeaderFooterHtml {
 pub struct HeaderFooterPlaceholders {
     /// Replaced with the current page number.
     pub page_token: String,
-    /// Replaced with the total number of pages. Not available in [`Mode::Streaming`].
+    /// Replaced with the total number of pages, including in [`Mode::Streaming`].
     pub total_pages_token: String,
 }
 
@@ -299,10 +302,12 @@ impl HeaderFooterHtml {
             })
     }
 
-    /// Whether it uses `[topage]` (the total page count). It cannot be determined under
-    /// `Mode::Streaming`, so it is an error there.
+    /// Whether it uses the total page count, requiring deferred overlays in streaming mode.
     #[doc(hidden)]
     pub fn uses_total_pages(&self) -> bool {
+        if self.placeholders.total_pages_token.is_empty() {
+            return false;
+        }
         [self.header.as_deref(), self.footer.as_deref()]
             .into_iter()
             .flatten()
@@ -520,15 +525,86 @@ pub struct TocHeading {
     pub anchor: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageNumberPlan {
+    toc_pages: usize,
+    body_pages: usize,
+    page_offset: usize,
+}
+
+impl PageNumberPlan {
+    fn new<E>(
+        cover_pages: usize,
+        toc_pages: usize,
+        body_pages: usize,
+        page_offset: usize,
+    ) -> Result<Self, EngineError<E>> {
+        let total =
+            checked_page_count_add::<E>(toc_pages, body_pages, "the total page count overflowed")?;
+        checked_page_count_add::<E>(cover_pages, total, "the physical page count overflowed")?;
+        Ok(Self {
+            toc_pages,
+            body_pages,
+            page_offset,
+        })
+    }
+
+    fn displayed_toc_page<E>(&self, toc_index: usize) -> Result<usize, EngineError<E>> {
+        checked_page_count_add::<E>(
+            checked_page_count_add::<E>(
+                self.page_offset,
+                toc_index,
+                "the TOC page number overflowed",
+            )?,
+            1,
+            "the TOC page number overflowed",
+        )
+    }
+
+    fn displayed_body_page<E>(&self, body_index: usize) -> Result<usize, EngineError<E>> {
+        checked_page_count_add::<E>(
+            checked_page_count_add::<E>(
+                self.page_offset,
+                checked_page_count_add::<E>(
+                    self.toc_pages,
+                    body_index,
+                    "the body page number overflowed",
+                )?,
+                "the body page number overflowed",
+            )?,
+            1,
+            "the body page number overflowed",
+        )
+    }
+
+    fn total_pages<E>(&self) -> Result<usize, EngineError<E>> {
+        checked_page_count_add::<E>(
+            self.toc_pages,
+            self.body_pages,
+            "the total page count overflowed",
+        )
+    }
+}
+
+fn checked_page_count_add<E>(
+    lhs: usize,
+    rhs: usize,
+    message: &'static str,
+) -> Result<usize, EngineError<E>> {
+    lhs.checked_add(rhs)
+        .ok_or(EngineError::PageNumberOverflow(message))
+}
+
 /// Pick out the `h1` to `h6` from the body's pages and collect their page numbers and anchor names.
 ///
 /// A heading with no `id` is given an automatic `__sgtoc_<serial>`, which is added to
 /// `anchor_names`.
-fn collect_headings(
+fn collect_headings<'a>(
     dom: &Dom,
-    pages: &[crate::layout::Page],
+    pages: impl IntoIterator<Item = &'a [LaidOutBox]>,
     anchor_names: &mut HashMap<NodeId, String>,
-) -> Vec<TocHeading> {
+    serial_start: usize,
+) -> Vec<(NodeId, TocHeading)> {
     fn heading_level(dom: &Dom, node: NodeId) -> Option<u8> {
         let NodeData::Element { name, .. } = &dom.node(node).data else {
             return None;
@@ -606,8 +682,8 @@ fn collect_headings(
 
     let mut found: Vec<(NodeId, u8, usize)> = Vec::new();
     let mut seen: Vec<NodeId> = Vec::new();
-    for (index, page) in pages.iter().enumerate() {
-        for b in &page.boxes {
+    for (index, boxes) in pages.into_iter().enumerate() {
+        for b in boxes {
             walk(dom, b, index, &mut seen, &mut found);
         }
     }
@@ -620,19 +696,22 @@ fn collect_headings(
                 Some(existing) => existing.clone(),
                 None => {
                     // A heading with no `id` is given an automatic destination name.
-                    let name = anchor_destination_name(&format!("__sgtoc_{i}"));
+                    let name = anchor_destination_name(&format!("__sgtoc_{}", serial_start + i));
                     anchor_names.insert(node, name.clone());
                     name
                 }
             };
             let mut title = String::new();
             text_of(dom, node, &mut title);
-            TocHeading {
-                level,
-                title: title.split_whitespace().collect::<Vec<_>>().join(" "),
-                body_page,
-                anchor,
-            }
+            (
+                node,
+                TocHeading {
+                    level,
+                    title: title.split_whitespace().collect::<Vec<_>>().join(" "),
+                    body_page,
+                    anchor,
+                },
+            )
         })
         .collect()
 }
@@ -651,30 +730,34 @@ fn render_standalone_document(
     paginate_document(&dom, &styles, fonts, settings)
 }
 
-/// Rebuild the table of contents' pages until the page count converges.
-///
-/// It returns (the TOC's pages, the TOC document's styles). The TOC is an independent
+/// The table of contents' own laid-out pages and style map. The TOC is an independent
 /// document, so drawing it needs its own style map.
-fn build_toc_pages(
+type TocPages = (Vec<crate::layout::Page>, HashMap<NodeId, Rc<ComputedStyle>>);
+
+/// Rebuild the table of contents' pages until the page count converges.
+fn build_toc_pages<E>(
     headings: &[TocHeading],
     toc: &TocSettings,
     page_offset: usize,
     fonts: &FontCollection,
     settings: &PageSettings,
-) -> (Vec<crate::layout::Page>, HashMap<NodeId, Rc<ComputedStyle>>) {
+) -> Result<TocPages, EngineError<E>> {
     const MAX_ROUNDS: usize = 3;
 
     let mut toc_page_count = 1;
-    let mut result = (Vec::new(), HashMap::new());
+    let mut result: TocPages = (Vec::new(), HashMap::new());
 
     for round in 0..MAX_ROUNDS {
+        let numbering = PageNumberPlan::new(0, toc_page_count, 0, page_offset)?;
         let numbered: Vec<TocHeading> = headings
             .iter()
-            .map(|h| TocHeading {
-                body_page: h.body_page + 1 + toc_page_count + page_offset,
-                ..h.clone()
+            .map(|h| {
+                Ok(TocHeading {
+                    body_page: numbering.displayed_body_page(h.body_page)?,
+                    ..h.clone()
+                })
             })
-            .collect();
+            .collect::<Result<_, EngineError<E>>>()?;
         let html = (toc.build_html)(&numbered);
 
         let dom = crate::html::parse(html.as_bytes());
@@ -688,7 +771,7 @@ fn build_toc_pages(
         toc_page_count = pages.len().max(1);
         result = (pages, styles);
         if converged {
-            return result;
+            return Ok(result);
         }
         if round + 1 == MAX_ROUNDS {
             eprintln!(
@@ -697,7 +780,55 @@ fn build_toc_pages(
             );
         }
     }
-    result
+    Ok(result)
+}
+
+fn record_streaming_headings<S: Sink>(
+    writer: &StreamingPdfWriter<S>,
+    page: &crate::layout::Page,
+    pending: &mut HashMap<NodeId, TocHeading>,
+    headings: &mut Vec<TocHeading>,
+) {
+    fn walk(
+        b: &LaidOutBox,
+        body_page: usize,
+        pending: &mut HashMap<NodeId, TocHeading>,
+        headings: &mut Vec<TocHeading>,
+    ) {
+        if let Some(mut heading) = b.node.and_then(|node| pending.remove(&node)) {
+            heading.body_page = body_page;
+            headings.push(heading);
+        }
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for child in children {
+                    walk(child, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Grid(grid) => {
+                for child in grid.rows.iter().flat_map(|row| &row.items) {
+                    walk(child, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Table(table) => {
+                if let Some(caption) = &table.caption {
+                    walk(caption, body_page, pending, headings);
+                }
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    walk(cell, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Inline(lines) => {
+                for atomic in lines.iter().flat_map(|line| &line.atomics) {
+                    walk(&atomic.content, body_page, pending, headings);
+                }
+            }
+            LaidOutContent::Image(_) => {}
+        }
+    }
+    for b in &page.boxes {
+        walk(b, writer.body_page_count(), pending, headings);
+    }
 }
 
 /// Load the fonts named explicitly with `--font`.
@@ -862,6 +993,8 @@ pub enum EngineError<E> {
     },
     /// Abandoned because [`EngineOptions::deadline`] passed.
     TimedOut,
+    /// The page-number arithmetic overflowed.
+    PageNumberOverflow(&'static str),
     /// Fetching an image, external CSS or the like failed under `--load-media-error-handling abort`.
     MediaLoad(String),
 }
@@ -889,6 +1022,7 @@ impl<E: std::fmt::Display> std::fmt::Display for EngineError<E> {
                  Split the document, or process it incrementally with --streaming"
             ),
             Self::TimedOut => write!(f, "the conversion exceeded the time limit"),
+            Self::PageNumberOverflow(msg) => write!(f, "{msg}"),
             Self::MediaLoad(msg) => write!(f, "failed to fetch a resource: {msg}"),
         }
     }
@@ -954,6 +1088,7 @@ struct StreamingState<S: Sink> {
     start_x: f32,
     /// The starting Y coordinate of the next top-level element (the accumulated height so far).
     cursor_y: f32,
+    previous_margin_bottom: Option<f32>,
     /// The page geometry (used to compute the overlay areas).
     page_settings: PageSettings,
     /// The layout result of a header/footer HTML that does not depend on the page number.
@@ -973,6 +1108,10 @@ struct StreamingState<S: Sink> {
     release_whole_subtree: bool,
     paginator: StreamingPaginator,
     writer: StreamingPdfWriter<S>,
+    page_offset: usize,
+    headings: Vec<TocHeading>,
+    pending_headings: HashMap<NodeId, TocHeading>,
+    heading_serial: usize,
     /// The cache memoising `<img>` fetch and decode results within the document.
     image_cache: ImageAssetCache,
 }
@@ -1167,29 +1306,6 @@ impl<S: Sink> Engine<S> {
             &root_properties,
         );
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
-        if rules_use_page_count(&page_rules) {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "counter(pages) in an @page margin box cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-        // `[topage]` in `--header-html`/`--footer-html` is unusable for the same reason.
-        if self.options.header_footer_html.uses_total_pages() {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "[topage] in --header-html/--footer-html cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-        // A table of contents cannot be built until the whole body has been paginated.
-        if self.options.toc.enabled {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "--toc cannot be used in streaming mode\n  \
-                 (a table of contents needs the body's page numbers).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
         // A backward-referencing selector always fails to match. It is not an error, but the
         // result changing silently is worth avoiding, so it is warned about.
         let unsafe_selectors = streaming_unsafe_selectors(&author);
@@ -1308,7 +1424,7 @@ impl<S: Sink> Engine<S> {
             .metadata
             .fill_title_from_document(find_document_title(&self.parser.dom()));
 
-        let writer = StreamingPdfWriter::with_options(
+        let mut writer = StreamingPdfWriter::with_options(
             &fonts,
             page_settings,
             sink,
@@ -1323,6 +1439,21 @@ impl<S: Sink> Engine<S> {
             output,
         )
         .map_err(EngineError::Io)?;
+        if let Some(html) = &self.options.cover_html {
+            writer.replace_anchor_names(HashMap::new());
+            for page in render_standalone_document(html, &fonts, &page_settings) {
+                check_deadline(self.options.deadline)?;
+                writer.set_next_page_role(PageRole::Cover);
+                writer.set_next_page_number(None);
+                writer
+                    .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, None)
+                    .map_err(EngineError::Io)?;
+            }
+        }
+        writer.replace_anchor_names(anchor_names);
+        writer.defer_page_overlays(
+            self.options.toc.enabled || self.options.header_footer_html.uses_total_pages(),
+        );
         let image_cache = ImageAssetCache::with_fetcher(
             ImageFetcher::new(base_dir.to_path_buf(), self.options.allow_remote_assets)
                 .with_base_href(base_href)
@@ -1353,6 +1484,7 @@ impl<S: Sink> Engine<S> {
             content_width: body_content_width,
             start_x,
             cursor_y: start_y,
+            previous_margin_bottom: None,
             page_settings,
             overlay_cache: OverlayCache::default(),
             warned_font_families: Vec::new(),
@@ -1360,6 +1492,10 @@ impl<S: Sink> Engine<S> {
             release_whole_subtree,
             paginator: StreamingPaginator::new(page_settings.content_height()),
             writer,
+            page_offset: self.options.page_offset,
+            headings: Vec::new(),
+            pending_headings: HashMap::new(),
+            heading_serial: 0,
             image_cache,
         })
     }
@@ -1426,6 +1562,15 @@ impl<S: Sink> Engine<S> {
             return Ok(());
         };
 
+        let style = state.styles.get(&node).cloned().unwrap_or_default();
+        let in_flow = style.float == crate::style::Float::None && !style.position.is_out_of_flow();
+        if in_flow {
+            if let Some(previous_bottom) = state.previous_margin_bottom {
+                let top = resolve_lpa_or_zero(style.margin_top, state.content_width);
+                state.cursor_y -= previous_bottom + top
+                    - crate::layout::collapse_adjacent_margins(previous_bottom, top);
+            }
+        }
         let laid_out = layout_document_from(
             &item_box,
             &state.styles,
@@ -1435,11 +1580,33 @@ impl<S: Sink> Engine<S> {
             state.cursor_y,
         );
         state.cursor_y += laid_out.layout.margin_box_height();
+        if in_flow {
+            // Keep the effective bottom margin after parent/child collapsing, just as
+            // the batch block-layout loop does between normal-flow siblings.
+            state.previous_margin_bottom = Some(laid_out.layout.margin.bottom);
+        }
 
         // Layout is already complete and this DOM subtree (its text content, attributes and
         // so on) is never read again, so it can be freed immediately without waiting for the
         // page to flush (the `ComputedStyle`s are held separately in `state.styles`).
 
+        let mut anchors: HashMap<NodeId, String> =
+            crate::html::collect_anchor_targets_in_subtree(&parser.dom(), node)
+                .into_iter()
+                .map(|(node, id)| (node, anchor_destination_name(&id)))
+                .collect();
+        if options.toc.enabled {
+            for (heading_node, heading) in collect_headings(
+                &parser.dom(),
+                [std::slice::from_ref(&laid_out)],
+                &mut anchors,
+                state.heading_serial,
+            ) {
+                state.heading_serial += 1;
+                state.pending_headings.insert(heading_node, heading);
+            }
+        }
+        state.writer.extend_anchor_names(anchors);
         release_processed(parser.dom_mut(), node, state.release_whole_subtree);
 
         // Where this top-level element itself carries no decoration (a background, borders or
@@ -1458,10 +1625,25 @@ impl<S: Sink> Engine<S> {
         let mut laid_out = laid_out;
         let pages = state.paginator.push_item(&mut laid_out);
         for page in &pages {
-            if !options.header_footer_html.is_empty() {
-                let page_number = state.writer.page_count() + 1;
-                // Under `Mode::Streaming` the total page count is unknown, so `[topage]` comes out empty.
-
+            record_streaming_headings(
+                &state.writer,
+                page,
+                &mut state.pending_headings,
+                &mut state.headings,
+            );
+            let page_number = checked_page_count_add::<S::Error>(
+                checked_page_count_add::<S::Error>(
+                    state.page_offset,
+                    state.writer.body_page_count(),
+                    "the body page number overflowed",
+                )?,
+                1,
+                "the body page number overflowed",
+            )?;
+            if !options.toc.enabled
+                && !options.header_footer_html.is_empty()
+                && !options.header_footer_html.uses_total_pages()
+            {
                 let overlays = build_page_overlays(
                     &options.header_footer_html,
                     &state.fonts,
@@ -1485,11 +1667,10 @@ impl<S: Sink> Engine<S> {
                 }
                 state.writer.set_page_overlays(overlays);
             }
+            state.writer.set_next_page_number(Some(page_number));
             state
                 .writer
-                // `Mode::Streaming` cannot know the total page count in principle, so it is
-                // always `None` (a use of `counter(pages)` has already been rejected in
-                // `init_streaming_state`).
+                // Total-dependent decorations are defined after the last page.
                 .write_page(
                     page,
                     &state.styles,
@@ -1545,6 +1726,9 @@ impl<S: Sink> Engine<S> {
                     image_cache,
                     page_settings,
                     mut overlay_cache,
+                    page_offset,
+                    mut headings,
+                    mut pending_headings,
                     ..
                 } = state;
                 if self.options.content.abort_on_media_error {
@@ -1553,8 +1737,20 @@ impl<S: Sink> Engine<S> {
                     }
                 }
                 for page in paginator.finish() {
-                    if !self.options.header_footer_html.is_empty() {
-                        let page_number = writer.page_count() + 1;
+                    record_streaming_headings(&writer, &page, &mut pending_headings, &mut headings);
+                    let page_number = checked_page_count_add::<S::Error>(
+                        checked_page_count_add::<S::Error>(
+                            page_offset,
+                            writer.body_page_count(),
+                            "the body page number overflowed",
+                        )?,
+                        1,
+                        "the body page number overflowed",
+                    )?;
+                    if !self.options.toc.enabled
+                        && !self.options.header_footer_html.is_empty()
+                        && !self.options.header_footer_html.uses_total_pages()
+                    {
                         let overlays = build_page_overlays(
                             &self.options.header_footer_html,
                             &fonts,
@@ -1577,10 +1773,81 @@ impl<S: Sink> Engine<S> {
                         }
                         writer.set_page_overlays(overlays);
                     }
+                    writer.set_next_page_number(Some(page_number));
                     writer
                         .write_page(&page, &styles, &background_images, &fonts, None)
                         .map_err(EngineError::Io)?;
                 }
+                if self.options.toc.enabled {
+                    check_deadline(self.options.deadline)?;
+                    let (toc_pages, toc_styles) = build_toc_pages(
+                        &headings,
+                        &self.options.toc,
+                        page_offset,
+                        &fonts,
+                        &page_settings,
+                    )?;
+                    let numbering = PageNumberPlan::new(
+                        0,
+                        toc_pages.len(),
+                        writer.body_page_count(),
+                        page_offset,
+                    )?;
+                    if writer.body_page_count() > 0 {
+                        numbering.displayed_body_page::<S::Error>(writer.body_page_count() - 1)?;
+                    }
+                    writer.shift_deferred_page_numbers(toc_pages.len()).ok_or(
+                        EngineError::PageNumberOverflow("the body page number overflowed"),
+                    )?;
+                    writer.defer_page_overlays(false);
+                    // Independent DOM node IDs must not alias the body's anchors.
+                    writer.replace_anchor_names(HashMap::new());
+                    for (index, page) in toc_pages.iter().enumerate() {
+                        check_deadline(self.options.deadline)?;
+                        writer.set_next_page_role(PageRole::Toc);
+                        writer.set_next_page_number(Some(numbering.displayed_toc_page(index)?));
+                        writer
+                            .write_page(
+                                page,
+                                &toc_styles,
+                                &HashMap::new(),
+                                &fonts,
+                                Some(numbering.total_pages()?),
+                            )
+                            .map_err(EngineError::Io)?;
+                    }
+                }
+                writer.write_deferred_decorations(&fonts, |page, total| {
+                    check_deadline(self.options.deadline)?;
+                    let overlays = if self.options.toc.enabled
+                        || self.options.header_footer_html.uses_total_pages()
+                    {
+                        build_page_overlays(
+                            &self.options.header_footer_html,
+                            &fonts,
+                            &page_settings,
+                            page,
+                            Some(total),
+                            &overlay_fetcher(),
+                            &DocumentImageCache::new(),
+                            &mut overlay_cache,
+                            self.options.content.load_images,
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    if self.options.content.abort_on_media_error {
+                        if let Some(err) = overlay_cache
+                            .images
+                            .as_ref()
+                            .and_then(ImageAssetCache::had_errors)
+                        {
+                            return Err(EngineError::MediaLoad(err));
+                        }
+                    }
+                    check_deadline(self.options.deadline)?;
+                    Ok(overlays)
+                })?;
                 writer.finish(&fonts).map_err(EngineError::Io)
             }
             None => {
@@ -1711,7 +1978,15 @@ impl<S: Sink> Engine<S> {
         // Collecting the headings for the table of contents. A heading with no `id` is given
         // an automatic destination name, which is added to `anchor_names`.
         let headings = if options.toc.enabled {
-            collect_headings(&dom, &pages, &mut anchor_names)
+            collect_headings(
+                &dom,
+                pages.iter().map(|page| page.boxes.as_slice()),
+                &mut anchor_names,
+                0,
+            )
+            .into_iter()
+            .map(|(_, heading)| heading)
+            .collect()
         } else {
             Vec::new()
         };
@@ -1731,16 +2006,23 @@ impl<S: Sink> Engine<S> {
                 options.page_offset,
                 &fonts,
                 &page_settings,
-            )
+            )?
         } else {
             (Vec::new(), HashMap::new())
         };
+
+        let numbering = PageNumberPlan::new(
+            cover_pages.len(),
+            toc_pages.len(),
+            pages.len(),
+            options.page_offset,
+        )?;
 
         // `counter(pages)` and HTML header/footer totals exclude the cover
         // and include the TOC and body pages.
         let total_pages =
             if rules_use_page_count(&page_rules) || options.header_footer_html.uses_total_pages() {
-                Some(toc_pages.len() + pages.len())
+                Some(numbering.total_pages()?)
             } else {
                 None
             };
@@ -1766,26 +2048,29 @@ impl<S: Sink> Engine<S> {
         let empty_styles: HashMap<NodeId, Rc<ComputedStyle>> = HashMap::new();
         let empty_images: HashMap<NodeId, Rc<PreparedImage>> = HashMap::new();
 
+        writer.replace_anchor_names(HashMap::new());
         for page in &cover_pages {
             // A page with no number: no margin boxes and no header/footer.
+            writer.set_next_page_role(PageRole::Cover);
             writer.set_next_page_number(None);
             writer
                 .write_page(page, &empty_styles, &empty_images, &fonts, total_pages)
                 .map_err(EngineError::Io)?;
         }
 
-        let mut page_number = 1 + options.page_offset;
-        for page in &toc_pages {
-            writer.set_next_page_number(Some(page_number));
+        for (index, page) in toc_pages.iter().enumerate() {
+            writer.set_next_page_role(PageRole::Toc);
+            writer.set_next_page_number(Some(numbering.displayed_toc_page(index)?));
             writer
                 .write_page(page, &toc_styles, &empty_images, &fonts, total_pages)
                 .map_err(EngineError::Io)?;
-            page_number += 1;
         }
 
+        writer.replace_anchor_names(anchor_names);
         let mut overlay_cache = OverlayCache::default();
-        for page in pages.iter() {
+        for (index, page) in pages.iter().enumerate() {
             check_deadline(options.deadline)?;
+            let page_number = numbering.displayed_body_page(index)?;
             if !options.header_footer_html.is_empty() {
                 let overlays = build_page_overlays(
                     &options.header_footer_html,
@@ -1809,11 +2094,11 @@ impl<S: Sink> Engine<S> {
                 }
                 writer.set_page_overlays(overlays);
             }
+            writer.set_next_page_role(PageRole::Body);
             writer.set_next_page_number(Some(page_number));
             writer
                 .write_page(page, &styles, &background_images, &fonts, total_pages)
                 .map_err(EngineError::Io)?;
-            page_number += 1;
         }
 
         if options.content.abort_on_media_error {
@@ -1977,7 +2262,7 @@ mod tests {
         // leave 200 elements' worth (over 400 entries) in `styles`. Freeing them as each page
         // is flushed keeps it to roughly the most recent unflushed page's worth (a few dozen entries).
 
-        let mut html_src = String::from("<style>.item { height: 100px; margin: 0; }</style><body>");
+        let mut html_src = String::from("<style>@page { @bottom-center { content: counter(pages); } } .item { height: 100px; margin: 0; }</style><body>");
         for i in 0..200 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
         }
@@ -2342,21 +2627,263 @@ mod tests {
     }
 
     #[test]
-    fn counter_pages_in_a_margin_box_is_rejected_in_streaming_mode() {
+    fn counter_pages_in_a_margin_box_is_supported_in_streaming_mode() {
         let options = EngineOptions {
             mode: Mode::Streaming,
             fonts: vec![font_spec()],
             ..EngineOptions::default()
         };
         let mut engine = Engine::new(options, MemorySink::new());
-        match engine.feed(
-            b"<html><head><style>\
+        engine
+            .feed(
+                b"<html><head><style>\
                 @page { @bottom-center { content: counter(pages); } }\
               </style></head><body><p>x</p></body></html>",
-        ) {
-            Err(EngineError::UnsupportedInStreamingMode(_)) => {}
-            other => panic!("expected UnsupportedInStreamingMode, got {other:?}"),
+            )
+            .unwrap();
+        let bytes = engine.finish().unwrap();
+        let decompressed = decompressed_stream_bytes(&bytes);
+        assert!(count_occurrences(&decompressed, b"<0031>") > 0);
+        assert!(count_occurrences(&bytes, b"/Subtype /Form") > 0);
+    }
+
+    #[test]
+    fn streaming_collapses_adjacent_top_level_margins() {
+        for (bottom, top, gap) in [(10, 10, 10), (20, 10, 20), (20, -10, 10), (-20, -10, -20)] {
+            let mut engine = Engine::new(
+                EngineOptions {
+                    mode: Mode::Streaming,
+                    fonts: vec![font_spec()],
+                    disable_system_fonts: true,
+                    ..EngineOptions::default()
+                },
+                MemorySink::new(),
+            );
+            let html = format!("<style>body {{ margin:0; padding:1px; }} div {{ height:40px; }} \
+                #one {{ margin:0 0 {bottom}px; }} #two {{ margin:{top}px 0 0; }}</style>\
+                <body><div id='one'></div><span style='display:none'></span><div id='two'></div><p>pending</p>");
+            engine.feed(html.as_bytes()).unwrap();
+            let state = engine.streaming.as_ref().unwrap();
+            assert_eq!(
+                state.cursor_y,
+                (81 + gap) as f32,
+                "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
+            );
         }
+    }
+
+    #[test]
+    fn streaming_toc_preserves_css_margin_boxes_without_totals() {
+        for content in ["'X'", "counter(page)"] {
+            let html = format!(
+                "<style>@page {{ @bottom-center {{ content: {content}; }} }}</style>\
+                 <h1>Heading</h1><p>Body</p>"
+            );
+            let mut outputs = Vec::new();
+            for mode in [Mode::Batch, Mode::Streaming] {
+                let mut options = EngineOptions {
+                    mode,
+                    fonts: vec![font_spec()],
+                    disable_system_fonts: true,
+                    toc: TocSettings {
+                        enabled: true,
+                        build_html: Rc::new(|_| "<p>Contents</p>".into()),
+                        ..TocSettings::default()
+                    },
+                    ..EngineOptions::default()
+                };
+                options.output.compress = false;
+                let mut engine = Engine::new(options, MemorySink::new());
+                engine.feed(html.as_bytes()).unwrap();
+                outputs.push(engine.finish().unwrap());
+            }
+            assert_eq!(
+                count_occurrences(&outputs[1], b" TJ\n"),
+                count_occurrences(&outputs[0], b" TJ\n"),
+                "deferred body margin box must match batch text drawing: {content}"
+            );
+            assert_eq!(count_occurrences(&outputs[1], b" TJ\n"), 5);
+        }
+    }
+
+    #[test]
+    fn streaming_toc_keeps_duplicate_ids_as_separate_headings() {
+        for separate_pages in [false, true] {
+            let captured = Rc::new(std::cell::RefCell::new(Vec::new()));
+            let copy = captured.clone();
+            let options = EngineOptions {
+                mode: Mode::Streaming,
+                fonts: vec![font_spec()],
+                disable_system_fonts: true,
+                toc: TocSettings {
+                    enabled: true,
+                    build_html: Rc::new(move |headings| {
+                        *copy.borrow_mut() = headings.to_vec();
+                        "<p>Contents</p>".into()
+                    }),
+                    ..TocSettings::default()
+                },
+                ..EngineOptions::default()
+            };
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(b"<body><h1 id='x'>A</h1>").unwrap();
+            let break_style = if separate_pages {
+                "break-before:page"
+            } else {
+                ""
+            };
+            engine
+                .feed(format!("<h1 id='x' style='{break_style}'>B</h1><h1>C</h1>").as_bytes())
+                .unwrap();
+            let bytes = engine.finish().unwrap();
+            let headings = captured.borrow();
+            assert_eq!(
+                headings
+                    .iter()
+                    .map(|h| (h.title.as_str(), h.body_page))
+                    .collect::<Vec<_>>(),
+                vec![
+                    ("A", 2),
+                    ("B", if separate_pages { 3 } else { 2 }),
+                    ("C", if separate_pages { 3 } else { 2 })
+                ]
+            );
+            assert_eq!(headings[0].anchor, headings[1].anchor);
+            let text = String::from_utf8_lossy(&bytes);
+            let kids = text
+                .split("/Kids [")
+                .nth(1)
+                .unwrap()
+                .split(']')
+                .next()
+                .unwrap();
+            let body_page_id = kids.split_whitespace().nth(3).unwrap();
+            assert!(
+                text.contains(&format!(
+                    "/{} [{} 0 R /XYZ",
+                    headings[0].anchor, body_page_id
+                )),
+                "duplicate destinations must still resolve to the first heading"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_toc_keeps_body_append_only_and_reorders_page_references() {
+        struct ObservedSink(Rc<std::cell::RefCell<Vec<u8>>>);
+        impl Sink for ObservedSink {
+            type Output = Vec<u8>;
+            type Error = std::io::Error;
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+                self.0.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            fn finish(self) -> Result<Self::Output, Self::Error> {
+                Ok(self.0.borrow().clone())
+            }
+        }
+        let observed = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let captured = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let copy = captured.clone();
+        let mut options = EngineOptions {
+            mode: Mode::Streaming,
+            fonts: vec![font_spec()],
+            page_offset: 10,
+            cover_html: Some("<p>cover</p><p style='break-before:page'>cover two</p>".into()),
+            toc: TocSettings {
+                enabled: true,
+                build_html: Rc::new(move |headings| {
+                    *copy.borrow_mut() = headings.to_vec();
+                    "<p>contents</p><p style='break-before:page'>contents two</p>".into()
+                }),
+                ..TocSettings::default()
+            },
+            ..EngineOptions::default()
+        };
+        options.output.compress = false;
+        let mut engine = Engine::new(options, ObservedSink(observed.clone()));
+        engine
+            .feed(b"<html><body><h1 id='first'>First</h1><p>body</p>")
+            .unwrap();
+        engine.feed(b"<h2 style='break-before:page'>Second</h2><p>body two</p><p style='break-before:page'>last</p><p>end</p>").unwrap();
+        let prefix = observed.borrow().clone();
+        assert!(
+            count_occurrences(&prefix, b"/MediaBox") > 2,
+            "body pages must be emitted before finish"
+        );
+        let bytes = engine.finish().unwrap();
+        assert!(bytes.starts_with(&prefix));
+        let headings = captured.borrow();
+        assert_eq!(
+            headings
+                .iter()
+                .map(|h| (h.title.as_str(), h.body_page))
+                .collect::<Vec<_>>(),
+            vec![("First", 13), ("Second", 14)]
+        );
+        assert_ne!(headings[0].anchor, headings[1].anchor);
+        let text = String::from_utf8_lossy(&bytes);
+        let kids = text
+            .split("/Kids [")
+            .nth(1)
+            .unwrap()
+            .split(']')
+            .next()
+            .unwrap();
+        let ids: Vec<usize> = kids
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .chunks(3)
+            .map(|parts| parts[0].parse().unwrap())
+            .collect();
+        assert_eq!(ids.len(), 7);
+        assert!(
+            ids[2] > ids[4],
+            "TOC objects are written late but precede body in /Kids"
+        );
+        for (heading, page_id) in headings.iter().zip(&ids[4..]) {
+            assert!(
+                text.contains(&format!("/{} [{} 0 R /XYZ", heading.anchor, page_id)),
+                "heading destinations must resolve to body pages, not cover/TOC DOM IDs"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_deferred_media_error_aborts_before_writing_any_decoration() {
+        struct ObservedSink(Rc<std::cell::RefCell<Vec<u8>>>);
+        impl Sink for ObservedSink {
+            type Output = ();
+            type Error = std::io::Error;
+            fn write(&mut self, bytes: &[u8]) -> Result<(), Self::Error> {
+                self.0.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
+            fn finish(self) -> Result<(), Self::Error> {
+                Ok(())
+            }
+        }
+        let bytes = Rc::new(std::cell::RefCell::new(Vec::new()));
+        let mut options = EngineOptions {
+            mode: Mode::Streaming,
+            fonts: vec![font_spec()],
+            header_footer_html: HeaderFooterHtml {
+                footer: Some("<p>[topage]<img src=\"data:image/png;base64,invalid\"></p>".into()),
+                placeholders: HeaderFooterPlaceholders {
+                    page_token: "[page]".into(),
+                    total_pages_token: "[topage]".into(),
+                },
+                ..HeaderFooterHtml::default()
+            },
+            ..EngineOptions::default()
+        };
+        options.content.abort_on_media_error = true;
+        let mut engine = Engine::new(options, ObservedSink(bytes.clone()));
+        engine.feed(b"<p>first</p><p style=\"break-before:page\">second</p><p style=\"break-before:page\">third</p>").unwrap();
+        assert!(matches!(engine.finish(), Err(EngineError::MediaLoad(_))));
+        let bytes = bytes.borrow();
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 3);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Form"), 0);
     }
 
     #[test]
