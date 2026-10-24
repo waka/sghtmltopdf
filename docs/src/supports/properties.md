@@ -128,7 +128,7 @@
 | プロパティ | 対応 | 備考 |
 | - | - | - |
 | `table-layout` | ✅ | `auto`/`fixed`。`auto`ではセル内容の自然幅を測って列幅を決める(ネストしたテーブル・flexの自然幅測定のみ非対応で0扱い) |
-| `border-collapse` | ⚠️ | `separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。継承プロパティ |
+| `border-collapse` | ⚠️ | `separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。`collapse`では`<tr>`と`<thead>`/`<tbody>`/`<tfoot>`の枠線も統合して描き、セルの足りない行でも表の幅いっぱいに引く。行の間には、セル自身の枠線で足りない分だけ枠線の幅をとる。継承プロパティ |
 | `border-spacing` | ✅ | `<length>{1,2}`。`border-collapse: collapse`時は0として扱う。継承プロパティ |
 | `caption-side` | ⚠️ | `top`/`bottom`。縦書き向けの`left`/`right`は非対応 |
 | `empty-cells` | ✅ | `show`/`hide`。`border-collapse: separate`でのみ意味を持つ。継承プロパティ |

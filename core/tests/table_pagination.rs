@@ -393,3 +393,100 @@ fn rows_on_page(page: &sghtmltopdf::layout::Page) -> usize {
     }
     page.boxes.iter().map(count).sum()
 }
+
+/// Paginate `html_src` with `css`, returning for each page the table fragments' rows as
+/// `(cells top, cells bottom)` and the top of the `<p>` on that page, if any.
+#[allow(clippy::type_complexity)]
+fn row_extents_per_page(html_src: &str, css: &str) -> Vec<(Vec<(f32, f32)>, Option<f32>)> {
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &PageSettings::default());
+
+    fn walk(
+        b: &sghtmltopdf::layout::LaidOutBox,
+        rows: &mut Vec<(f32, f32)>,
+        paragraph: &mut Option<f32>,
+    ) {
+        match &b.content {
+            LaidOutContent::Table(table) => {
+                for row in &table.rows {
+                    let boxes = row.cells.iter().map(|c| c.layout.border_box());
+                    let top = boxes.clone().map(|r| r.y).fold(f32::MAX, f32::min);
+                    let bottom = boxes.map(|r| r.y + r.height).fold(f32::MIN, f32::max);
+                    rows.push((top, bottom));
+                }
+            }
+            LaidOutContent::Inline(_) if paragraph.is_none() => {
+                *paragraph = Some(b.layout.border_box().y);
+            }
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                for c in children {
+                    walk(c, rows, paragraph);
+                }
+            }
+            _ => {}
+        }
+    }
+    pages
+        .iter()
+        .map(|page| {
+            let (mut rows, mut paragraph) = (Vec::new(), None);
+            for b in &page.boxes {
+                walk(b, &mut rows, &mut paragraph);
+            }
+            (rows, paragraph)
+        })
+        .collect()
+}
+
+fn collapsed_table_with_head(row_count: usize) -> String {
+    let rows: String = (0..row_count)
+        .map(|i| format!("<tr><td>{i}</td></tr>"))
+        .collect();
+    format!("<table><thead><tr><th>No</th></tr></thead><tbody>{rows}</tbody></table>")
+}
+
+const COLLAPSED_CSS: &str =
+    "body { margin: 0 } table { border-collapse: collapse } td, th { height: 20px; padding: 0 }";
+
+#[test]
+fn a_repeated_head_keeps_the_space_of_its_collapsed_bottom_border() {
+    let css = format!("{COLLAPSED_CSS} thead {{ border-bottom: 6px solid red }}");
+    let pages = row_extents_per_page(&collapsed_table_with_head(80), &css);
+    assert!(pages.len() >= 2, "80 rows must not fit on one page");
+    // Each page starts with the head row (repeated from the second page on).
+    for (i, (rows, _)) in pages.iter().enumerate() {
+        let ((_, head_bottom), (body_top, _)) = (rows[0], rows[1]);
+        assert!(
+            (body_top - head_bottom - 6.0).abs() < 0.01,
+            "page {i}: the first body row starts {} below the head",
+            body_top - head_bottom
+        );
+    }
+}
+
+#[test]
+fn a_split_table_keeps_the_space_of_its_collapsed_borders_at_both_ends() {
+    let html_src = format!("{}<p>after</p>", collapsed_table_with_head(80));
+    let css = format!(
+        "{COLLAPSED_CSS} thead {{ border-top: 4px solid }} tbody {{ border-bottom: 6px solid red }} \
+         p {{ margin: 0; background: blue }}"
+    );
+    let pages = row_extents_per_page(&html_src, &css);
+    assert!(pages.len() >= 2, "80 rows must not fit on one page");
+
+    let (first_rows, _) = &pages[0];
+    assert!(
+        (first_rows[0].0 - 4.0).abs() < 0.01,
+        "the first row starts at {} rather than below the table's top border",
+        first_rows[0].0
+    );
+    let (last_rows, paragraph) = pages.last().unwrap();
+    let last_bottom = last_rows.last().unwrap().1;
+    let paragraph = paragraph.expect("the paragraph follows the table on its last page");
+    assert!(
+        (paragraph - last_bottom - 6.0).abs() < 0.01,
+        "the paragraph starts {} below the last row",
+        paragraph - last_bottom
+    );
+}

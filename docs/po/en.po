@@ -5554,12 +5554,9 @@ msgstr "`border-collapse`"
 
 #: src/supports/properties.md:131
 msgid ""
-"`separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2"
-"の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。継承プロパティ"
+"`separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。`collapse`では`<tr>`と`<thead>`/`<tbody>`/`<tfoot>`の枠線も統合して描き、セルの足りない行でも表の幅いっぱいに引く。行の間には、セル自身の枠線で足りない分だけ枠線の幅をとる。継承プロパティ"
 msgstr ""
-"`separate` and `collapse`. `collapse` merges the borders visually only, "
-"simplifying the conflict resolution of CSS 2.1 §17.6.2 to \"the thicker one "
-"wins, and at equal width the style order decides\". Inherited"
+"`separate` and `collapse`. `collapse` merges the borders visually only, simplifying the conflict resolution of CSS 2.1 §17.6.2 to \"the thicker one wins, and at equal width the style order decides\". Under `collapse` the borders of `<tr>` and of `<thead>`/`<tbody>`/`<tfoot>` are merged in too, and run across the whole table width even past a row with fewer cells; between the rows they take the width the cells' own borders do not already take. Inherited"
 
 #: src/supports/properties.md:132
 msgid "`border-spacing`"

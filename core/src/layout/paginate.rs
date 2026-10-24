@@ -1501,7 +1501,10 @@ fn place_table(
         .filter(|row| row.section == TableSection::Head)
         .cloned()
         .collect();
-    let head_top = head_rows.iter().map(table_row_top).fold(f32::MAX, f32::min);
+    let head_top = head_rows
+        .iter()
+        .map(|row| table_row_top(row) - row.gap_above)
+        .fold(f32::MAX, f32::min);
     let head_bottom = head_rows
         .iter()
         .map(table_row_bottom)
@@ -1511,6 +1514,15 @@ fn place_table(
     } else {
         head_bottom - head_top
     };
+    // The space below the head's last row (where its collapsed bottom border goes), taken
+    // from the row that follows it in the whole table.
+    let head_gap_below = table
+        .rows
+        .iter()
+        .position(|row| row.section != TableSection::Head)
+        .map_or(table.trailing_gap, |i| table.rows[i].gap_above);
+    let row_count = table.rows.len();
+    let trailing_gap = table.trailing_gap;
     let repeat_head = !head_rows.is_empty() && head_height < page_height;
     // A `caption-side: top` caption goes on the first fragment.
     let caption_is_top = table.caption_side == CaptionSide::Top;
@@ -1534,11 +1546,17 @@ fn place_table(
 
     for (index, mut row) in std::mem::take(&mut table.rows).into_iter().enumerate() {
         let row_top = table_row_top(&row);
-        let row_bottom = table_row_bottom(&row);
+        // The last row keeps the space below it for the table's closing collapsed border.
+        let row_bottom = table_row_bottom(&row)
+            + if index + 1 == row_count {
+                trailing_gap
+            } else {
+                0.0
+            };
         let extra_above = if index == 0 { caption_height } else { 0.0 };
 
         if pending.is_empty() {
-            let (top, s) = start_new_fragment(cursor, row_top, extra_above);
+            let (top, s) = start_new_fragment(cursor, row_top - row.gap_above, extra_above);
             fragment_top = top;
             shift = s;
 
@@ -1551,7 +1569,7 @@ fn place_table(
                 if is_first_fragment {
                     *cursor += top_extra;
                 }
-                let (top, s) = start_new_fragment(cursor, row_top, extra_above);
+                let (top, s) = start_new_fragment(cursor, row_top - row.gap_above, extra_above);
                 fragment_top = top;
                 shift = s;
             }
@@ -1578,14 +1596,18 @@ fn place_table(
             fragment_top = *cursor;
             // Copy the heading rows to the top of the new page (the original rows are placed
             // on the first page as-is, so copies only appear from the second page on).
+            // Below a repeated head the row keeps the wider of the head's gap and its own: the
+            // border drawn there merges the head's bottom with this row's top.
+            let mut gap_above = row.gap_above;
             if repeat_head {
                 let head_shift = head_top - *cursor;
                 for head_row in &head_rows {
                     pending.push(shift_table_row_y(head_row, head_shift));
                 }
                 *cursor += head_height;
+                gap_above = gap_above.max(head_gap_below);
             }
-            shift = row_top - *cursor;
+            shift = row_top - gap_above - *cursor;
         }
 
         shift_table_row_y_in_place(&mut row, shift);
@@ -1652,6 +1674,7 @@ fn flush_table_fragment(
             caption: caption.take().map(Box::new),
             caption_side: CaptionSide::Top,
             rows: std::mem::take(rows),
+            trailing_gap: 0.0,
         }),
         marker: None,
         link: container.link.clone(),
@@ -1689,6 +1712,7 @@ fn shift_table_row_y(row: &LaidOutTableRow, shift: f32) -> LaidOutTableRow {
         cells: row.cells.iter().map(|c| shift_box_y(c, shift)).collect(),
         section: row.section,
         group: row.group,
+        gap_above: row.gap_above,
     }
 }
 

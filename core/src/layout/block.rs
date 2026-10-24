@@ -103,6 +103,9 @@ pub struct LaidOutTable {
     pub caption: Option<Box<LaidOutBox>>,
     pub caption_side: CaptionSide,
     pub rows: Vec<LaidOutTableRow>,
+    /// The space below the last row's cells that the layout keeps for the collapsed row and
+    /// row-group borders there (see [`LaidOutTableRow::gap_above`]).
+    pub trailing_gap: f32,
 }
 
 /// One laid-out table row.
@@ -118,6 +121,10 @@ pub struct LaidOutTableRow {
     /// The row group element (`<thead>`/`<tbody>`/`<tfoot>`) the row sits in. `None` for a
     /// row placed directly in the table.
     pub group: Option<NodeId>,
+    /// The space above the row's cells that the layout keeps for the collapsed row and
+    /// row-group borders meeting there (0 in the separate model). `paginate` keeps it too, so a
+    /// split table takes the same space as a whole one.
+    pub gap_above: f32,
 }
 
 /// One absolutely positioned box.
@@ -850,6 +857,7 @@ fn layout_box_impl(
                 style.table_layout,
                 h_spacing,
                 v_spacing,
+                style.border_collapse == BorderCollapse::Collapse,
                 content_x,
                 content_y,
                 pos,

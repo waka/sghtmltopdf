@@ -43,7 +43,9 @@ const UNCONSTRAINED_WIDTH: f32 = f32::MAX / 4.0;
 /// overall height. `table_layout` is the computed `table-layout` of the `display: table`
 /// element itself (a non-inherited property, read from that element's own style by the
 /// caller). `h_spacing`/`v_spacing` are the resolved `border-spacing` values (the caller
-/// collapses them to 0 under `border-collapse: collapse`).
+/// collapses them to 0 under `border-collapse: collapse`). `collapse` is whether the table
+/// uses `border-collapse: collapse`, under which row and row-group borders take space between
+/// the rows (see [`collapsed_row_gaps`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn layout_table(
     table: &TableBox,
@@ -53,6 +55,7 @@ pub(super) fn layout_table(
     table_layout: TableLayout,
     h_spacing: f32,
     v_spacing: f32,
+    collapse: bool,
     x: f32,
     y: f32,
     pos: &mut PosCtx,
@@ -106,6 +109,7 @@ pub(super) fn layout_table(
                 caption,
                 caption_side: table.caption_side,
                 rows: Vec::new(),
+                trailing_gap: 0.0,
             },
             total_height,
             containing_width,
@@ -246,10 +250,20 @@ pub(super) fn layout_table(
     }
 
     // Pass 4: find each row's absolute Y position (cumulative from the start of the row group, `v_spacing` before and after included).
+    // `row_y[r]` is where row `r - 1` ends (after its `v_spacing`) and `row_top[r]` where row
+    // `r` starts; they differ by the space a collapsed row or row-group border takes there.
+    let row_gaps = if collapse {
+        collapsed_row_gaps(table, &grid, styles)
+    } else {
+        vec![0.0; row_count + 1]
+    };
     let mut row_y = vec![0.0f32; row_count + 1];
+    let mut row_top = vec![0.0f32; row_count + 1];
     row_y[0] = rows_start_y;
+    row_top[0] = rows_start_y + row_gaps[0];
     for r in 0..row_count {
-        row_y[r + 1] = row_y[r] + row_natural[r] + v_spacing;
+        row_y[r + 1] = row_top[r] + row_natural[r] + v_spacing;
+        row_top[r + 1] = row_y[r + 1] + row_gaps[r + 1];
     }
 
     // Pass 5: translate each cell from its provisional position (y=0) to its real row
@@ -257,12 +271,17 @@ pub(super) fn layout_table(
     // distributed is decided by the computed `vertical-align` (four cases,
     // top/middle/bottom/baseline, CSS2.1 17.5.3).
     let mut laid_rows = Vec::with_capacity(table.rows.len());
-    for (row, (row_cells, laid_row)) in table.rows.iter().zip(grid.iter().zip(laid_grid)) {
+    for (r, (row, (row_cells, laid_row))) in table
+        .rows
+        .iter()
+        .zip(grid.iter().zip(laid_grid))
+        .enumerate()
+    {
         let mut laid_cells: Vec<LaidOutBox> = row_cells
             .iter()
             .zip(laid_row)
             .map(|(gc, mut laid_cell)| {
-                shift_box_y_in_place(&mut laid_cell, -row_y[gc.row_index]);
+                shift_box_y_in_place(&mut laid_cell, -row_top[gc.row_index]);
                 laid_cell
             })
             .collect();
@@ -280,7 +299,7 @@ pub(super) fn layout_table(
         for (cell, gc) in laid_cells.iter_mut().zip(row_cells.iter()) {
             let span_end = (gc.row_index + gc.cell.rowspan).min(row_count);
             let final_height = if span_end > gc.row_index {
-                row_y[span_end] - row_y[gc.row_index] - v_spacing
+                row_y[span_end] - row_top[gc.row_index] - v_spacing
             } else {
                 0.0
             };
@@ -319,10 +338,11 @@ pub(super) fn layout_table(
             cells: laid_cells,
             section: row.section,
             group: row.group,
+            gap_above: row_gaps[r],
         });
     }
 
-    let rows_height = row_y[row_count] - rows_block_start;
+    let rows_height = row_top[row_count] - rows_block_start;
     let total_height = caption_height + rows_height;
 
     let final_caption = match (laid_caption, caption_is_top) {
@@ -340,12 +360,62 @@ pub(super) fn layout_table(
             caption: final_caption,
             caption_side: table.caption_side,
             rows: laid_rows,
+            trailing_gap: row_gaps[row_count],
         },
         total_height,
         // The columns can add up to more than the width offered (min-content floors), in which
         // case the table is wider than its box.
         containing_width.max(col_x[column_count]),
     )
+}
+
+/// Under `border-collapse: collapse`, the extra space each row boundary takes for the row and
+/// row-group borders meeting there: `gaps[b]` sits above row `b` (`gaps[row_count]` below the
+/// last row). A browser gives a collapsed border its width between the rows; the cells'
+/// own borders already take theirs inside the cells (the layout here is that of the separate
+/// model), so only what the row and group borders need beyond those is added.
+fn collapsed_row_gaps(
+    table: &TableBox,
+    grid: &[Vec<GridCell<'_>>],
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+) -> Vec<f32> {
+    let rows = &table.rows;
+    let row_count = rows.len();
+    let style_of = |node: Option<NodeId>| node.and_then(|n| styles.get(&n));
+    let mut row_widths = vec![0.0f32; row_count + 1];
+    for (b, row_width) in row_widths.iter_mut().enumerate() {
+        if let Some(upper) = b.checked_sub(1).map(|r| &rows[r]) {
+            let last_in_group = rows.get(b).is_none_or(|next| next.group != upper.group);
+            let groups = style_of(upper.group).filter(|_| last_in_group);
+            for s in style_of(upper.node).into_iter().chain(groups) {
+                *row_width = row_width.max(resolve_border(s).bottom);
+            }
+        }
+        if let Some(lower) = rows.get(b) {
+            let first_in_group = b == 0 || rows[b - 1].group != lower.group;
+            let groups = style_of(lower.group).filter(|_| first_in_group);
+            for s in style_of(lower.node).into_iter().chain(groups) {
+                *row_width = row_width.max(resolve_border(s).top);
+            }
+        }
+    }
+    if row_widths.iter().all(|&w| w <= 0.0) {
+        return row_widths;
+    }
+    // Collected in one pass over the cells rather than per boundary, which on a long table
+    // with a border on every row was quadratic.
+    let mut cells_widths = vec![0.0f32; row_count + 1];
+    for gc in grid.iter().flatten() {
+        let border = resolve_border(&box_style(&gc.cell.content, styles));
+        let end = (gc.row_index + gc.cell.rowspan).min(row_count);
+        cells_widths[end] = cells_widths[end].max(border.bottom);
+        cells_widths[gc.row_index] = cells_widths[gc.row_index].max(border.top);
+    }
+    row_widths
+        .iter()
+        .zip(&cells_widths)
+        .map(|(row_width, cells_width)| (row_width - cells_width).max(0.0))
+        .collect()
 }
 
 /// The computed `vertical-align` of the cell (`display: table-cell`) itself.
@@ -1386,6 +1456,68 @@ mod tests {
             "table height should include leading/trailing spacing: {}",
             table.layout.content.height
         );
+    }
+
+    #[test]
+    fn collapsed_row_and_row_group_borders_take_space_between_the_rows() {
+        // A browser gives a collapsed row or row-group border its width between the rows.
+        let html_src = r#"<table>
+            <tbody><tr class="b"><td>a</td></tr><tr><td>b</td></tr></tbody>
+            <tbody class="g"><tr><td>c</td></tr></tbody>
+        </table>"#;
+        let base = "body { margin: 0; } table { border-collapse: collapse; } td { height: 20px; }";
+        let plain = row_tops(&layout_table_html(html_src, base, 700.0));
+        let bordered = row_tops(&layout_table_html(
+            html_src,
+            &format!(
+                "{base} tr.b {{ border-bottom: 4px solid }} tbody.g {{ border-top: 3px solid }}"
+            ),
+            700.0,
+        ));
+        assert!(
+            (bordered[0] - plain[0]).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+        assert!(
+            (bordered[1] - plain[1] - 4.0).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+        assert!(
+            (bordered[2] - plain[2] - 7.0).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+    }
+
+    #[test]
+    fn collapsed_row_border_takes_no_more_space_than_the_cells_borders_already_do() {
+        let html_src = r#"<table><tr class="b"><td>a</td></tr><tr><td>b</td></tr></table>"#;
+        let base = "body { margin: 0; } table { border-collapse: collapse; } td { height: 20px; }";
+        let cells = row_tops(&layout_table_html(
+            html_src,
+            &format!("{base} td {{ border-bottom: 4px solid }}"),
+            700.0,
+        ));
+        let both = row_tops(&layout_table_html(
+            html_src,
+            &format!(
+                "{base} td {{ border-bottom: 4px solid }} tr.b {{ border-bottom: 3px solid }}"
+            ),
+            700.0,
+        ));
+        assert_eq!(cells, both);
+    }
+
+    #[test]
+    fn separate_model_rows_ignore_row_borders_in_layout() {
+        let html_src = r#"<table><tr class="b"><td>a</td></tr><tr><td>b</td></tr></table>"#;
+        let base = "body { margin: 0; } table { border-spacing: 0; } td { height: 20px; }";
+        let plain = row_tops(&layout_table_html(html_src, base, 700.0));
+        let bordered = row_tops(&layout_table_html(
+            html_src,
+            &format!("{base} tr.b {{ border-bottom: 4px solid }}"),
+            700.0,
+        ));
+        assert_eq!(plain, bordered);
     }
 
     #[test]

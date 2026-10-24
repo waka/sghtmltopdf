@@ -4371,8 +4371,7 @@ msgstr ""
 
 #: src/supports/properties.md:131
 msgid ""
-"`separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 "
-"§17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。継承プロパティ"
+"`separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。`collapse`では`<tr>`と`<thead>`/`<tbody>`/`<tfoot>`の枠線も統合して描き、セルの足りない行でも表の幅いっぱいに引く。行の間には、セル自身の枠線で足りない分だけ枠線の幅をとる。継承プロパティ"
 msgstr ""
 
 #: src/supports/properties.md:132
