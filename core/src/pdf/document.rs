@@ -46,6 +46,7 @@ use std::rc::Rc;
 use pdf_writer::types::{ActionType, AnnotationType, LineCapStyle, TextRenderingMode};
 use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref, TextStr};
 
+use super::outline::{collect_bookmark_positions, write_outline, Bookmark, OutlineEntry};
 use crate::fonts::{Font, FontCollection};
 use crate::html::NodeId;
 use crate::img::resolve_against_base_href;
@@ -238,6 +239,10 @@ pub fn encode_pdf_with_options(
     // Named destinations (`/Dests`) are resolved once every page has been written.
     let mut destinations: Vec<(String, Ref, f32, f32)> = Vec::new();
     let mut link_annotations: Vec<(Ref, LinkArea)> = Vec::new();
+    let mut outline_entries: Vec<OutlineEntry> = Vec::new();
+    // The bookmarked elements not yet placed: an element split across pages is listed at the
+    // page it starts on.
+    let mut pending_bookmarks = links.bookmarks.clone();
     for page in pages {
         let page_id = alloc.next();
         let content_id = alloc.next();
@@ -306,6 +311,22 @@ pub fn encode_pdf_with_options(
         for (name, x, y) in page_anchors {
             if !destinations.iter().any(|(existing, ..)| *existing == name) {
                 destinations.push((name, page_id, x, y));
+            }
+        }
+        if !pending_bookmarks.is_empty() {
+            let mut page_bookmarks = Vec::new();
+            for b in &page.boxes {
+                collect_bookmark_positions(b, &pending_bookmarks, settings, &mut page_bookmarks);
+            }
+            for (node, x, y) in page_bookmarks {
+                if let Some(bookmark) = pending_bookmarks.remove(&node) {
+                    outline_entries.push(OutlineEntry {
+                        bookmark,
+                        page: page_id,
+                        x: output.to_pt(x),
+                        y: output.to_pt(y),
+                    });
+                }
             }
         }
         let page_annotation_ids: Vec<Ref> = page_links
@@ -398,6 +419,13 @@ pub fn encode_pdf_with_options(
         }
     }
 
+    let outline_id = write_outline(&outline_entries, &mut alloc).map(|(root, chunks)| {
+        for (_, chunk) in &chunks {
+            pdf.extend(chunk);
+        }
+        root
+    });
+
     pdf.pages(pages_tree_id)
         .kids(page_ids.iter().copied())
         .count(page_ids.len() as i32);
@@ -405,6 +433,9 @@ pub fn encode_pdf_with_options(
     catalog.pages(pages_tree_id);
     if let Some(dests_id) = dests_id {
         catalog.destinations(dests_id);
+    }
+    if let Some(outline_id) = outline_id {
+        catalog.outlines(outline_id);
     }
     catalog.finish();
 
@@ -890,6 +921,10 @@ pub struct LinkSettings {
     /// Whether to write a relative URL as-is rather than making it absolute with `<base href>`
     /// (`--keep-relative-links`).
     pub keep_relative: bool,
+    /// The outline entry of each element with a `bookmark-level`, keyed by its `NodeId`.
+    /// When empty, no `/Outlines` is written. It lives here because, like `anchor_names`, it
+    /// is the document-wide table the writers consult as pages come in.
+    pub bookmarks: HashMap<NodeId, Bookmark>,
 }
 
 impl Default for LinkSettings {
@@ -900,6 +935,7 @@ impl Default for LinkSettings {
             external: true,
             internal: true,
             keep_relative: false,
+            bookmarks: HashMap::new(),
         }
     }
 }
@@ -4147,7 +4183,7 @@ fn decoration_metrics(
 
 /// Convert a distance from the top of the page's content area (CSS Y, positive downwards)
 /// into a PDF user-space Y coordinate (a distance from the physical bottom of the page, positive upwards).
-fn to_pdf_y(settings: &PageSettings, y_from_content_top: f32) -> f32 {
+pub(super) fn to_pdf_y(settings: &PageSettings, y_from_content_top: f32) -> f32 {
     settings.size.height - settings.margin.top - y_from_content_top
 }
 

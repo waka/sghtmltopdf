@@ -23,16 +23,16 @@ use super::selector_impl::PseudoElement;
 use super::stylesheet::{parse_inline_style, Stylesheet};
 use super::values::{
     AlignContent, AlignItems, AlignSelf, AspectRatio, BackgroundAttachment, BackgroundPosition,
-    BackgroundRepeat, BackgroundSize, BorderCollapse, BorderStyle, BoxSizing, BreakBetween,
-    BreakInside, CaptionSide, Clear, Color, ContentPart, CornerRadius, Display, EmphasisPosition,
-    EmphasisStyle, EmptyCells, FlexBasis, FlexDirection, FlexWrap, Float, FontStyle, FontWeight,
-    GridArea, GridAutoFlow, GridLine, Hyphens, JustifyContent, Length, LengthPercentage,
-    LengthPercentageOrAuto, ListStylePosition, ListStyleType, MaxSize, ObjectFit, Overflow,
-    OverflowWrap, Position, QuotePair, SpecifiedCornerRadius, SpecifiedLength,
-    SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight,
-    SpecifiedMaxSize, SpecifiedTrackSize, TableLayout, TextAlign, TextDecorationLine, TextOverflow,
-    TextTransform, TrackList, TrackSize, TransformFunction, VerticalAlign, Visibility, WhiteSpace,
-    WordBreak, ZIndex,
+    BackgroundRepeat, BackgroundSize, BookmarkLabelPart, BookmarkState, BorderCollapse,
+    BorderStyle, BoxSizing, BreakBetween, BreakInside, CaptionSide, Clear, Color, ContentPart,
+    CornerRadius, Display, EmphasisPosition, EmphasisStyle, EmptyCells, FlexBasis, FlexDirection,
+    FlexWrap, Float, FontStyle, FontWeight, GridArea, GridAutoFlow, GridLine, Hyphens,
+    JustifyContent, Length, LengthPercentage, LengthPercentageOrAuto, ListStylePosition,
+    ListStyleType, MaxSize, ObjectFit, Overflow, OverflowWrap, Position, QuotePair,
+    SpecifiedCornerRadius, SpecifiedLength, SpecifiedLengthPercentage,
+    SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight, SpecifiedMaxSize, SpecifiedTrackSize,
+    TableLayout, TextAlign, TextDecorationLine, TextOverflow, TextTransform, TrackList, TrackSize,
+    TransformFunction, VerticalAlign, Visibility, WhiteSpace, WordBreak, ZIndex,
 };
 
 /// The computed value of `color`/`background-color`. Unlike at parse time, `currentcolor` is already resolved.
@@ -157,6 +157,13 @@ pub struct ComputedStyle {
     pub orphans: u32,
     /// Minimum number of lines that may be carried to the start of a page. Not inherited; initial value 2 (per the spec).
     pub widows: u32,
+    /// `bookmark-level`: the outline level of this element, or `None` for no outline entry.
+    /// Not inherited.
+    pub bookmark_level: Option<u32>,
+    /// `bookmark-label`. `None` is the initial value, `content(text)`. Not inherited.
+    pub bookmark_label: Option<Vec<BookmarkLabelPart>>,
+    /// `bookmark-state`. Not inherited.
+    pub bookmark_state: BookmarkState,
     /// `float`. Not inherited. Anything but `none` makes `display` compute to block-level
     /// (CSS2.1 9.7, applied in `compute_element_style` below).
     pub float: Float,
@@ -453,6 +460,9 @@ impl Default for ComputedStyle {
             break_inside: BreakInside::Auto,
             orphans: 2,
             widows: 2,
+            bookmark_level: None,
+            bookmark_label: None,
+            bookmark_state: BookmarkState::Open,
             float: Float::None,
             clear: Clear::None,
             position: Position::Static,
@@ -905,6 +915,9 @@ fn compute_element_style(
     let mut break_inside = None;
     let mut orphans = None;
     let mut widows = None;
+    let mut bookmark_level = None;
+    let mut bookmark_label = None;
+    let mut bookmark_state = None;
     let mut float = None;
     let mut clear = None;
     let mut position = None;
@@ -1114,6 +1127,11 @@ fn compute_element_style(
                 PropertyDeclaration::BreakInside(v) => break_inside = sel(reset, *v),
                 PropertyDeclaration::Orphans(v) => orphans = sel(reset, *v),
                 PropertyDeclaration::Widows(v) => widows = sel(reset, *v),
+                PropertyDeclaration::BookmarkLevel(v) => bookmark_level = sel(reset, *v),
+                PropertyDeclaration::BookmarkLabel(v) => {
+                    bookmark_label = sel(reset, Some(v.clone()))
+                }
+                PropertyDeclaration::BookmarkState(v) => bookmark_state = sel(reset, *v),
                 PropertyDeclaration::Float(v) => float = sel(reset, *v),
                 PropertyDeclaration::Clear(v) => clear = sel(reset, *v),
                 PropertyDeclaration::Position(v) => position = sel(reset, *v),
@@ -1595,6 +1613,9 @@ fn compute_element_style(
         break_inside: break_inside.unwrap_or(initial.break_inside),
         orphans: orphans.unwrap_or(initial.orphans),
         widows: widows.unwrap_or(initial.widows),
+        bookmark_level: bookmark_level.unwrap_or(initial.bookmark_level),
+        bookmark_label: bookmark_label.unwrap_or_else(|| initial.bookmark_label.clone()),
+        bookmark_state: bookmark_state.unwrap_or(initial.bookmark_state),
         float: resolved_float,
         clear: clear.unwrap_or(initial.clear),
         position: resolved_position,
@@ -3153,6 +3174,75 @@ mod tests {
             &parse_stylesheet("p { orphans: 0; }"),
         );
         assert_eq!(styles[&p].orphans, 2);
+    }
+
+    #[test]
+    fn bookmark_properties_default_to_no_entry_and_are_not_inherited() {
+        let dom = html::parse(br#"<div><p>a</p></div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let defaults = compute_styles(&dom, &Stylesheet::default(), &Stylesheet::default());
+        assert_eq!(defaults[&div].bookmark_level, None);
+        assert_eq!(defaults[&div].bookmark_label, None);
+        assert_eq!(defaults[&div].bookmark_state, BookmarkState::Open);
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "div { bookmark-level: 2; bookmark-state: closed; \
+                 bookmark-label: 'n ' content(text) attr(id); }",
+            ),
+        );
+        assert_eq!(styles[&div].bookmark_level, Some(2));
+        assert_eq!(styles[&div].bookmark_state, BookmarkState::Closed);
+        assert_eq!(
+            styles[&div].bookmark_label,
+            Some(vec![
+                BookmarkLabelPart::String("n ".to_string()),
+                BookmarkLabelPart::Text,
+                BookmarkLabelPart::Attr("id".to_string()),
+            ])
+        );
+        assert_eq!(styles[&p].bookmark_level, None);
+        assert_eq!(styles[&p].bookmark_label, None);
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Open);
+    }
+
+    #[test]
+    fn bookmark_level_rejects_zero_and_unknown_label_functions() {
+        let dom = html::parse(br#"<p>a</p>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "p { bookmark-level: 0; bookmark-label: content(before); bookmark-state: x; }",
+            ),
+        );
+        assert_eq!(styles[&p].bookmark_level, None);
+        assert_eq!(styles[&p].bookmark_label, None);
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Open);
+    }
+
+    #[test]
+    fn bookmark_properties_take_css_wide_keywords() {
+        let dom = html::parse(br#"<div><p>a</p></div>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "div { bookmark-level: 3; bookmark-label: 'x'; bookmark-state: closed; } \
+                 p { bookmark-level: inherit; bookmark-label: inherit; bookmark-state: inherit; }",
+            ),
+        );
+        assert_eq!(styles[&p].bookmark_level, Some(3));
+        assert_eq!(styles[&p].bookmark_label.as_ref().map(Vec::len), Some(1));
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Closed);
     }
 
     #[test]

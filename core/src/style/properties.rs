@@ -7,17 +7,17 @@ use super::color_mix::{self, HueMethod, Space as ColorSpace};
 
 use super::values::{
     AlignContent, AlignItems, AlignSelf, AspectRatio, BackgroundAttachment, BackgroundRepeat,
-    BorderCollapse, BorderStyle, BoxSizing, BreakBetween, BreakInside, CaptionSide, Clear, Color,
-    ContentPart, Display, EmphasisPosition, EmphasisShape, EmphasisStyle, EmptyCells,
-    FlexDirection, FlexWrap, Float, FontStyle, FontWeight, GridArea, GridAutoFlow, GridLine,
-    Hyphens, JustifyContent, ListStylePosition, ListStyleType, ObjectFit, Overflow, OverflowWrap,
-    Position, QuotePair, RepeatCount, SpecifiedBackgroundPosition, SpecifiedBackgroundSize,
-    SpecifiedBoxShadow, SpecifiedCalc, SpecifiedCornerRadius, SpecifiedFlexBasis, SpecifiedLength,
-    SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight,
-    SpecifiedMaxSize, SpecifiedSpacing, SpecifiedTextShadow, SpecifiedTrackBreadth,
-    SpecifiedTrackComponent, SpecifiedTrackList, SpecifiedTrackSize, SpecifiedTransformFunction,
-    SpecifiedVerticalAlign, TableLayout, TextAlign, TextDecorationLine, TextOverflow,
-    TextTransform, Visibility, WhiteSpace, WordBreak, ZIndex,
+    BookmarkLabelPart, BookmarkState, BorderCollapse, BorderStyle, BoxSizing, BreakBetween,
+    BreakInside, CaptionSide, Clear, Color, ContentPart, Display, EmphasisPosition, EmphasisShape,
+    EmphasisStyle, EmptyCells, FlexDirection, FlexWrap, Float, FontStyle, FontWeight, GridArea,
+    GridAutoFlow, GridLine, Hyphens, JustifyContent, ListStylePosition, ListStyleType, ObjectFit,
+    Overflow, OverflowWrap, Position, QuotePair, RepeatCount, SpecifiedBackgroundPosition,
+    SpecifiedBackgroundSize, SpecifiedBoxShadow, SpecifiedCalc, SpecifiedCornerRadius,
+    SpecifiedFlexBasis, SpecifiedLength, SpecifiedLengthPercentage,
+    SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight, SpecifiedMaxSize, SpecifiedSpacing,
+    SpecifiedTextShadow, SpecifiedTrackBreadth, SpecifiedTrackComponent, SpecifiedTrackList,
+    SpecifiedTrackSize, SpecifiedTransformFunction, SpecifiedVerticalAlign, TableLayout, TextAlign,
+    TextDecorationLine, TextOverflow, TextTransform, Visibility, WhiteSpace, WordBreak, ZIndex,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +82,11 @@ pub enum PropertyDeclaration {
     BreakInside(BreakInside),
     Orphans(u32),
     Widows(u32),
+    /// `bookmark-level`. `None` means `none` (no outline entry).
+    BookmarkLevel(Option<u32>),
+    /// `bookmark-label`.
+    BookmarkLabel(Vec<BookmarkLabelPart>),
+    BookmarkState(BookmarkState),
     Float(Float),
     Clear(Clear),
     /// `static`/`relative`/`absolute`/`fixed`.
@@ -293,6 +298,9 @@ pub fn parse_declaration<'i>(
         },
         "orphans" => Ok(vec![D::Orphans(parse_positive_integer(input)?)]),
         "widows" => Ok(vec![D::Widows(parse_positive_integer(input)?)]),
+        "bookmark-level" => Ok(vec![D::BookmarkLevel(parse_bookmark_level(input)?)]),
+        "bookmark-label" => Ok(vec![D::BookmarkLabel(parse_bookmark_label(input)?)]),
+        "bookmark-state" => Ok(vec![D::BookmarkState(parse_bookmark_state(input)?)]),
         "float" => Ok(vec![D::Float(parse_float(input)?)]),
         "clear" => Ok(vec![D::Clear(parse_clear(input)?)]),
         "position" => Ok(vec![D::Position(parse_position(input)?)]),
@@ -1219,6 +1227,65 @@ fn parse_positive_integer<'i>(input: &mut Parser<'i, '_>) -> Result<u32, ParseEr
         return Err(input.new_custom_error(()));
     }
     Ok(value as u32)
+}
+
+/// `bookmark-level`: `none` or an integer of 1 or more.
+fn parse_bookmark_level<'i>(input: &mut Parser<'i, '_>) -> Result<Option<u32>, ParseError<'i, ()>> {
+    if input
+        .try_parse(|input| input.expect_ident_matching("none"))
+        .is_ok()
+    {
+        return Ok(None);
+    }
+    parse_positive_integer(input).map(Some)
+}
+
+/// `bookmark-label`: a sequence of string literals, `attr()` and `content()`/`content(text)`.
+/// `content(before)` and friends (the generated content) are not supported.
+fn parse_bookmark_label<'i>(
+    input: &mut Parser<'i, '_>,
+) -> Result<Vec<BookmarkLabelPart>, ParseError<'i, ()>> {
+    let mut parts = Vec::new();
+    loop {
+        if let Ok(s) = input.try_parse(|input| input.expect_string_cloned()) {
+            parts.push(BookmarkLabelPart::String(s.as_ref().to_string()));
+            continue;
+        }
+        let Ok(function) = input.try_parse(|input| input.expect_function().cloned()) else {
+            break;
+        };
+        if function.eq_ignore_ascii_case("attr") {
+            parts.push(input.parse_nested_block(|input| {
+                let ident = input.expect_ident()?.clone();
+                Ok(BookmarkLabelPart::Attr(ident.as_ref().to_string()))
+            })?);
+        } else if function.eq_ignore_ascii_case("content") {
+            input.parse_nested_block(|input| {
+                if !input.is_exhausted() {
+                    input.expect_ident_matching("text")?;
+                }
+                Ok(())
+            })?;
+            parts.push(BookmarkLabelPart::Text);
+        } else {
+            return Err(input.new_custom_error(()));
+        }
+    }
+    if parts.is_empty() {
+        return Err(input.new_custom_error(()));
+    }
+    Ok(parts)
+}
+
+fn parse_bookmark_state<'i>(
+    input: &mut Parser<'i, '_>,
+) -> Result<BookmarkState, ParseError<'i, ()>> {
+    let ident = input.expect_ident()?.clone();
+    Ok(match_ignore_ascii_case! { &ident,
+        "open" => BookmarkState::Open,
+        "closed" => BookmarkState::Closed,
+        _ => return Err(input.new_custom_error(())),
+    })
 }
 
 /// Accepts both keywords (`normal`/`bold`) and numbers (`100` to `900`).

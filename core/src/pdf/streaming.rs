@@ -34,6 +34,7 @@ use super::document::{
 use super::font::{deflate, embed_font_streaming_chunks, FontUsage};
 use super::img::{embed_image_streaming_chunks, ids_for_image, ImageIds, PreparedImage};
 use super::options::PdfOutputOptions;
+use super::outline::{collect_bookmark_positions, write_outline, Bookmark, OutlineEntry};
 
 const PDF_HEADER: &[u8] = b"%PDF-1.7\n%\x80\x80\x80\x80\n\n";
 
@@ -77,6 +78,9 @@ pub struct StreamingPdfWriter<S: Sink> {
     /// The positions of the anchors found on the pages written so far
     /// (name, page Ref, x, y). Written out as the `/Dests` dictionary in `finish`.
     destinations: Vec<(String, Ref, f32, f32)>,
+    /// The bookmarked elements found on the pages written so far, in document order.
+    /// Written out as the `/Outlines` tree in `finish`.
+    outline_entries: Vec<OutlineEntry>,
     /// Metadata, compression, scale and grayscale.
     output: PdfOutputOptions,
     /// The subdocument to composite onto the next page written
@@ -152,6 +156,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             alpha_gs_names,
             links,
             destinations: Vec::new(),
+            outline_entries: Vec::new(),
             output,
             pending_overlays: Vec::new(),
             pending_page_number: None,
@@ -388,6 +393,29 @@ impl<S: Sink> StreamingPdfWriter<S> {
                     .push((name, page_id, self.output.to_pt(x), self.output.to_pt(y)));
             }
         }
+        if !self.links.bookmarks.is_empty() {
+            let mut page_bookmarks = Vec::new();
+            for b in &page.boxes {
+                collect_bookmark_positions(
+                    b,
+                    &self.links.bookmarks,
+                    &self.settings,
+                    &mut page_bookmarks,
+                );
+            }
+            for (node, x, y) in page_bookmarks {
+                // Taken out of the table so an element split across pages is listed once,
+                // at the page it starts on, and the table shrinks as the document goes.
+                if let Some(bookmark) = self.links.bookmarks.remove(&node) {
+                    self.outline_entries.push(OutlineEntry {
+                        bookmark,
+                        page: page_id,
+                        x: self.output.to_pt(x),
+                        y: self.output.to_pt(y),
+                    });
+                }
+            }
+        }
         let mut annotation_ids = Vec::with_capacity(page_links.len());
         for area in &page_links {
             let id = self.alloc.next();
@@ -511,12 +539,30 @@ impl<S: Sink> StreamingPdfWriter<S> {
             self.write_chunk(dests_id, &chunk)?;
         }
 
+        // The outline is written here for the same reason: it needs every entry.
+        let entries = std::mem::take(&mut self.outline_entries);
+        let mut alloc = std::mem::take(&mut self.alloc);
+        let outline = write_outline(&entries, &mut alloc);
+        self.alloc = alloc;
+        let outline_id = match outline {
+            Some((root, chunks)) => {
+                for (id, chunk) in &chunks {
+                    self.write_chunk(*id, chunk)?;
+                }
+                Some(root)
+            }
+            None => None,
+        };
+
         let mut chunk = Chunk::new();
         {
             let mut catalog = chunk.indirect(self.catalog_id).start::<Catalog>();
             catalog.pages(self.pages_tree_id);
             if let Some(dests_id) = dests_id {
                 catalog.destinations(dests_id);
+            }
+            if let Some(outline_id) = outline_id {
+                catalog.outlines(outline_id);
             }
         }
         self.write_chunk(self.catalog_id, &chunk)?;
@@ -534,6 +580,11 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.write_xref_and_trailer(info_id)?;
 
         self.sink.finish()
+    }
+
+    /// Add the bookmarked elements of the pages still to come (see [`LinkSettings::bookmarks`]).
+    pub fn add_bookmarks(&mut self, bookmarks: impl IntoIterator<Item = (NodeId, Bookmark)>) {
+        self.links.bookmarks.extend(bookmarks);
     }
 
     /// Write `chunk`'s bytes (assumed to hold a single indirect object) to `sink` and record

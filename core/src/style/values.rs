@@ -517,6 +517,25 @@ pub enum ContentPart {
     NoCloseQuote,
 }
 
+/// One part of `bookmark-label`. Unlike [`ContentPart`] it is resolved by the engine, once
+/// the whole subtree is known, because `content()` is the text of the element's descendants.
+#[derive(Debug, Clone, PartialEq)]
+pub enum BookmarkLabelPart {
+    String(String),
+    /// `content()` / `content(text)`. The element's text content.
+    Text,
+    /// `attr(name)`. An HTML attribute value.
+    Attr(String),
+}
+
+/// Values of `bookmark-state`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BookmarkState {
+    #[default]
+    Open,
+    Closed,
+}
+
 /// One nesting level of `quotes` (the open quote and the close quote).
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuotePair {

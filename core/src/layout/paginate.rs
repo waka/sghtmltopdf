@@ -877,6 +877,8 @@ struct SplitContainer {
     marker: Option<Box<LineBox>>,
     /// An `<a href>` box is a link area on every page it reaches, so each one gets a fragment.
     link: Option<Rc<str>>,
+    /// The box has a `bookmark-level`, so its first fragment is kept to mark where it starts.
+    bookmarked: bool,
 }
 
 impl SplitContainer {
@@ -888,6 +890,7 @@ impl SplitContainer {
             has_visible_decoration: b.has_visible_decoration,
             marker: b.marker.take(),
             link: b.link.take(),
+            bookmarked: b.fragmentation.bookmarked,
         }
     }
 
@@ -935,8 +938,10 @@ fn place_split<T>(
     // An outside marker (`list-style-position: outside`) is painted on the first
     // fragment, so a fragment is still needed even without decoration. Skipping
     // it would drop the marker of an `li` split across pages.
-    let needs_fragments =
-        needs_decoration || container.marker.is_some() || container.link.is_some();
+    let needs_fragments = needs_decoration
+        || container.marker.is_some()
+        || container.link.is_some()
+        || container.bookmarked;
     if needs_fragments {
         // Record the absolute index of the first page this container touches.
         state.enter_split();

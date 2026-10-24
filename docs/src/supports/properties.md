@@ -166,6 +166,9 @@
 | `counter-reset` | ✅ | `none`または`name [<integer>]`の繰り返し |
 | `counter-increment` | ✅ | `none`または`name [<integer>]`の繰り返し(値省略時は1) |
 | `counter-set` | ❌ | 未実装 |
+| `bookmark-level` | ⚠️ | `none`(初期値)または1以上の整数。値を持つ要素がPDFのしおり(アウトライン)の項目になる。ブロックレベルの要素のみ(インライン要素は項目にならない)。詳細は[ページ分割](pagination.md#pdfのしおりアウトライン)。継承しない |
+| `bookmark-label` | ⚠️ | 文字列リテラル・`attr()`・`content()`(`content(text)`と同義)の連結。初期値は`content(text)`(要素のテキスト)。ラベルは空白を畳んで使う。`content(before)`等と`counter()`は非対応。継承しない |
+| `bookmark-state` | ✅ | `open`(初期値)/`closed`。`closed`の項目は子を畳んだ状態で開く。継承しない |
 
 `counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える(`counter(pages)`はストリーミングモードでは総ページ数が確定しないためエラーになる)。
 

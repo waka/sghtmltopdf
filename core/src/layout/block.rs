@@ -62,6 +62,10 @@ pub struct FragmentationHints {
     pub break_inside: BreakInside,
     pub orphans: u32,
     pub widows: u32,
+    /// Whether the element has a `bookmark-level`. Pagination then keeps a fragment of the
+    /// box on the page it starts on, even when the box has nothing to paint, so the outline
+    /// can find where it is.
+    pub bookmarked: bool,
 }
 
 impl From<&ComputedStyle> for FragmentationHints {
@@ -72,6 +76,7 @@ impl From<&ComputedStyle> for FragmentationHints {
             break_inside: style.break_inside,
             orphans: style.orphans,
             widows: style.widows,
+            bookmarked: style.bookmark_level.is_some(),
         }
     }
 }

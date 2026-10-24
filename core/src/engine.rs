@@ -39,16 +39,16 @@ use crate::layout::{
     PageSettings, Rect, StreamingPaginator,
 };
 use crate::pdf::{
-    anchor_destination_name, ImageAssetCache, LinkSettings, PageOverlay, PdfOutputOptions,
-    PreparedImage, StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, Bookmark, ImageAssetCache, LinkSettings, PageOverlay,
+    PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
     compute_single_element_style, compute_styles, compute_styles_with_parent,
     extract_author_stylesheet, needs_preceding_siblings, resolve_page_rule_variables,
     resolve_page_rules, root_custom_properties, rules_use_page_count, streaming_unsafe_selectors,
-    user_agent_stylesheet, ComputedStyle, CustomProperties, LengthPercentageOrAuto, PageRule,
-    RgbaColor, Stylesheet,
+    user_agent_stylesheet, BookmarkLabelPart, BookmarkState, ComputedStyle, CustomProperties,
+    Display, LengthPercentageOrAuto, PageRule, RgbaColor, Stylesheet,
 };
 use crate::style::{FontStyle, FontWeight};
 
@@ -635,6 +635,116 @@ fn collect_headings(
             }
         })
         .collect()
+}
+
+/// Resolve the outline entry of every element under `root` with a `bookmark-level`: its label
+/// from `bookmark-label` (the element's text, `content()`, by default) with the CSS white
+/// space collapsed. An element whose label comes out empty gets no entry.
+///
+/// `display: none` subtrees are skipped, as are `<html>` and `<body>`, which have no box of
+/// their own in streaming mode. Streaming calls this per top-level element, before its DOM is
+/// released.
+fn collect_bookmarks(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    root: NodeId,
+) -> HashMap<NodeId, Bookmark> {
+    /// The text of `node` and its descendants, leaving out what `display: none` hides. A
+    /// `<br>` and the edges of a block-level child are a space, as the lines they break are.
+    fn text_of(
+        dom: &Dom,
+        styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+        node: NodeId,
+        out: &mut String,
+    ) {
+        match &dom.node(node).data {
+            NodeData::Text { contents } => out.push_str(contents),
+            NodeData::Element { name, .. } => {
+                let display = styles.get(&node).map(|s| s.display);
+                if display == Some(Display::None) {
+                    return;
+                }
+                let breaks = &*name.local == "br"
+                    || !matches!(
+                        display,
+                        None | Some(Display::Inline | Display::InlineBlock | Display::InlineFlex)
+                    );
+                if breaks {
+                    out.push(' ');
+                }
+                for child in dom.children(node) {
+                    text_of(dom, styles, child, out);
+                }
+                if breaks {
+                    out.push(' ');
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn visit(
+        dom: &Dom,
+        styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+        node: NodeId,
+        out: &mut HashMap<NodeId, Bookmark>,
+    ) {
+        if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
+            let Some(style) = styles.get(&node) else {
+                return;
+            };
+            if style.display == Display::None {
+                return;
+            }
+            if let (Some(level), false) = (
+                style.bookmark_level,
+                matches!(&*name.local, "html" | "body"),
+            ) {
+                let mut label = String::new();
+                match &style.bookmark_label {
+                    None => text_of(dom, styles, node, &mut label),
+                    Some(parts) => {
+                        for part in parts {
+                            match part {
+                                BookmarkLabelPart::String(s) => label.push_str(s),
+                                BookmarkLabelPart::Text => text_of(dom, styles, node, &mut label),
+                                BookmarkLabelPart::Attr(name) => {
+                                    if let Some(attr) =
+                                        attrs.iter().find(|a| &*a.name.local == name)
+                                    {
+                                        label.push_str(&attr.value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Only CSS white space collapses; a no-break space is part of the label.
+                let title = label
+                    .split([' ', '\t', '\n', '\r', '\x0c'])
+                    .filter(|word| !word.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !title.is_empty() {
+                    out.insert(
+                        node,
+                        Bookmark {
+                            level,
+                            title,
+                            open: style.bookmark_state == BookmarkState::Open,
+                        },
+                    );
+                }
+            }
+        }
+        for child in dom.children(node) {
+            visit(dom, styles, child, out);
+        }
+    }
+
+    let mut bookmarks = HashMap::new();
+    visit(dom, styles, root, &mut bookmarks);
+    bookmarks
 }
 
 /// Lay out an independent HTML document (a cover or TOC) into a list of pages.
@@ -1319,6 +1429,7 @@ impl<S: Sink> Engine<S> {
                 external: self.options.content.external_links,
                 internal: self.options.content.internal_links,
                 keep_relative: self.options.content.keep_relative_links,
+                bookmarks: HashMap::new(),
             },
             output,
         )
@@ -1407,6 +1518,10 @@ impl<S: Sink> Engine<S> {
                 &sub_styles,
                 &mut state.warned_uncovered_chars,
             );
+            // Read here, while the subtree's text and attributes are still in the DOM.
+            state
+                .writer
+                .add_bookmarks(collect_bookmarks(&dom, &sub_styles, node));
             let mut item_box = build_box_for_element(&dom, &sub_styles, node);
             if let (Some(item_box), true) = (&mut item_box, options_content.load_images) {
                 resolve_images(item_box, &dom, &sub_styles, &state.image_cache);
@@ -1756,6 +1871,7 @@ impl<S: Sink> Engine<S> {
                 external: options.content.external_links,
                 internal: options.content.internal_links,
                 keep_relative: options.content.keep_relative_links,
+                bookmarks: HashMap::new(),
             },
             output,
         )
@@ -1782,6 +1898,10 @@ impl<S: Sink> Engine<S> {
                 .map_err(EngineError::Io)?;
             page_number += 1;
         }
+
+        // The cover and the TOC are separate documents whose `NodeId`s would collide with the
+        // body's, so the body's bookmarks are registered only after them.
+        writer.add_bookmarks(collect_bookmarks(&dom, &styles, dom.document()));
 
         let mut overlay_cache = OverlayCache::default();
         for page in pages.iter() {
