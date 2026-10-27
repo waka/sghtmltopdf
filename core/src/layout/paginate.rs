@@ -248,6 +248,7 @@ pub struct StreamingPaginator {
     /// Whether the item added just before had `break-after: always`.
     /// It is consumed as a page break when the next item is added.
     pending_break_after: bool,
+    shift_reference: Option<f32>,
 }
 
 impl StreamingPaginator {
@@ -257,6 +258,7 @@ impl StreamingPaginator {
             cursor: 0.0,
             page_height,
             pending_break_after: false,
+            shift_reference: None,
         }
     }
 
@@ -282,8 +284,16 @@ impl StreamingPaginator {
             // so nothing is done (a `break-before` on the first element, say).
             if break_before && current_page_has_content(&state) {
                 new_page(&mut state, &mut self.cursor);
+                self.shift_reference = None;
+            }
+            // Preserve layout's overlapping margin boxes across calls, matching
+            // place_split's sibling traversal instead of stacking their heights.
+            if let Some(shift) = self.shift_reference {
+                self.cursor = margin_box_top(item) - shift;
             }
             place_box(item, self.page_height, &mut state, &mut self.cursor);
+            self.shift_reference =
+                Some(margin_box_top(item) + item.layout.margin_box_height() - self.cursor);
         }
         flushed
     }
@@ -3107,6 +3117,80 @@ mod tests {
         );
         for (batched, streamed) in batched_pages.iter().zip(streamed_pages.iter()) {
             assert_eq!(batched.boxes.len(), streamed.boxes.len());
+        }
+    }
+
+    #[test]
+    fn streaming_paginator_preserves_negative_content_coordinates() {
+        let dom = html::parse(b"<style>body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }</style><div id='one'>A</div><div id='two'>B</div>");
+        let author = parse_stylesheet(
+            "body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }",
+        );
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let fonts = test_fonts();
+        let nodes = crate::html::collect_anchor_targets(&dom);
+        let mut paginator = StreamingPaginator::new(100.0);
+        let mut y = 0.0;
+        for (node, _) in nodes {
+            let tree = build_box_for_element(&dom, &styles, node).unwrap();
+            let mut laid = layout_document_from(&tree, &styles, &fonts, 200.0, 0.0, y);
+            y += laid.layout.margin_box_height();
+            assert!(paginator.push_item(&mut laid).is_empty());
+        }
+        let pages = paginator.finish();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].boxes.len(), 2);
+        assert_eq!(pages[0].boxes[0].layout.content.y, 0.0);
+        assert_eq!(pages[0].boxes[1].layout.content.y, -40.0);
+    }
+
+    #[test]
+    fn streaming_paginator_preserves_collapsed_sibling_coordinates() {
+        for margins in ["10px 0", "-4px 0", "12px 0 -3px"] {
+            let dom = html::parse(b"<div id='root'><p>first</p><p>second</p><p style='break-before:page'>third</p><p>fourth</p></div>");
+            let ua = user_agent_stylesheet();
+            let author = parse_stylesheet(&format!(
+                "div {{ margin:0; padding:1px; }} p {{ margin:{margins}; }}"
+            ));
+            let styles = compute_styles(&dom, &ua, &author);
+            let fonts = test_fonts();
+            let root = crate::html::collect_anchor_targets(&dom)
+                .into_iter()
+                .find(|(_, id)| id == "root")
+                .unwrap()
+                .0;
+            let tree = build_box_for_element(&dom, &styles, root).unwrap();
+            let mut laid = layout_document_from(&tree, &styles, &fonts, 200.0, 0.0, 0.0);
+            let LaidOutContent::Blocks(children) = &laid.content else {
+                panic!("expected blocks")
+            };
+            let mut children = children.clone();
+            let expected = paginate(&mut laid, 100.0);
+            let mut paginator = StreamingPaginator::new(100.0);
+            let mut actual = Vec::new();
+            // The root's padding is handled by the batch traversal; use the same
+            // initial content origin when passing its children individually.
+            paginator.cursor = 1.0;
+            for child in &mut children {
+                actual.extend(paginator.push_item(child));
+            }
+            actual.extend(paginator.finish());
+            let positions = |pages: &[Page]| {
+                pages
+                    .iter()
+                    .map(|page| {
+                        page.boxes
+                            .iter()
+                            .map(|b| b.layout.content.y)
+                            .collect::<Vec<_>>()
+                    })
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(
+                positions(&actual),
+                positions(&expected),
+                "margins {margins}"
+            );
         }
     }
 

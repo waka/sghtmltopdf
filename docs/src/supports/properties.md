@@ -167,7 +167,7 @@
 | `counter-increment` | ✅ | `none`または`name [<integer>]`の繰り返し(値省略時は1) |
 | `counter-set` | ❌ | 未実装 |
 
-`counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える(`counter(pages)`はストリーミングモードでは総ページ数が確定しないためエラーになる)。
+`counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える。ストリーミングモードでも、総ページ数が必要なmargin boxをPDF完成時に描画する。
 
 ## ページ分割(CSS Fragmentation)
 

@@ -1326,18 +1326,58 @@ fn header_html_takes_precedence_over_the_simple_option() {
 }
 
 #[test]
-fn topage_is_rejected_in_streaming_mode() {
-    // The total page count cannot be known in streaming.
-    let out = Command::new(BIN)
-        .arg(SAMPLE_HTML)
-        .arg("--font")
-        .arg(FONT_PATH)
-        .args(["--streaming", "--footer-center", "of [topage]"])
-        .arg("-o")
-        .arg(temp_output_path("streaming-topage"))
-        .output()
-        .expect("failed to run sghtmltopdf binary");
-    assert_eq!(out.status.code(), Some(3), "should be a render error");
+fn topage_works_in_streaming_mode() {
+    for option in [
+        "--footer-center",
+        "--header-html-content",
+        "--footer-html-content",
+    ] {
+        let bytes = run_cli_with(
+            TWO_PAGE_HTML,
+            &[
+                "--streaming",
+                "--no-pdf-compression",
+                option,
+                "Page [page] of [topage]",
+            ],
+            "streaming-topage",
+        );
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
+        assert!(
+            count_occurrences(&bytes, b"<0032>") > 0,
+            "{option}: total glyph must be embedded"
+        );
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Form"), 2);
+    }
+}
+
+#[test]
+fn streaming_html_total_includes_digits_absent_from_body_and_reuses_images() {
+    use base64::Engine as _;
+    let png = base64::engine::general_purpose::STANDARD
+        .encode(include_bytes!("fixtures/images/spike_opaque.png"));
+    let overlay = format!(
+        r#"<html><body style="margin:0;text-align:right;color:red">[topage]<img src="data:image/png;base64,{png}"></body></html>"#
+    );
+    let bytes = run_cli_with(
+        TWO_PAGE_HTML,
+        &[
+            "--streaming",
+            "--no-pdf-compression",
+            "--footer-html-content",
+            &overlay,
+        ],
+        "streaming-html-total-images",
+    );
+    assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
+    assert!(count_occurrences(&bytes, b"<0032>") > 0);
+    assert_eq!(
+        count_occurrences(&bytes, b"<0031>"),
+        0,
+        "only the final total, not a placeholder, should be embedded"
+    );
+    assert_eq!(count_occurrences(&bytes, b"/Subtype /Image"), 1);
+    assert_eq!(count_occurrences(&bytes, b"1 0 0 rg"), 2);
 }
 
 #[test]
@@ -1513,18 +1553,102 @@ fn page_offset_shifts_the_numbering() {
 }
 
 #[test]
-fn toc_is_rejected_in_streaming_mode() {
-    let out = Command::new(BIN)
-        .arg(SAMPLE_HTML)
-        .arg("--font")
-        .arg(FONT_PATH)
-        .args(["--streaming", "--toc"])
-        .arg("-o")
-        .arg(temp_output_path("streaming-toc"))
-        .output()
-        .expect("failed to run sghtmltopdf binary");
-    assert_eq!(out.status.code(), Some(3));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--toc"));
+fn toc_works_in_streaming_mode() {
+    let bytes = run_cli_with(TOC_DOC_HTML, &["--streaming", "--toc"], "streaming-toc");
+    assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 3);
+    assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), 3);
+    assert!(count_occurrences(&bytes, b"/Dests") > 0);
+}
+
+#[test]
+fn streaming_toc_handles_empty_headings_and_disabled_links() {
+    for (html, extra, links, name) in [
+        (PLAIN_HTML, Vec::new(), 0, "streaming-toc-empty"),
+        (
+            TOC_DOC_HTML,
+            vec!["--disable-toc-links"],
+            0,
+            "streaming-toc-no-links",
+        ),
+    ] {
+        let mut args = vec!["--streaming", "--toc"];
+        args.extend(extra);
+        let bytes = run_cli_with(html, &args, name);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), links);
+        assert_eq!(
+            count_occurrences(&bytes, b"/MediaBox"),
+            if html == PLAIN_HTML { 2 } else { 3 }
+        );
+    }
+}
+
+#[test]
+fn streaming_cover_toc_and_html_totals_work_together() {
+    let dir = std::env::temp_dir().join(format!(
+        "sghtmltopdf-streaming-frontmatter-{}",
+        std::process::id()
+    ));
+    let cover = write_temp_html(
+        &dir,
+        "cover.html",
+        "<p>cover</p><p style='break-before:page'>cover two</p>",
+    );
+    let footer = write_temp_html(&dir, "footer.html", "<p>[page] / [topage]</p>");
+    for compressed in [false, true] {
+        let mut args = vec![
+            "--streaming",
+            "--toc",
+            "--cover",
+            cover.to_str().unwrap(),
+            "--footer-html",
+            footer.to_str().unwrap(),
+            "--page-offset",
+            "10",
+        ];
+        if !compressed {
+            args.push("--no-pdf-compression");
+        }
+        let bytes = run_cli_with(
+            TOC_DOC_HTML,
+            &args,
+            if compressed {
+                "frontmatter-compressed"
+            } else {
+                "frontmatter-plain"
+            },
+        );
+        assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 5);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Link"), 3);
+        assert_eq!(
+            count_occurrences(&bytes, b"/Subtype /Form"),
+            2,
+            "only body pages receive deferred HTML footers"
+        );
+    }
+    std::fs::remove_dir_all(dir).ok();
+}
+
+#[test]
+fn streaming_page_offset_overflow_is_reported() {
+    let offset = usize::MAX.to_string();
+    for toc in [false, true] {
+        let output = temp_output_path(if toc { "overflow-toc" } else { "overflow-body" });
+        let mut command = Command::new(BIN);
+        command.arg(SAMPLE_HTML).args([
+            "--font",
+            FONT_PATH,
+            "--streaming",
+            "--page-offset",
+            &offset,
+        ]);
+        if toc {
+            command.arg("--toc");
+        }
+        let out = command.arg("-o").arg(&output).output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains("overflowed"));
+        std::fs::remove_file(output).ok();
+    }
 }
 
 #[test]
@@ -1825,8 +1949,7 @@ fn check_overlay_image(src: &str, resource_type: &str, kind: &str) {
         std::env::temp_dir().join(format!("sghtmltopdf-overlay-{kind}-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let template = dir.join("overlay.html");
-    for page_dependent in [false, true] {
-        let token = if page_dependent { "[page]" } else { "Header" };
+    for token in ["Header", "[page]", "[page]/[topage]"] {
         for background in [false, true] {
             let image = if background {
                 format!(
@@ -1855,13 +1978,18 @@ fn check_overlay_image(src: &str, resource_type: &str, kind: &str) {
                 assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 2);
                 assert_eq!(
                     count_occurrences(&bytes, resource_type.as_bytes()),
-                    1,
-                    "shared image should be embedded once"
+                    if streaming && token.contains("[topage]") && resource_type == "/Subtype /Form"
+                    {
+                        3
+                    } else {
+                        1
+                    },
+                    "shared image should be embedded once (plus deferred forms)"
                 );
                 assert_eq!(
                     count_occurrences(&bytes, b" Do"),
-                    4,
-                    "header and footer image should be drawn on both pages"
+                    if streaming && token.contains("[topage]") { 6 } else { 4 },
+                    "header and footer image should be drawn on both pages (plus deferred form calls)"
                 );
                 assert!(
                     count_occurrences(&bytes, b"W\nn") >= 4,
@@ -1869,8 +1997,23 @@ fn check_overlay_image(src: &str, resource_type: &str, kind: &str) {
                 );
                 args.push("--no-images");
                 let bytes = run_cli_with(TWO_PAGE_HTML, &args, &format!("overlay-{kind}-disabled"));
-                assert_eq!(count_occurrences(&bytes, resource_type.as_bytes()), 0);
-                assert_eq!(count_occurrences(&bytes, b" Do"), 0);
+                assert_eq!(
+                    count_occurrences(&bytes, resource_type.as_bytes()),
+                    if streaming && token.contains("[topage]") && resource_type == "/Subtype /Form"
+                    {
+                        2
+                    } else {
+                        0
+                    },
+                );
+                assert_eq!(
+                    count_occurrences(&bytes, b" Do"),
+                    if streaming && token.contains("[topage]") {
+                        2
+                    } else {
+                        0
+                    },
+                );
             }
         }
     }

@@ -18,5 +18,5 @@ pub use options::{
     current_datetime, current_pdf_date, pdf_date_from_unix, producer_string, DocumentMetadata,
     PdfOutputOptions, DEFAULT_SCALE,
 };
-pub use streaming::StreamingPdfWriter;
+pub use streaming::{PageRole, StreamingPdfWriter};
 pub use svg::SvgFontDb;
