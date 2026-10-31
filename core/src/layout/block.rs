@@ -328,6 +328,51 @@ pub fn layout_document_from(
     )
 }
 
+/// The absolute-positioning-aware version of [`layout_document_from`], for laying out one
+/// top-level element on its own (`Mode::Streaming`). Returns the normal-flow `LaidOutBox` plus
+/// the absolutely positioned boxes found inside it. `page_size` is `(content_width,
+/// content_height)` of the page, the containing block for `fixed` and for an `absolute` with no
+/// positioned ancestor, as in [`layout_document_positioned`].
+pub(crate) fn layout_document_from_with_absolutes(
+    root: &LayoutBox,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    fonts: &FontCollection,
+    containing_width: f32,
+    start_x: f32,
+    start_y: f32,
+    page_size: (f32, f32),
+) -> (LaidOutBox, Vec<PositionedBox>) {
+    let mut absolutes = Vec::new();
+    let mut pos = PosCtx::new(&mut absolutes, page_size);
+    let laid = layout_document_from_positioned(
+        root,
+        styles,
+        fonts,
+        containing_width,
+        start_x,
+        start_y,
+        &mut pos,
+    );
+    (laid, absolutes)
+}
+
+/// Lay out a top-level element that is itself `position: absolute`/`fixed` (`Mode::Streaming`).
+/// In batch it is a child of `<body>` that the block loop takes out of the flow, so it is laid
+/// out the same way here: against the page area, occupying no space. Returns it and the
+/// positioned boxes inside it, in the order batch collects them.
+pub(crate) fn layout_out_of_flow_root(
+    root: &LayoutBox,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    fonts: &FontCollection,
+    page_size: (f32, f32),
+) -> Vec<PositionedBox> {
+    let mut absolutes = Vec::new();
+    let mut pos = PosCtx::new(&mut absolutes, page_size);
+    let style = box_style(root, styles);
+    layout_out_of_flow_child(root, &style, styles, fonts, &mut pos);
+    absolutes
+}
+
 /// The absolute-positioning-aware version of [`layout_document_from`].
 /// Absolutely positioned boxes are collected into `pos`.
 #[allow(clippy::too_many_arguments)]
@@ -1720,7 +1765,7 @@ fn apply_margin_collapse(
 /// Find the gap resulting from collapsing two adjacent margins (CSS2.1 section 8.3.1).
 /// With both non-negative it is the larger; with both negative it is the smaller (the larger
 /// in absolute value); with mixed signs it is their plain sum (the largest positive plus the smallest negative).
-fn collapse_adjacent_margins(a: f32, b: f32) -> f32 {
+pub(crate) fn collapse_adjacent_margins(a: f32, b: f32) -> f32 {
     let positive = a.max(0.0).max(b.max(0.0));
     let negative = a.min(0.0).min(b.min(0.0));
     positive + negative
@@ -1916,7 +1961,7 @@ pub(super) fn shift_box_y(b: &LaidOutBox, delta: f32) -> LaidOutBox {
 /// Cloning the subtree at every level of the recursion would rebuild the same data once per
 /// level, inflating both the time and the peak memory for nothing. The move can be done on a
 /// borrow, so the caller clones once, only when it has to.
-pub(super) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
+pub(crate) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
     shift_rect_y(&mut b.layout.content, delta);
     if let Some(marker) = &mut b.marker {
         shift_rect_y(&mut marker.rect, delta);

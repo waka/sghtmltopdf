@@ -416,6 +416,53 @@ pub(crate) fn build_box_for_element(
     Some(b)
 }
 
+/// How a child of `<body>` takes part in `<body>`'s flow. `Mode::Streaming` is handed the
+/// children one at a time, so it asks this of each; batch decides the same in
+/// `build_children_boxes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TopLevelKind {
+    /// Generates no box, as with `display: none`. It does not end a run of inline content.
+    None,
+    /// A block of its own ([`build_box_for_element`]).
+    Block,
+    /// Joins the run of inline content around it, text and whitespace included
+    /// ([`build_box_for_inline_run`]).
+    Inline,
+}
+
+pub(crate) fn top_level_kind(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    node: NodeId,
+) -> TopLevelKind {
+    match child_kind(dom, styles, node) {
+        ChildKind::None => TopLevelKind::None,
+        ChildKind::Block => TopLevelKind::Block,
+        ChildKind::Inline | ChildKind::Whitespace => TopLevelKind::Inline,
+    }
+}
+
+/// Build the anonymous block box that wraps a run of consecutive inline-level children of
+/// `<body>` (CSS2.1 9.2.1.1), as `build_children_boxes` does in batch. `None` when the run
+/// holds nothing but collapsible whitespace, which generates no box between blocks.
+pub(crate) fn build_box_for_inline_run(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    nodes: &[NodeId],
+) -> Option<LayoutBox> {
+    let mut spans = Vec::new();
+    for &node in nodes {
+        match child_kind(dom, styles, node) {
+            ChildKind::Inline => collect_spans(dom, styles, node, &mut spans),
+            ChildKind::Whitespace => push_collapsible_whitespace(dom, styles, node, &mut spans),
+            ChildKind::Block | ChildKind::None => {}
+        }
+    }
+    let mut boxes = Vec::new();
+    flush_pending_spans(&mut spans, &mut boxes);
+    boxes.pop()
+}
+
 /// The body of [`build_box_for_element`], everything but the link.
 fn build_element_box(
     dom: &Dom,

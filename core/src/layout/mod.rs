@@ -13,14 +13,17 @@ mod table;
 mod white_space;
 
 pub(crate) use block::{
-    has_visible_decoration, resolve_border, resolve_lpa_or_zero, resolve_padding,
-    resolve_width_and_horizontal_margins,
+    collapse_adjacent_margins, has_visible_decoration, layout_document_from_with_absolutes,
+    layout_out_of_flow_root, resolve_border, resolve_lpa_or_zero, resolve_padding,
+    resolve_width_and_horizontal_margins, shift_box_y_in_place, PositionedBox, PositionedKind,
 };
 pub use block::{
     layout_document, layout_document_from, CollapsedBoundary, LaidOutBox, LaidOutContent,
     LaidOutTable, LaidOutTableRow, TableBreak,
 };
-pub(crate) use box_tree::build_box_for_element;
+pub(crate) use box_tree::{
+    build_box_for_element, build_box_for_inline_run, top_level_kind, TopLevelKind,
+};
 pub use box_tree::{
     build_box_tree, resolve_background_images, resolve_images, BoxContent, ImageBoxContent,
     LayoutBox, TableBox, TableCell, TableRow, TableSection,
@@ -28,7 +31,7 @@ pub use box_tree::{
 pub use geometry::{EdgeSizes, FragmentPosition, Layout, Rect};
 pub use inline::{shape_standalone_line, EmphasisMark, LineBox, TextRun};
 pub use page::{PageSettings, PageSize};
-pub(crate) use paginate::collect_completed_subtree_roots;
+pub(crate) use paginate::{collect_completed_subtree_roots, PositionedLeftovers};
 pub use paginate::{
     paginate, paginate_document, paginate_document_streaming, paginate_document_with_absolutes,
     paginate_streaming, Page, StreamingPaginator,

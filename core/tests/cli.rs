@@ -1682,6 +1682,84 @@ fn streaming_stays_quiet_for_selectors_that_keep_working() {
     assert!(!streaming.contains("warning:"), "got: {streaming}");
 }
 
+/// #97: an `absolute` with no positioned ancestor belongs on the first page, which streaming
+/// has already written by the time the element is reached. It is not drawn, so a warning says
+/// so, once per document however many there are.
+#[test]
+fn streaming_warns_once_about_absolutes_whose_first_page_is_already_written() {
+    let html = r#"<html><body>
+        <div style="height: 1500px">tall</div>
+        <div><span style="position: absolute; top: 0; right: 0">A</span></div>
+        <div><span style="position: absolute; top: 0; left: 0">B</span></div>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-absolute-streaming");
+    assert_eq!(
+        streaming.matches("warning:").count(),
+        1,
+        "one warning expected, got: {streaming}"
+    );
+    assert!(streaming.contains("position: absolute"), "got: {streaming}");
+
+    let batch = run_capturing_stderr(html, &[], "warn-absolute-batch");
+    assert!(!batch.contains("warning:"), "got: {batch}");
+}
+
+/// #97: `fixed` repeats on every page in batch. Met after pages have been written, streaming
+/// cannot put it on those, so it warns, once however many such elements there are.
+#[test]
+fn streaming_warns_once_about_fixed_elements_met_after_pages_are_written() {
+    let html = r#"<html><body>
+        <div style="height: 1500px">tall</div>
+        <div><span style="position: fixed; top: 0; left: 0">F1</span></div>
+        <span style="position: fixed; bottom: 0; left: 0">F2</span>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-fixed-streaming");
+    assert_eq!(
+        streaming.matches("warning:").count(),
+        1,
+        "one warning expected, got: {streaming}"
+    );
+    assert!(streaming.contains("position: fixed"), "got: {streaming}");
+
+    let batch = run_capturing_stderr(html, &[], "warn-fixed-batch");
+    assert!(!batch.contains("warning:"), "got: {batch}");
+}
+
+/// #97: a `fixed` element met before any page is written repeats on every page as in batch,
+/// so there is nothing to warn about.
+#[test]
+fn streaming_stays_quiet_about_a_fixed_element_at_the_start() {
+    let html = r#"<html><body>
+        <div style="position: fixed; top: 0; right: 0">WATERMARK</div>
+        <div><span style="position: fixed; bottom: 0; left: 0">footer</span></div>
+        <div style="height: 1500px">tall</div>
+        <p>end</p>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-fixed-start");
+    assert!(!streaming.contains("warning:"), "got: {streaming}");
+}
+
+/// #97: a nested `absolute` streaming draws as batch does needs no warning.
+#[test]
+fn streaming_stays_quiet_about_an_absolute_it_draws() {
+    let html = r#"<html><body>
+        <div style="position: relative; height: 40px">
+          <div style="position: absolute; right: 0; top: 0">ABS</div>
+        </div>
+        <div style="height: 1500px">tall</div>
+        <div style="position: relative; height: 40px">
+          <div style="position: absolute; right: 0; top: 0">ABS</div>
+        </div>
+        <p>tail</p>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-absolute-drawn");
+    assert!(!streaming.contains("warning:"), "got: {streaming}");
+}
+
 #[test]
 fn streaming_stays_quiet_when_everything_is_resolvable() {
     let html = r#"<html><body><p>plain</p></body></html>"#;

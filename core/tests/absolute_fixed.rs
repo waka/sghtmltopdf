@@ -1,7 +1,8 @@
 //! E2E tests for `position: absolute`/`fixed`.
 //!
-//! Absolute positioning only works under `Mode::Batch`. The overlays are added once every
-//! page is settled, so they are checked against the pagination result (`paginate_document`) and the layout result.
+//! Batch adds the overlays once every page is settled, so they are checked against the
+//! pagination result (`paginate_document`) and the layout result. `Mode::Streaming` is
+//! compared against batch in `streaming_layout.rs`.
 
 use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
 use sghtmltopdf::fonts::{Font, FontCollection};
