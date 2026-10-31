@@ -2,6 +2,7 @@
 
 mod color_font;
 mod document;
+mod file_id;
 mod font;
 mod img;
 mod options;
@@ -9,6 +10,7 @@ mod outline;
 mod streaming;
 mod svg;
 mod tagging;
+mod xmp;
 
 pub use document::{
     anchor_destination_name, encode_pdf, encode_pdf_with_anchors, encode_pdf_with_options,
@@ -17,8 +19,8 @@ pub use document::{
 pub use font::{embed_font, FontIds};
 pub use img::{ImageAssetCache, ImagePlane, PlaneColorSpace, PreparedContent, PreparedImage};
 pub use options::{
-    current_datetime, current_pdf_date, pdf_date_from_unix, producer_string, DocumentMetadata,
-    PdfOutputOptions, DEFAULT_SCALE,
+    current_datetime, current_pdf_date, pdf_date_from_unix, producer_string, unix_from_iso8601,
+    DocumentMetadata, PdfOutputOptions, DEFAULT_SCALE,
 };
 pub use outline::Bookmark;
 pub use streaming::StreamingPdfWriter;
