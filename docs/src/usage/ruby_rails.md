@@ -56,6 +56,7 @@ Sghtmltopdf.render(html, page_size: "A4", margin_top: "20mm", toc: true)
 | `grayscale: true` | 値を取らないフラグ |
 | `grayscale: false` / `nil` | 指定なしと同じ |
 | `allow_path: ["/a", "/b"]` | 同じオプションの繰り返し |
+| `creation_date: Time.now` | `Time`・`DateTime`はUTCのISO 8601にして`--creation-date`へ渡す。`Date`と文字列はそのまま |
 | `font: {path: "a.ttc", index: 1}` | `--font a.ttc --font-index 1`(順序も保つ) |
 
 キー名の妥当性はRuby側では検査しません。

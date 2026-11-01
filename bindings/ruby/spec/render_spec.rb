@@ -21,6 +21,40 @@ RSpec.describe "Sghtmltopdf.render" do
     expect(a4).not_to eq(a5)
   end
 
+  describe "document metadata" do
+    let(:options) do
+      {title: "Raport Zażółć", author: "Владимир Путин", creator: "Acme Reports",
+       creation_date: Time.new(2026, 10, 22, 10, 30, 0, "+02:00")}
+    end
+
+    it "writes the creator and the creation date to the Info dictionary and the XMP" do
+      pdf = Sghtmltopdf.render(html, **options)
+      expect(pdf).to include("/Creator (Acme Reports)")
+      expect(pdf).to include("/CreationDate (D:20261022083000Z)")
+      expect(pdf).to include("/ModDate (D:20261022083000Z)")
+      xmp = pdf.dup.force_encoding(Encoding::UTF_8)
+      expect(xmp).to include("<xmp:CreatorTool>Acme Reports</xmp:CreatorTool>")
+      expect(xmp).to include("<rdf:li>Владимир Путин</rdf:li>")
+      expect(xmp).to include("<xmp:CreateDate>2026-10-22T08:30:00Z</xmp:CreateDate>")
+    end
+
+    it "accepts the creation date as an ISO 8601 string" do
+      pdf = Sghtmltopdf.render(html, creation_date: "2026-10-22T10:30:00+02:00")
+      expect(pdf).to include("/CreationDate (D:20261022083000Z)")
+    end
+
+    it "renders the same bytes twice when the creation date is fixed" do
+      first = Sghtmltopdf.render(html, **options)
+      sleep 1.1
+      expect(Sghtmltopdf.render(html, **options)).to eq(first)
+    end
+
+    it "rejects a creation date that is not a date" do
+      expect { Sghtmltopdf.render(html, creation_date: "yesterday") }
+        .to raise_error(Sghtmltopdf::UsageError)
+    end
+  end
+
   describe "exception classes" do
     # When Rust panics inside the native extension, leaving it to magnus gives Ruby's
     # `fatal`, which not even `rescue Exception` catches and which takes the worker down.
