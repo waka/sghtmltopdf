@@ -94,6 +94,10 @@ jobs:
         run: cargo build --release --locked
       - name: rake (compile → spec)
         working-directory: bindings/ruby
+        env:
+          # The Ruby 3.2 build for ubuntu-26.04 was configured by a compiler where bool is a C23
+          # keyword, so its headers don't include stdbool.h. bindgen's clang parses them as C17.
+          BINDGEN_EXTRA_CLANG_ARGS: ${{ matrix.ruby == '3.2' && '-include stdbool.h' || '' }}
         run: bundle exec rake
 
   # Benchmarks (core/benches). See BENCHMARK.md for usage.
