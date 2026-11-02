@@ -30,14 +30,7 @@ module Sghtmltopdf
     # in that order. The pipeline lookup goes through `respond_to?` so that
     # neither gem becomes a dependency (best effort).
     def sghtmltopdf_asset_path(source)
-      path = source.to_s
-      # A source that is already a URL (or a `data:` URI) is not an asset of
-      # this application. Without this, `from_public_dir` would strip the host
-      # off `https://example.com/logo.png` and hand back `public/logo.png`.
-      return nil if path.match?(%r{\A(?:[a-z][a-z0-9+.\-]*:|//)}i)
-      return path if path.start_with?("/") && File.file?(path)
-
-      from_public_dir(path) || from_asset_pipeline(path)
+      resolve_sghtmltopdf_asset(source)&.path
     end
 
     # Expands the CSS itself into a `<style>`. Takes several sources; any that
@@ -48,8 +41,8 @@ module Sghtmltopdf
     # [#inline_stylesheet].
     def sghtmltopdf_stylesheet_link_tag(*sources)
       css = sources.flatten.filter_map do |source|
-        path = sghtmltopdf_asset_path(with_extension(source, ".css"))
-        inline_stylesheet(path) if path
+        asset = resolve_sghtmltopdf_asset(with_extension(source, ".css"))
+        inline_stylesheet(asset) if asset
       end
       return "".html_safe if css.empty?
 
@@ -93,8 +86,29 @@ module Sghtmltopdf
 
     private
 
-    # `path` read as CSS, with every `url()` pointed at a file the engine can
-    # read and every `@import` spliced in.
+    # Sprockets' filename still points at the source (e.g. invoice.scss),
+    # while its to_s holds the compiled CSS. Keep both so references can be
+    # resolved without reading the uncompiled source again.
+    Asset = Struct.new(:path, :compiled_asset) do
+      def read
+        compiled_asset ? compiled_asset.to_s : File.read(path)
+      end
+    end
+    private_constant :Asset
+
+    def resolve_sghtmltopdf_asset(source)
+      path = source.to_s
+      # A source that is already a URL (or a `data:` URI) is not an asset of
+      # this application. Without this, `from_public_dir` would strip the host
+      # off `https://example.com/logo.png` and hand back `public/logo.png`.
+      return nil if path.match?(%r{\A(?:[a-z][a-z0-9+.\-]*:|//)}i)
+      return Asset.new(path) if path.start_with?("/") && File.file?(path)
+
+      from_public_dir(path) || from_asset_pipeline(path)
+    end
+
+    # The asset's CSS, with every `url()` pointed at a file the engine can read
+    # and every remaining CSS `@import` spliced in.
     #
     # Both have to happen here because the engine keeps one base for the whole
     # document: every CSS source is concatenated before it is parsed, so a
@@ -110,8 +124,9 @@ module Sghtmltopdf
     # fetched.
     #
     # `chain` holds the files already being expanded, innermost last.
-    def inline_stylesheet(path, chain = [])
-      css = File.read(path)
+    def inline_stylesheet(asset, chain = [])
+      css = asset.read
+      path = asset.path
       dir = File.dirname(path)
       chain += [real_path(path)].compact
       comments = comment_ranges(css)
@@ -141,7 +156,7 @@ module Sghtmltopdf
       target = css_url_target(unquote(href), dir)
       return nil if target.nil?
 
-      real = real_path(target)
+      real = real_path(target.path)
       return nil if real.nil? || chain.include?(real)
 
       inline_stylesheet(target, chain)
@@ -163,11 +178,11 @@ module Sghtmltopdf
       css.gsub(CSS_URL) do
         match = Regexp.last_match
         target = css_url_target(unquote(match[:href]), dir)
-        target ? css_url(engine_readable_src(target) || data_uri(target)) : match[0]
+        target ? css_url(engine_readable_src(target.path) || data_uri(target.path)) : match[0]
       end
     end
 
-    # The local file a CSS reference names, or `nil` when it names none.
+    # The local asset a CSS reference names, or `nil` when it names none.
     def css_url_target(ref, dir)
       path = ref.split(/[?#]/, 2).first.to_s
       return nil if path.empty? || path.match?(/\Adata:/i)
@@ -194,7 +209,7 @@ module Sghtmltopdf
       root = ::Rails.application.config.try(:relative_url_root).to_s
       path = path.delete_prefix(root) unless root.empty?
       candidate = File.join(::Rails.public_path.to_s, path)
-      return candidate if File.file?(candidate)
+      return Asset.new(candidate) if File.file?(candidate)
 
       # Nothing is precompiled in development, so the load path is asked as
       # well. The mount point is not part of a logical path either.
@@ -212,7 +227,7 @@ module Sghtmltopdf
     # same way but is looked up across every root.
     def from_stylesheet_dir(path, dir)
       candidate = File.expand_path(path, dir)
-      return candidate if File.file?(candidate)
+      return Asset.new(candidate) if File.file?(candidate)
 
       from_asset_pipeline(path.delete_prefix("./"))
     end
@@ -236,8 +251,10 @@ module Sghtmltopdf
 
     # `@import` up to its terminating `;`, in both the `url()` and the bare
     # string form. Media conditions are matched so they are consumed, not kept.
+    # CSS compressors can omit whitespace before a quoted URL. Keep the token
+    # boundary so an unrelated at-rule such as `@importurl` is not expanded.
     IMPORT_STATEMENT = /
-      @import \s+
+      @import \b \s*
       (?: url\( \s* (?<href> "[^"]*" | '[^']*' | [^)"'\s]* ) \s* \)
         | (?<href> "[^"]*" | '[^']*' ) )
       [^;]* ;
@@ -258,7 +275,7 @@ module Sghtmltopdf
       return nil if relative.empty?
 
       candidate = File.join(::Rails.public_path.to_s, relative)
-      File.file?(candidate) ? candidate : nil
+      File.file?(candidate) ? Asset.new(candidate) : nil
     end
 
     # `asset_path` for `source`, falling back to `source` itself.
@@ -282,12 +299,20 @@ module Sghtmltopdf
       # Propshaft
       if assets.respond_to?(:load_path)
         found = assets.load_path.find(source)
-        return found.path.to_s if found.respond_to?(:path)
+        return Asset.new(found.path.to_s) if found.respond_to?(:path)
       end
       # Sprockets
       if assets.respond_to?(:[])
         found = assets[source]
-        return found.filename.to_s if found.respond_to?(:filename)
+        # Compiled CSS can contain digested URLs even in development, where
+        # no such file exists under public/. Sprockets looks up logical names;
+        # verify the digest before using the corresponding source file.
+        if found.nil?
+          logical = source.sub(/-[0-9a-f]+(?=\.[^.]+\z)/i, "")
+          candidate = assets[logical] unless logical == source
+          found = candidate if candidate.respond_to?(:digest_path) && candidate.digest_path == source
+        end
+        return Asset.new(found.filename.to_s, found) if found.respond_to?(:filename)
       end
       nil
     end
