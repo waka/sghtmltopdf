@@ -43,7 +43,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use pdf_writer::types::{ActionType, AnnotationType, LineCapStyle, TextRenderingMode};
+use pdf_writer::types::{ActionType, AnnotationType, LineCapStyle, StructRole, TextRenderingMode};
 use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref, TextStr};
 
 use super::outline::{collect_bookmark_positions, write_outline, Bookmark, OutlineEntry};
@@ -53,7 +53,7 @@ use crate::img::resolve_against_base_href;
 use crate::layout::{
     resolve_border, shape_standalone_line, EdgeSizes, EmphasisMark, FragmentPosition, LaidOutBox,
     LaidOutContent, LaidOutTable, LaidOutTableRow, Layout, LineBox, Page, PageSettings, Rect,
-    TextRun,
+    TableSection, TextRun,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -65,9 +65,12 @@ use crate::style::{
 };
 
 use super::color_font::{write_color_fonts, FontPlan};
+use super::file_id::{id_entry, FileIdHasher};
 use super::font::{deflate, embed_font, FontUsage};
 use super::img::{embed_image, ids_for_image, image_resource_name, ImageIds, PreparedImage};
-use super::options::{current_datetime, producer_string, DocumentMetadata, PdfOutputOptions};
+use super::options::{producer_string, DocumentMetadata, PdfOutputOptions};
+use super::tagging::{strip_empty_artifacts, Bounds, RowTag, Tagger, CONTENT_TAG};
+use super::xmp::xmp_packet;
 
 /// A wrapper interposing colour conversion on `Content`.
 ///
@@ -78,16 +81,163 @@ use super::options::{current_datetime, producer_string, DocumentMetadata, PdfOut
 pub(super) struct RenderTarget<'a> {
     content: &'a mut Content,
     grayscale: bool,
+    /// Present when writing a tagged PDF. Every `tag_*` method is a no-op without it.
+    tagger: Option<&'a mut Tagger>,
 }
 
 impl<'a> RenderTarget<'a> {
     pub(super) fn new(content: &'a mut Content, grayscale: bool) -> Self {
-        Self { content, grayscale }
+        Self {
+            content,
+            grayscale,
+            tagger: None,
+        }
     }
 
-    /// Wrap another `Content` (a form XObject's contents, say) with the same settings.
-    pub(super) fn wrap<'b>(&self, content: &'b mut Content) -> RenderTarget<'b> {
-        RenderTarget::new(content, self.grayscale)
+    /// Tag what is drawn through this target.
+    pub(super) fn with_tagger(mut self, tagger: Option<&'a mut Tagger>) -> Self {
+        self.tagger = tagger;
+        self
+    }
+
+    /// Wrap another `Content` (a form XObject's contents, say) with the same settings. Call
+    /// [`Self::tag_enter_form`] first to have what is drawn into it tagged as the form's content.
+    pub(super) fn wrap<'b>(&'b mut self, content: &'b mut Content) -> RenderTarget<'b> {
+        RenderTarget::new(content, self.grayscale).with_tagger(self.tagger.as_deref_mut())
+    }
+
+    /// Whether this target writes a tagged PDF.
+    pub(super) fn is_tagging(&self) -> bool {
+        self.tagger.is_some()
+    }
+
+    /// Tag what is drawn from now on as the content of the Form XObject `form`. Pass the
+    /// result to [`Self::tag_leave_form`] once the form is done.
+    fn tag_enter_form(&mut self, form: Ref) -> Option<usize> {
+        self.tagger.as_mut().map(|t| t.enter_form(form))
+    }
+
+    fn tag_leave_form(&mut self, previous: Option<usize>) {
+        if let (Some(t), Some(previous)) = (self.tagger.as_mut(), previous) {
+            t.leave_form(previous);
+        }
+    }
+
+    /// Open a table row, or note that it is a repeated header. Pass the result to
+    /// [`Self::tag_end_row`].
+    fn tag_begin_row(&mut self, node: Option<NodeId>, header: bool) -> Option<(RowTag, bool)> {
+        let row = self.tagger.as_mut().map(|t| t.begin_row(node, header))?;
+        // A repeated header is page furniture: an artifact with nothing inside tagged.
+        let artifact = row.repeated && self.mark_artifact_begin();
+        if artifact {
+            if let Some(t) = self.tagger.as_mut() {
+                t.suspend();
+            }
+        }
+        Some((row, artifact))
+    }
+
+    fn tag_end_row(&mut self, row: Option<(RowTag, bool)>) {
+        let Some((row, artifact)) = row else {
+            return;
+        };
+        if artifact {
+            if let Some(t) = self.tagger.as_mut() {
+                t.resume();
+            }
+            self.mark_end(true);
+        }
+        self.tag_end(row.pushed);
+    }
+
+    /// Open the `Link` element of a run group linking to `href`.
+    fn tag_begin_link(&mut self, href: &str, bounds: Bounds) -> bool {
+        self.tagger
+            .as_mut()
+            .is_some_and(|t| t.begin_link(href, bounds))
+    }
+
+    /// Open the structure element of `node`, if it has one. Pass the result to [`Self::tag_end`].
+    fn tag_begin(&mut self, node: Option<NodeId>) -> bool {
+        self.tagger.as_mut().is_some_and(|t| t.begin_node(node))
+    }
+
+    /// Open an element with no HTML element of its own (`Lbl`, `LBody`, `Link`).
+    fn tag_begin_synthetic(&mut self, role: StructRole) -> bool {
+        self.tagger
+            .as_mut()
+            .is_some_and(|t| t.begin_synthetic(role))
+    }
+
+    fn tag_end(&mut self, pushed: bool) {
+        if let Some(t) = self.tagger.as_mut() {
+            t.end(pushed);
+        }
+    }
+
+    /// Begin a `<li>`'s body, after its marker. Pass the result to [`Self::tag_end`].
+    fn tag_begin_list_body(&mut self, node: Option<NodeId>) -> bool {
+        let is_item = self.tagger.as_ref().is_some_and(|t| t.is_list_item(node));
+        is_item && self.tag_begin_synthetic(StructRole::LBody)
+    }
+
+    /// Start a marked-content sequence for the innermost element's content. Pass the result to
+    /// [`Self::mark_end`].
+    fn mark_content_begin(&mut self) -> bool {
+        let Some(mcid) = self.tagger.as_mut().and_then(|t| t.content_mcid()) else {
+            return false;
+        };
+        self.begin_marked_with_mcid(CONTENT_TAG, mcid);
+        true
+    }
+
+    /// Start the `Figure` of an `<img>`, or an artifact if it is decoration.
+    fn mark_figure_begin(&mut self, node: Option<NodeId>) -> bool {
+        match self.tagger.as_mut().and_then(|t| t.figure_mcid(node)) {
+            Some(mcid) => {
+                self.begin_marked_with_mcid(Name(b"Figure"), mcid);
+                true
+            }
+            None => self.mark_artifact_begin(),
+        }
+    }
+
+    /// Start an `Artifact` sequence (decoration that is not part of the document's content).
+    fn mark_artifact_begin(&mut self) -> bool {
+        let Some(tagger) = self.tagger.as_ref() else {
+            return false;
+        };
+        if !tagger.is_active() {
+            return false;
+        }
+        self.content.begin_marked_content(Name(b"Artifact"));
+        true
+    }
+
+    fn mark_end(&mut self, begun: bool) {
+        if begun {
+            self.content.end_marked_content();
+        }
+    }
+
+    fn begin_marked_with_mcid(&mut self, tag: Name<'_>, mcid: i32) {
+        let mut marked = self.content.begin_marked_content_with_properties(tag);
+        marked.properties().identify(mcid);
+        marked.finish();
+    }
+
+    /// Run `draw` as an artifact: marked as such, and with nothing inside tagged. For the
+    /// header, footer and other furniture drawn through the ordinary box painting.
+    pub(super) fn as_artifact(&mut self, draw: impl FnOnce(&mut Self)) {
+        let begun = self.mark_artifact_begin();
+        if let Some(t) = self.tagger.as_mut() {
+            t.suspend();
+        }
+        draw(self);
+        if let Some(t) = self.tagger.as_mut() {
+            t.resume();
+        }
+        self.mark_end(begun);
     }
 
     fn map(&self, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
@@ -405,6 +555,7 @@ pub fn encode_pdf_with_options(
             area,
             links.annotation_base_href(),
             output.scale,
+            None,
         );
     }
 
@@ -430,11 +581,14 @@ pub fn encode_pdf_with_options(
     pdf.pages(pages_tree_id)
         .kids(page_ids.iter().copied())
         .count(page_ids.len() as i32);
+    let datetime = output.metadata.datetime();
+    let metadata_id = alloc.next();
     let mut catalog = pdf.catalog(catalog_id);
     catalog.pages(pages_tree_id);
     if let Some(dests_id) = dests_id {
         catalog.destinations(dests_id);
     }
+    catalog.metadata(metadata_id);
     if let Some(outline_id) = outline_id {
         catalog.outlines(outline_id);
     }
@@ -443,13 +597,29 @@ pub fn encode_pdf_with_options(
     }
     catalog.finish();
 
+    pdf.metadata(metadata_id, &xmp_packet(&output.metadata, datetime));
+
     let info_id = alloc.next();
-    write_document_info(pdf.document_info(info_id), &output.metadata);
+    write_document_info(pdf.document_info(info_id), &output.metadata, datetime);
 
-    let id = file_identifier(&output.metadata, pages.len());
-    pdf.set_file_id((id.clone(), id));
+    with_file_identifier(pdf.finish())
+}
 
-    pdf.finish()
+/// Add the `/ID` to the trailer of a finished PDF.
+///
+/// The identifier hashes everything before the trailer, which is only known once the file is
+/// finished, so it is spliced into the trailer dictionary afterwards. The xref offsets all
+/// point before the trailer and are unaffected.
+fn with_file_identifier(mut bytes: Vec<u8>) -> Vec<u8> {
+    let find_last = |needle: &[u8]| bytes.windows(needle.len()).rposition(|w| w == needle);
+    let trailer = find_last(b"trailer\n").expect("pdf_writer writes a trailer");
+    let dict_end = find_last(b">>\nstartxref").expect("pdf_writer closes the trailer dictionary");
+
+    let mut hasher = FileIdHasher::new();
+    hasher.update(&bytes[..trailer]);
+    let entry = format!("  {}\n", id_entry(&hasher.digest()));
+    bytes.splice(dict_end..dict_end, entry.into_bytes());
+    bytes
 }
 
 /// Write one `/Link` annotation. An internal anchor (`#id`) writes a named destination
@@ -459,8 +629,12 @@ pub(super) fn write_link_annotation(
     area: &LinkArea,
     base_href: Option<&str>,
     scale: f32,
+    struct_parent: Option<i32>,
 ) {
     annotation.subtype(AnnotationType::Link);
+    if let Some(key) = struct_parent {
+        annotation.struct_parent(key);
+    }
     // An annotation's `/Rect` is in page coordinates (unaffected by the content stream's CTM),
     // so the CSS px to pt conversion happens here.
     annotation.rect(PdfRect::new(
@@ -557,43 +731,13 @@ pub fn write_document_with_options<S: Sink>(
     sink.finish()
 }
 
-/// The `/ID` (file identifier) written in the trailer.
-///
-/// The PDF spec makes it an array of two strings: the first a permanent identifier fixed
-/// when the document is created, the second one that changes on every update. This crate
-/// performs no incremental updates, so the same value is written for both.
-///
-/// The spec says nothing about the contents beyond being unique per document. Sixteen bytes
-/// are built from a hash mixing the same metadata, creation date and page count written to
-/// the Info dictionary. PDF/A requires a file identifier, so without one it does not conform.
-pub(super) fn file_identifier(metadata: &DocumentMetadata, page_count: usize) -> Vec<u8> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let datetime = current_datetime();
-    let mut id = Vec::with_capacity(16);
-    // Two 64-bit hashes joined to make 16 bytes (a different salt gives a different value).
-    for salt in [0u64, 0x9e37_79b9_7f4a_7c15] {
-        let mut hasher = DefaultHasher::new();
-        salt.hash(&mut hasher);
-        producer_string().hash(&mut hasher);
-        metadata.title.hash(&mut hasher);
-        metadata.author.hash(&mut hasher);
-        metadata.subject.hash(&mut hasher);
-        metadata.keywords.hash(&mut hasher);
-        datetime.hash(&mut hasher);
-        page_count.hash(&mut hasher);
-        // `pdf_writer::Finish` is also in scope, so which `finish` is meant is made explicit.
-        id.extend_from_slice(&Hasher::finish(&hasher).to_be_bytes());
-    }
-    id
-}
-
-/// Write the PDF Info dictionary. `/Producer` and `/CreationDate` are always written; the
+/// Write the PDF Info dictionary. `/Producer`, `/CreationDate` and `/ModDate` are always
+/// written (`/ModDate` is the creation date: the file is written once and never updated); the
 /// rest only when given.
 pub(super) fn write_document_info(
     mut info: pdf_writer::writers::DocumentInfo<'_>,
     metadata: &DocumentMetadata,
+    datetime: (i64, u32, u32, u32, u32, u32),
 ) {
     if let Some(title) = metadata.title.as_deref() {
         info.title(TextStr(title));
@@ -607,9 +751,12 @@ pub(super) fn write_document_info(
     if let Some(keywords) = metadata.keywords.as_deref() {
         info.keywords(TextStr(keywords));
     }
+    if let Some(creator) = metadata.creator.as_deref() {
+        info.creator(TextStr(creator));
+    }
     info.producer(TextStr(&producer_string()));
 
-    let (year, month, day, hour, minute, second) = current_datetime();
+    let (year, month, day, hour, minute, second) = datetime;
     let date = pdf_writer::Date::new(year as u16)
         .month(month as u8)
         .day(day as u8)
@@ -619,6 +766,7 @@ pub(super) fn write_document_info(
         .utc_offset_hour(0)
         .utc_offset_minute(0);
     info.creation_date(date);
+    info.modified_date(date);
     info.finish();
 }
 
@@ -1280,6 +1428,7 @@ fn render_box_with_style(
     opacity_form_ids: &HashMap<NodeId, Ref>,
     pending_forms: &mut Vec<(Ref, Vec<u8>)>,
 ) {
+    let tagged = content.tag_begin(b.node);
     if style.transform.is_empty() {
         render_box_opacity_wrapped(
             content,
@@ -1295,6 +1444,7 @@ fn render_box_with_style(
             opacity_form_ids,
             pending_forms,
         );
+        content.tag_end(tagged);
         return;
     }
 
@@ -1316,6 +1466,7 @@ fn render_box_with_style(
         pending_forms,
     );
     content.restore_state();
+    content.tag_end(tagged);
 }
 
 /// Where `opacity < 1`, the actual drawing ([`render_box_with_style_inner`]) is written to a
@@ -1364,22 +1515,30 @@ fn render_box_opacity_wrapped(
         .expect("an element with opacity < 1 should have had a Ref allocated in advance");
 
     let mut sub_content = Content::new();
-    let mut sub_target = content.wrap(&mut sub_content);
-    render_box_with_style_inner(
-        &mut sub_target,
-        b,
-        style,
-        styles,
-        fonts,
-        settings,
-        text_fonts,
-        image_ids,
-        background_images,
-        alpha_gs_names,
-        opacity_form_ids,
-        pending_forms,
-    );
-    pending_forms.push((form_ref, sub_content.finish().to_vec()));
+    let form_state = content.tag_enter_form(form_ref);
+    {
+        let mut sub_target = content.wrap(&mut sub_content);
+        render_box_with_style_inner(
+            &mut sub_target,
+            b,
+            style,
+            styles,
+            fonts,
+            settings,
+            text_fonts,
+            image_ids,
+            background_images,
+            alpha_gs_names,
+            opacity_form_ids,
+            pending_forms,
+        );
+    }
+    content.tag_leave_form(form_state);
+    let mut form_bytes = sub_content.finish();
+    if content.is_tagging() {
+        form_bytes = strip_empty_artifacts(form_bytes);
+    }
+    pending_forms.push((form_ref, form_bytes));
 
     content.save_state();
     apply_fill_alpha(content, style.opacity, alpha_gs_names);
@@ -1555,6 +1714,7 @@ fn render_box_with_style_inner(
                 })
         });
 
+    let decoration = content.mark_artifact_begin();
     render_box_decoration(
         content,
         &b.layout,
@@ -1564,12 +1724,16 @@ fn render_box_with_style_inner(
         alpha_gs_names,
     );
     render_outline(content, &b.layout, style, settings);
+    content.mark_end(decoration);
 
     // The marker of a `display: list-item`. It reuses the same `render_line` as an ordinary
     // text line.
     if let Some(marker) = &b.marker {
+        let label = content.tag_begin_synthetic(StructRole::Lbl);
         render_line(content, marker, fonts, settings, text_fonts, alpha_gs_names);
+        content.tag_end(label);
     }
+    let list_body = content.tag_begin_list_body(b.node);
 
     // `overflow: hidden`/`scroll`/`auto` (not distinguished; all clip the same way).
     // The decoration (background, borders, outline, marker) is drawn above and is unaffected
@@ -1645,6 +1809,7 @@ fn render_box_with_style_inner(
         LaidOutContent::Image(image) => {
             if let Some(image) = image {
                 if let Some(ids) = image_ids.get(&(Rc::as_ptr(image) as usize)) {
+                    let figure = content.mark_figure_begin(b.node);
                     render_replaced_image(
                         content,
                         b.layout.content,
@@ -1653,6 +1818,7 @@ fn render_box_with_style_inner(
                         image,
                         ids.root,
                     );
+                    content.mark_end(figure);
                 }
             }
         }
@@ -1697,9 +1863,22 @@ fn render_box_with_style_inner(
             };
             // Row groups are the layer below rows and cells (CSS2.1 17.5.1), so every group is
             // painted before the first row.
+            let backgrounds = content.mark_artifact_begin();
             render_row_group_backgrounds(content, &table.rows, styles, settings, alpha_gs_names);
+            content.mark_end(backgrounds);
+            let mut row_group = None;
+            let mut group_tag = false;
             for row in &table.rows {
+                let background = content.mark_artifact_begin();
                 render_row_background(content, row, styles, settings, alpha_gs_names);
+                content.mark_end(background);
+                // A `<thead>`, `<tbody>` or `<tfoot>` encloses the consecutive rows it holds.
+                if row.group != row_group {
+                    content.tag_end(group_tag);
+                    group_tag = content.tag_begin(row.group);
+                    row_group = row.group;
+                }
+                let row_tag = content.tag_begin_row(row.node, row.section == TableSection::Head);
                 for cell in &row.cells {
                     let cell_style = cell
                         .node
@@ -1756,13 +1935,16 @@ fn render_box_with_style_inner(
                         );
                     }
                 }
+                content.tag_end_row(row_tag);
             }
+            content.tag_end(group_tag);
             if collapse {
                 render_collapsed_row_gaps(content, &collapse_rows, &all_cells, styles, settings);
             }
         }
     }
 
+    content.tag_end(list_body);
     if style.overflow.clips() {
         content.restore_state();
     }
@@ -4164,6 +4346,7 @@ fn render_line(
     // An inline element's background (`<mark>` and so on) is painted before the text, as the
     // rectangle from the run's ascent to its descent. Unlike a block's background
     // ([`render_decoration`]) it has no border box, so the font metrics stand in.
+    let backdrop = content.mark_artifact_begin();
     for run in &line.runs {
         if run.background_color.alpha <= 0.0 || run.width <= 0.0 {
             continue;
@@ -4201,8 +4384,14 @@ fn render_line(
         alpha_gs_names,
         baseline_y,
     );
+    content.mark_end(backdrop);
 
     content.begin_text();
+    // The marked-content sequence of the run group being written: consecutive runs of the same
+    // link (or of none) share one, and each link is a `Link` element of its own.
+    let mut group: Option<Option<&Rc<str>>> = None;
+    let mut group_mark = false;
+    let mut group_link = false;
 
     // Resolved glyph codes for the run being written. Held across runs so the
     // whole line reuses one buffer.
@@ -4214,7 +4403,7 @@ fn render_line(
     const WORD_GAP_EPSILON: f32 = 0.01;
     let mut previous_run_end: Option<f32> = None;
 
-    for run in &line.runs {
+    for (run_index, run) in line.runs.iter().enumerate() {
         if run.glyphs.is_empty() {
             continue;
         }
@@ -4238,6 +4427,37 @@ fn render_line(
         let Some(font) = fonts.get(run.font_index) else {
             continue;
         };
+
+        if group != Some(run.link.as_ref()) {
+            content.mark_end(group_mark);
+            content.tag_end(group_link);
+            group = Some(run.link.as_ref());
+            group_link = match &run.link {
+                Some(href) => {
+                    // Where the consecutive runs of this link are, to find its annotation.
+                    let mut bounds = Bounds {
+                        x0: f32::MAX,
+                        y0: f32::MAX,
+                        x1: f32::MIN,
+                        y1: f32::MIN,
+                    };
+                    for linked in line.runs[run_index..]
+                        .iter()
+                        .take_while(|r| r.link.as_ref() == Some(href))
+                    {
+                        let x0 = settings.margin.left + line.rect.x + linked.x_offset;
+                        let base = baseline_y + linked.baseline_shift;
+                        bounds.x0 = bounds.x0.min(x0);
+                        bounds.x1 = bounds.x1.max(x0 + linked.width);
+                        bounds.y0 = bounds.y0.min(base - linked.descent);
+                        bounds.y1 = bounds.y1.max(base + linked.ascent);
+                    }
+                    content.tag_begin_link(href, bounds)
+                }
+                None => false,
+            };
+            group_mark = content.mark_content_begin();
+        }
 
         content.set_fill_rgb(
             run.color.red as f32 / 255.0,
@@ -4287,8 +4507,11 @@ fn render_line(
         }
     }
 
+    content.mark_end(group_mark);
+    content.tag_end(group_link);
     content.end_text();
 
+    let decorations = content.mark_artifact_begin();
     for run in &line.runs {
         if !run.underline && !run.line_through {
             continue;
@@ -4326,6 +4549,7 @@ fn render_line(
 
     // Like the decoration lines, `text-emphasis` marks are drawn after the text itself.
     render_emphasis_marks(content, line, fonts, settings, text_fonts, baseline_y);
+    content.mark_end(decorations);
 }
 
 /// Draw the `text-emphasis` marks.

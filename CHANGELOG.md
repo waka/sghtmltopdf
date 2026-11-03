@@ -8,6 +8,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- New entries go in changelog.d/ as one file per change, not here (see changelog.d/README.md).
      `cargo xtask changelog release <version>` moves them into this file when releasing. -->
 
+## 0.7.0 - 2026-11-01
+
+### Added
+
+- `--tagged` (`tagged: true` in the Ruby gem, `?tagged` on the server) writes a tagged PDF
+  (#132). It adds a structure tree for screen readers and other assistive technology:
+  headings (`H1` to `H6`), paragraphs, lists (`L`, `LI`, `Lbl`, `LBody`), tables (`Table`,
+  `THead`/`TBody`/`TFoot`, `TR`, `TH` with `Scope`, `TD`, spans, `Caption`), links (each with its
+  annotation) and images with an `alt` as `Figure`s carrying it. Backgrounds, borders, headers,
+  footers, a `<thead>` repeated on a later page and an `<img>` without `alt` are marked as
+  artifacts. `--streaming` does not support it.
+
+  Two known limitations of the structure tree: it follows paint order, not DOM order, so floats
+  and `z-index` can reorder it (an `H2` before the `Div > H1` it follows in the HTML); and a link
+  around an image gets a `Link` element of its own at the end of the document, as a sibling of the
+  `Figure`, instead of one that wraps it.
+
+- The PDF gets a document outline (bookmarks) from the CSS `bookmark-level`, `bookmark-label`
+  and `bookmark-state` properties. An element with a `bookmark-level` becomes an entry,
+  nested by level in document order, labelled with its `bookmark-label` (strings, `attr()` and
+  `content()`; the element's text by default) and jumping to where the element starts. A
+  document without such elements gets no `/Outlines`. It works in both batch and streaming mode.
+- The PDF catalog gets a `/Lang` entry from the document's `<html lang>`, so viewers, screen
+  readers and PDF/A validators know the document language. A region tag such as `en-GB` is
+  kept as written, and an empty or missing `lang` writes no entry. A value that can't be a
+  language tag writes no entry either, with a warning. Both the batch and the streaming writer
+  do this. Only the main document counts, not the header and footer HTML. In the Rust API, an
+  explicit `DocumentMetadata::language` wins over `<html lang>` and is written as given.
+- `--creator` and `--creation-date` set the PDF's `/Creator` and its creation date, and every PDF
+  now carries an XMP metadata stream. The creation date is an ISO 8601 date or date-time
+  (`2026-10-22T10:30:00+02:00`, converted to UTC) written as `/CreationDate` and `/ModDate` in
+  place of the current time; with it, the same input renders to the same bytes in both the batch
+  and the streaming writer. Without it the output is as before, apart from `/ModDate`, which is
+  now always written and equals the creation date. The XMP stream in the catalog's `/Metadata`
+  mirrors the Info fields (`dc:title`, `dc:creator`, `dc:description`, `pdf:Keywords`,
+  `xmp:CreatorTool`, `pdf:Producer`, `xmp:CreateDate`, `xmp:ModifyDate`) and the catalog's
+  `/Lang` (`dc:language`) as UTF-8; it carries no
+  PDF/A identification yet. Both options are available in the Rust API
+  (`DocumentMetadata::creator` and `creation_date`), the HTTP server's query and the Ruby
+  binding (`creator:`, and `creation_date:` taking a `Time`, `DateTime`, `Date` or ISO 8601 string).
+- Precompiled Windows `x64-mingw-ucrt` gems support RubyInstaller UCRT Ruby 3.2,
+  3.3, 3.4, and 4.0. The native extension renders PDFs in-process without a Rust
+  toolchain or a separate `sghtmltopdf server`. Each bundled Ruby ABI is checked
+  by installing the gem and rendering PDFs on Windows before publishing.
+
+### Fixed
+
+- Embedded fonts are named after the font, with a subset tag, instead of `EmbeddedFont`.
+  `/BaseFont` and `/FontName` are now `ABCDEF+DMSans-Regular`: six uppercase letters derived
+  from the subset (so two subsets of one font differ, and the same input gives the same
+  names), a `+`, and the font's PostScript name, or its family and subfamily when it has none.
+  Preflight tools flagged the old names and PDF/A validators rejected them.
+- Under `border-collapse: collapse`, borders set on `<tr>` and on `<thead>`/`<tbody>`/`<tfoot>` are
+  now drawn, merged with the cell borders by the same conflict rule, and take their width between
+  the rows as in browsers. A row with fewer cells than the table has columns still gets them across
+  the whole table width. Previously only cell borders were drawn, so these borders were missing.
+- `@supports` blocks are evaluated instead of always being dropped (#89).
+  `(property: value)` is true when the declaration parses (a `var()` value counts), `selector(...)`
+  when the selector parses, and `not`, `and`, `or` and parentheses combine them. Anything else,
+  such as `font-tech()` or an unknown function, is false. `@supports` nests with `@media` and
+  `@layer` in either direction.
+- A run raised or lowered with `vertical-align` (`middle`, `sub`, a length and so on) now grows
+  the line only as far as its `line-height` tall box sticks out, as browsers do. Under a
+  `line-height` smaller than the font's ascent plus descent (Bootstrap sets 16px on 14px table
+  cells) every such line came out about 2px taller than in Chrome, and under a larger
+  `line-height` the run did not grow the line at all.
+
 ## 0.6.1 - 2026-10-21
 
 ### Fixed

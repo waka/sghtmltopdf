@@ -26,7 +26,7 @@ pub(crate) use box_tree::{
 };
 pub use box_tree::{
     build_box_tree, resolve_background_images, resolve_images, BoxContent, ImageBoxContent,
-    LayoutBox, TableBox, TableCell, TableRow,
+    LayoutBox, TableBox, TableCell, TableRow, TableSection,
 };
 pub use geometry::{EdgeSizes, FragmentPosition, Layout, Rect};
 pub use inline::{shape_standalone_line, EmphasisMark, LineBox, TextRun};

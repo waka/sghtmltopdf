@@ -41,8 +41,8 @@ use crate::layout::{
     PositionedLeftovers, Rect, StreamingPaginator, TopLevelKind,
 };
 use crate::pdf::{
-    anchor_destination_name, Bookmark, ImageAssetCache, LinkSettings, PageOverlay,
-    PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, collect_tag_roles, Bookmark, ImageAssetCache, LinkSettings,
+    PageOverlay, PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -1494,6 +1494,14 @@ impl<S: Sink> Engine<S> {
         };
         let _ = html_style;
 
+        if self.options.output.tagged {
+            return Err(EngineError::UnsupportedInStreamingMode(
+                "a tagged PDF cannot be written in streaming mode\n  \
+                 (the structure tree needs the document's elements, which streaming frees as it goes).\n  \
+                 To use it, drop --streaming",
+            ));
+        }
+
         let body_border = resolve_border(&body_style);
         if has_visible_decoration(&body_style, &body_border) {
             return Err(EngineError::UnsupportedInStreamingMode(
@@ -1554,6 +1562,8 @@ impl<S: Sink> Engine<S> {
                 bookmarks: HashMap::new(),
             },
             output,
+            // Tagging is refused in streaming mode above.
+            HashMap::new(),
         )
         .map_err(EngineError::Io)?;
         let image_cache = ImageAssetCache::with_fetcher(
@@ -2063,6 +2073,11 @@ impl<S: Sink> Engine<S> {
         output
             .metadata
             .fill_language_from_document(find_document_language(&dom));
+        let tag_roles = if output.tagged {
+            collect_tag_roles(&dom)
+        } else {
+            HashMap::new()
+        };
 
         let image_cache = ImageAssetCache::with_fetcher(
             ImageFetcher::new(base_dir.to_path_buf(), options.allow_remote_assets)
@@ -2151,6 +2166,7 @@ impl<S: Sink> Engine<S> {
                 bookmarks: HashMap::new(),
             },
             output,
+            tag_roles,
         )
         .map_err(EngineError::Io)?;
 
