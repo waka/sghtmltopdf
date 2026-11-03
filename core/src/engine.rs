@@ -32,11 +32,13 @@ use crate::html::{
 };
 use crate::img::{DocumentImageCache, ImageFetcher};
 use crate::layout::{
-    build_box_for_element, collect_completed_subtree_roots, has_visible_decoration,
-    layout_document_from, paginate_document, paginate_document_with_absolutes,
+    build_box_for_element, build_box_for_inline_run, collapse_adjacent_margins,
+    collect_completed_subtree_roots, has_visible_decoration, layout_document_from_with_absolutes,
+    layout_out_of_flow_root, paginate_document, paginate_document_with_absolutes,
     resolve_background_images, resolve_border, resolve_images, resolve_lpa_or_zero,
-    resolve_padding, resolve_width_and_horizontal_margins, EdgeSizes, LaidOutBox, LaidOutContent,
-    PageSettings, Rect, StreamingPaginator,
+    resolve_padding, resolve_width_and_horizontal_margins, shift_box_y_in_place, top_level_kind,
+    EdgeSizes, LaidOutBox, LaidOutContent, LayoutBox, PageSettings, PositionedBox, PositionedKind,
+    PositionedLeftovers, Rect, StreamingPaginator, TopLevelKind,
 };
 use crate::pdf::{
     anchor_destination_name, collect_tag_roles, Bookmark, ImageAssetCache, LinkSettings,
@@ -50,7 +52,7 @@ use crate::style::{
     user_agent_stylesheet, BookmarkLabelPart, BookmarkState, ComputedStyle, CustomProperties,
     Display, LengthPercentageOrAuto, PageRule, RgbaColor, Stylesheet,
 };
-use crate::style::{FontStyle, FontWeight};
+use crate::style::{Float, FontStyle, FontWeight};
 
 /// Selects batch or streaming processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1068,6 +1070,22 @@ struct StreamingState<S: Sink> {
     start_x: f32,
     /// The starting Y coordinate of the next top-level element (the accumulated height so far).
     cursor_y: f32,
+    /// The effective bottom margin of the last in-flow top-level element, which collapses with
+    /// the next one's top margin. `None` until the first one is laid out.
+    prev_margin_bottom: Option<f32>,
+    /// `<body>`'s top margin when it collapses with its first in-flow child's (no top border
+    /// or padding, and `height: auto`, as batch requires).
+    body_collapsible_margin_top: Option<f32>,
+    /// The styles and background images of the `fixed` boxes, which are drawn on every page
+    /// from where they appear and so are kept apart from the per-page freeing.
+    pinned_styles: HashMap<NodeId, Rc<ComputedStyle>>,
+    pinned_background_images: HashMap<NodeId, Rc<PreparedImage>>,
+    /// The inline-level top-level elements (text included) since the last block. Batch wraps
+    /// such a run in one anonymous block, so it is laid out when the run ends.
+    inline_run: Vec<NodeId>,
+    /// The nodes of the inline runs already laid out, with the absolute index of the page each
+    /// ends on: their styles are freed once that page is written.
+    finished_runs: Vec<(usize, Vec<NodeId>)>,
     /// The page geometry (used to compute the overlay areas).
     page_settings: PageSettings,
     /// The layout result of a header/footer HTML that does not depend on the page number.
@@ -1079,6 +1097,10 @@ struct StreamingState<S: Sink> {
     /// per top-level element, so the characters already warned about are carried along to
     /// prevent duplicates.
     warned_uncovered_chars: HashSet<char>,
+    /// Whether a `fixed` box, and an `absolute` one whose page was already written, have been
+    /// warned about as not drawn (each is warned about once per document).
+    warned_unplaced_fixed: bool,
+    warned_unplaced_absolute: bool,
     /// The number of bookmarked elements so far, so each top-level element's bookmarks
     /// continue the document order.
     bookmark_count: usize,
@@ -1092,6 +1114,92 @@ struct StreamingState<S: Sink> {
     writer: StreamingPdfWriter<S>,
     /// The cache memoising `<img>` fetch and decode results within the document.
     image_cache: ImageAssetCache,
+}
+
+/// Warn about the `fixed`/`absolute` boxes `Mode::Streaming` could not draw as batch does, once
+/// per kind per document. Leaving them out silently would lose content with nothing said.
+fn warn_unplaced_positioned(
+    leftovers: &PositionedLeftovers,
+    warned_fixed: &mut bool,
+    warned_absolute: &mut bool,
+) {
+    if leftovers.fixed_missed_pages && !*warned_fixed {
+        *warned_fixed = true;
+        eprintln!(
+            "warning: an element with position: fixed is not drawn on the pages written before it in streaming mode\n  \
+             (in batch mode it repeats on every page).\n  \
+             To draw it on every page, drop --streaming or move it to the start of <body>"
+        );
+    }
+    if !leftovers.dropped.is_empty() && !*warned_absolute {
+        *warned_absolute = true;
+        eprintln!(
+            "warning: an element with position: absolute and no positioned ancestor is not drawn in streaming mode\n  \
+             once the first page has been written (it belongs on the first page).\n  \
+             To draw it, drop --streaming"
+        );
+    }
+}
+
+/// Lay out one in-flow top-level element below the ones before it, the way the block loop of
+/// `<body>` does in batch: its top margin collapses with the previous sibling's bottom margin
+/// and, for the first one, with `<body>`'s own top margin (CSS2.1 section 8.3.1).
+fn lay_out_in_flow_item<S: Sink>(
+    state: &mut StreamingState<S>,
+    item_box: &LayoutBox,
+    item_style: Option<&ComputedStyle>,
+    page_area: (f32, f32),
+) -> (LaidOutBox, Vec<PositionedBox>) {
+    // A float takes no part in margin collapsing.
+    let in_flow = item_style.is_none_or(|s| s.float == Float::None);
+    if let (true, Some(prev_bottom)) = (in_flow, state.prev_margin_bottom) {
+        let top = item_style.map_or(0.0, |s| {
+            resolve_lpa_or_zero(s.margin_top, state.content_width)
+        });
+        state.cursor_y -= prev_bottom + top - collapse_adjacent_margins(prev_bottom, top);
+    }
+    let (mut laid_out, positioned) = layout_document_from_with_absolutes(
+        item_box,
+        &state.styles,
+        &state.fonts,
+        state.content_width,
+        state.start_x,
+        state.cursor_y,
+        page_area,
+    );
+    if in_flow && state.prev_margin_bottom.is_none() {
+        if let Some(body_top) = state.body_collapsible_margin_top {
+            // Batch lifts the first child's effective top margin out of `<body>` and moves
+            // every child up by what that saves.
+            let first_top = laid_out.layout.margin.top;
+            let saved = body_top + first_top - collapse_adjacent_margins(body_top, first_top);
+            shift_box_y_in_place(&mut laid_out, saved);
+            state.cursor_y -= saved;
+        }
+    }
+    state.cursor_y += laid_out.layout.margin_box_height();
+    if in_flow {
+        state.prev_margin_bottom = Some(laid_out.layout.margin.bottom);
+    }
+    (laid_out, positioned)
+}
+
+impl<S: Sink> StreamingState<S> {
+    /// Copy the `ComputedStyle`s and background images of `root`'s subtree into the pinned
+    /// maps, which the per-page freeing leaves alone. `dom` may already be tombstoned under
+    /// `root`, since the tree links survive.
+    fn pin_subtree_styles(&mut self, dom: &Dom, root: NodeId) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            stack.extend(dom.children(id));
+            if let Some(style) = self.styles.get(&id) {
+                self.pinned_styles.insert(id, Rc::clone(style));
+            }
+            if let Some(image) = self.background_images.get(&id) {
+                self.pinned_background_images.insert(id, Rc::clone(image));
+            }
+        }
+    }
 }
 
 /// Free a processed top-level element.
@@ -1423,9 +1531,12 @@ impl<S: Sink> Engine<S> {
             body_border.left + body_border.right,
         );
         let start_x = body_margin_left + body_border.left + body_padding.left;
-        let start_y = resolve_lpa_or_zero(body_style.margin_top, page_width)
-            + body_border.top
-            + body_padding.top;
+        let body_margin_top = resolve_lpa_or_zero(body_style.margin_top, page_width);
+        let start_y = body_margin_top + body_border.top + body_padding.top;
+        let body_collapsible_margin_top = (body_border.top == 0.0
+            && body_padding.top == 0.0
+            && matches!(body_style.height, LengthPercentageOrAuto::Auto))
+        .then_some(body_margin_top);
 
         // With no `--title`, the `<title>` becomes the PDF's `/Title`. `<html lang>` becomes
         // the catalog's `/Lang`.
@@ -1485,10 +1596,18 @@ impl<S: Sink> Engine<S> {
             content_width: body_content_width,
             start_x,
             cursor_y: start_y,
+            prev_margin_bottom: None,
+            body_collapsible_margin_top,
+            pinned_styles: HashMap::new(),
+            pinned_background_images: HashMap::new(),
+            inline_run: Vec::new(),
+            finished_runs: Vec::new(),
             page_settings,
             overlay_cache: OverlayCache::default(),
             warned_font_families: Vec::new(),
             warned_uncovered_chars: HashSet::new(),
+            warned_unplaced_fixed: false,
+            warned_unplaced_absolute: false,
             bookmark_count: 0,
             release_whole_subtree,
             paginator: StreamingPaginator::new(page_settings.content_height()),
@@ -1497,8 +1616,9 @@ impl<S: Sink> Engine<S> {
         })
     }
 
-    /// Take one settled top-level element (a child directly under `<body>`) all the way
-    /// through style computation, layout, pagination, PDF writing and DOM release.
+    /// Take one settled top-level element (a child directly under `<body>`, text included)
+    /// through style computation. A block goes on through [`Self::place_item`]; inline-level
+    /// content is held until its run ends ([`Self::flush_inline_run`]).
     fn process_top_level_element(&mut self, node: NodeId) -> Result<(), EngineError<S::Error>> {
         // Checked before entering the layout and writing for this one element.
         self.check_deadline()?;
@@ -1513,7 +1633,7 @@ impl<S: Sink> Engine<S> {
             "process_top_level_element is only called after the streaming state is initialised",
         );
 
-        let (sub_styles, item_box) = {
+        let (sub_styles, kind) = {
             let dom = parser.dom();
             let sub_styles = compute_styles_with_parent(
                 &dom,
@@ -1547,11 +1667,8 @@ impl<S: Sink> Engine<S> {
                 node,
                 &mut state.bookmark_count,
             ));
-            let mut item_box = build_box_for_element(&dom, &sub_styles, node);
-            if let (Some(item_box), true) = (&mut item_box, options_content.load_images) {
-                resolve_images(item_box, &dom, &sub_styles, &state.image_cache);
-            }
-            (sub_styles, item_box)
+            let kind = top_level_kind(&dom, &sub_styles, node);
+            (sub_styles, kind)
         };
         if options_content.load_images {
             state
@@ -1560,43 +1677,155 @@ impl<S: Sink> Engine<S> {
         }
         state.styles.extend(sub_styles);
 
+        match kind {
+            // `display: none` and the like. As in batch, it does not end a run of inline content.
+            TopLevelKind::None => {
+                release_processed(parser.dom_mut(), node, state.release_whole_subtree);
+                return Ok(());
+            }
+            // Batch wraps the whole run of inline content in one anonymous block, so the node
+            // is held until the run ends.
+            TopLevelKind::Inline => {
+                state.inline_run.push(node);
+                return Ok(());
+            }
+            TopLevelKind::Block => {}
+        }
+        self.flush_inline_run()?;
+
+        let state = self
+            .streaming
+            .as_mut()
+            .expect("the streaming state was used above");
+        let item_box = {
+            let dom = self.parser.dom();
+            let mut item_box = build_box_for_element(&dom, &state.styles, node);
+            if let (Some(item_box), true) = (&mut item_box, self.options.content.load_images) {
+                resolve_images(item_box, &dom, &state.styles, &state.image_cache);
+            }
+            item_box
+        };
         let Some(item_box) = item_box else {
-            // An element generating no box, through `display: none` and the like.
-            release_processed(parser.dom_mut(), node, state.release_whole_subtree);
+            release_processed(self.parser.dom_mut(), node, state.release_whole_subtree);
             return Ok(());
         };
+        self.place_item(item_box, vec![node])
+    }
 
-        let laid_out = layout_document_from(
-            &item_box,
-            &state.styles,
-            &state.fonts,
-            state.content_width,
-            state.start_x,
-            state.cursor_y,
+    /// Lay out the run of inline-level top-level elements held so far, as one anonymous
+    /// block, and write the pages it settles.
+    fn flush_inline_run(&mut self) -> Result<(), EngineError<S::Error>> {
+        let state = self
+            .streaming
+            .as_mut()
+            .expect("flush_inline_run is only called after the streaming state is initialised");
+        if state.inline_run.is_empty() {
+            return Ok(());
+        }
+        let nodes = std::mem::take(&mut state.inline_run);
+        let item_box = {
+            let dom = self.parser.dom();
+            let mut item_box = build_box_for_inline_run(&dom, &state.styles, &nodes);
+            if let (Some(item_box), true) = (&mut item_box, self.options.content.load_images) {
+                resolve_images(item_box, &dom, &state.styles, &state.image_cache);
+            }
+            item_box
+        };
+        let Some(item_box) = item_box else {
+            // Nothing but whitespace, which generates no box between blocks.
+            for &node in &nodes {
+                remove_subtree_styles(
+                    &self.parser.dom(),
+                    node,
+                    &mut state.styles,
+                    &mut state.background_images,
+                );
+                release_processed(self.parser.dom_mut(), node, state.release_whole_subtree);
+            }
+            return Ok(());
+        };
+        self.place_item(item_box, nodes)
+    }
+
+    /// Take one top-level box (an element's, or the anonymous one of an inline run made of
+    /// `nodes`) through layout, pagination, PDF writing and DOM release.
+    fn place_item(
+        &mut self,
+        item_box: LayoutBox,
+        nodes: Vec<NodeId>,
+    ) -> Result<(), EngineError<S::Error>> {
+        let Engine {
+            parser,
+            streaming,
+            options,
+            ..
+        } = self;
+        let state = streaming
+            .as_mut()
+            .expect("place_item is only called after the streaming state is initialised");
+
+        // The `absolute`/`fixed` boxes are laid out against the page area, as `Mode::Batch`
+        // lays them out, and overlaid once the element is paginated.
+        let page_area = (
+            state.page_settings.content_width(),
+            state.page_settings.content_height(),
         );
-        state.cursor_y += laid_out.layout.margin_box_height();
+        let own_node = item_box.node;
+        let item_style = own_node.and_then(|node| state.styles.get(&node).cloned());
+        let mut pages = Vec::new();
+        let positioned = if item_style
+            .as_ref()
+            .is_some_and(|s| s.position.is_out_of_flow())
+        {
+            // In batch the block loop of `<body>` takes this element out of the flow: it
+            // takes no space, so the flow and its margins are left as they are.
+            layout_out_of_flow_root(&item_box, &state.styles, &state.fonts, page_area)
+        } else {
+            let (mut laid_out, positioned) =
+                lay_out_in_flow_item(state, &item_box, item_style.as_deref(), page_area);
+
+            // Where this top-level element itself carries no decoration (a background,
+            // borders or a background-image; `has_visible_decoration` covers
+            // background-image too), `place_split` generates no decoration fragment and this
+            // node never appears in `page.boxes`. That is, `node`'s own `ComputedStyle` and
+            // background image are never referenced again by `write_page`, so they can be
+            // removed right here (with decoration, they are removed via
+            // `collect_completed_subtree_roots` below when the page the decoration fragment
+            // really landed on is flushed).
+            if let (Some(node), false) = (own_node, laid_out.has_visible_decoration) {
+                state.styles.remove(&node);
+                state.background_images.remove(&node);
+            }
+            pages = state.paginator.push_item(&mut laid_out);
+            positioned
+        };
 
         // Layout is already complete and this DOM subtree (its text content, attributes and
         // so on) is never read again, so it can be freed immediately without waiting for the
         // page to flush (the `ComputedStyle`s are held separately in `state.styles`).
-
-        release_processed(parser.dom_mut(), node, state.release_whole_subtree);
-
-        // Where this top-level element itself carries no decoration (a background, borders or
-        // a background-image; `has_visible_decoration` covers background-image too),
-        // `place_split` generates no decoration fragment and this node never appears in
-        // `page.boxes`. That is, `node`'s own `ComputedStyle` and background image are never
-        // referenced again by `write_page`, so they can be removed right here (with
-        // decoration, they are removed via `collect_completed_subtree_roots` below when the
-        // page the decoration fragment really landed on is flushed).
-
-        if !laid_out.has_visible_decoration {
-            state.styles.remove(&node);
-            state.background_images.remove(&node);
+        for &node in &nodes {
+            release_processed(parser.dom_mut(), node, state.release_whole_subtree);
+        }
+        // An anonymous box never shows up in `collect_completed_subtree_roots`, so the styles
+        // of its run are freed once the page it ends on is written.
+        if own_node.is_none() {
+            let last_page = state.paginator.current_page_index();
+            state.finished_runs.push((last_page, nodes));
         }
 
-        let mut laid_out = laid_out;
-        let pages = state.paginator.push_item(&mut laid_out);
+        // A `fixed` box is drawn on every page from here on, so its styles must outlive the
+        // pages it is first drawn on. The tree links survive the release above.
+        for pb in &positioned {
+            if let (PositionedKind::Fixed, Some(root)) = (pb.kind, pb.laid.node) {
+                state.pin_subtree_styles(&parser.dom(), root);
+            }
+        }
+        let leftovers = state.paginator.place_positioned(&mut pages, positioned);
+        warn_unplaced_positioned(
+            &leftovers,
+            &mut state.warned_unplaced_fixed,
+            &mut state.warned_unplaced_absolute,
+        );
         for page in &pages {
             if !options.header_footer_html.is_empty() {
                 let page_number = state.writer.page_count() + 1;
@@ -1650,7 +1879,34 @@ impl<S: Sink> Engine<S> {
                 remove_subtree_styles(&dom, root, &mut state.styles, &mut state.background_images);
             }
         }
+        // A box that is never drawn needs none of its styles either.
+        for root in leftovers.dropped.iter().filter_map(|pb| pb.laid.node) {
+            remove_subtree_styles(&dom, root, &mut state.styles, &mut state.background_images);
+        }
+        let written = state.writer.page_count();
+        state.finished_runs.retain(|(last_page, nodes)| {
+            if *last_page >= written {
+                return true;
+            }
+            for &node in nodes {
+                remove_subtree_styles(&dom, node, &mut state.styles, &mut state.background_images);
+            }
+            false
+        });
         drop(dom);
+        // Put back what the passes above took from a `fixed` box still to be drawn.
+        state.styles.extend(
+            state
+                .pinned_styles
+                .iter()
+                .map(|(id, style)| (*id, Rc::clone(style))),
+        );
+        state.background_images.extend(
+            state
+                .pinned_background_images
+                .iter()
+                .map(|(id, image)| (*id, Rc::clone(image))),
+        );
 
         Ok(())
     }
@@ -1672,6 +1928,9 @@ impl<S: Sink> Engine<S> {
         let remaining = self.parser.take_all_remaining_top_level_children();
         for node in remaining {
             self.process_top_level_element(node)?;
+        }
+        if self.streaming.is_some() {
+            self.flush_inline_run()?;
         }
 
         match self.streaming {
