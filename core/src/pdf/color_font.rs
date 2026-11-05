@@ -148,11 +148,24 @@ impl FontPlan {
     }
 
     /// The (name, object ID) pairs to write into a page's `/Resources /Font`.
-    pub(super) fn resource_entries(&self) -> impl Iterator<Item = (&str, Ref)> {
+    ///
+    /// `outline_fonts_used` says, per font index, whether the page draws outline glyphs with
+    /// it; a Type0 font that is not drawn with is left out (streaming never embeds one that
+    /// nothing draws with, so a reference to it would dangle). `None` lists every Type0 font.
+    pub(super) fn resource_entries<'a>(
+        &'a self,
+        outline_fonts_used: Option<&'a [bool]>,
+    ) -> impl Iterator<Item = (&'a str, Ref)> {
         let simple = self
             .simple
             .iter()
-            .flatten()
+            .enumerate()
+            .filter(move |(index, _)| {
+                outline_fonts_used
+                    .map(|used| used.get(*index).copied().unwrap_or(false))
+                    .unwrap_or(true)
+            })
+            .filter_map(|(_, f)| f.as_ref())
             .map(|f| (f.name.as_str(), f.ids.type0_font));
         let color = self
             .color
