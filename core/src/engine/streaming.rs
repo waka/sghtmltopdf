@@ -75,10 +75,9 @@ pub(super) struct StreamingState<S: Sink> {
     /// `<body>`'s top margin when it collapses with its first in-flow child's (no top border
     /// or padding, and `height: auto`, as batch requires).
     body_collapsible_margin_top: Option<f32>,
-    /// The styles and background images of the `fixed` boxes, which are drawn on every page
-    /// from where they appear and so are kept apart from the per-page freeing.
-    pinned_styles: HashMap<NodeId, Rc<ComputedStyle>>,
-    pinned_background_images: HashMap<NodeId, Rc<PreparedImage>>,
+    /// The nodes of the `fixed` boxes' subtrees, which are drawn on every page from where they
+    /// appear: the per-page freeing leaves their styles and background images alone.
+    pinned: HashSet<NodeId>,
     /// The inline-level top-level elements (text included) since the last block. Batch wraps
     /// such a run in one anonymous block, so it is laid out when the run ends.
     inline_run: Vec<NodeId>,
@@ -184,19 +183,14 @@ fn lay_out_in_flow_item<S: Sink>(
 }
 
 impl<S: Sink> StreamingState<S> {
-    /// Copy the `ComputedStyle`s and background images of `root`'s subtree into the pinned
-    /// maps, which the per-page freeing leaves alone. `dom` may already be tombstoned under
-    /// `root`, since the tree links survive.
+    /// Add the nodes of `root`'s subtree to the pinned set, whose styles and background images
+    /// the per-page freeing leaves alone. `dom` may already be tombstoned under `root`, since
+    /// the tree links survive.
     fn pin_subtree_styles(&mut self, dom: &Dom, root: NodeId) {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
             stack.extend(dom.children(id));
-            if let Some(style) = self.styles.get(&id) {
-                self.pinned_styles.insert(id, Rc::clone(style));
-            }
-            if let Some(image) = self.background_images.get(&id) {
-                self.pinned_background_images.insert(id, Rc::clone(image));
-            }
+            self.pinned.insert(id);
         }
     }
 }
@@ -481,8 +475,7 @@ impl<S: Sink> Engine<S> {
             cursor_y: start_y,
             prev_margin_bottom: None,
             body_collapsible_margin_top,
-            pinned_styles: HashMap::new(),
-            pinned_background_images: HashMap::new(),
+            pinned: HashSet::new(),
             inline_run: Vec::new(),
             finished_runs: Vec::new(),
             page_settings,
@@ -566,6 +559,13 @@ impl<S: Sink> Engine<S> {
         match kind {
             // `display: none` and the like. As in batch, it does not end a run of inline content.
             TopLevelKind::None => {
+                remove_subtree_styles(
+                    &parser.dom(),
+                    node,
+                    &mut state.styles,
+                    &mut state.background_images,
+                    &state.pinned,
+                );
                 release_processed(parser.dom_mut(), node, state.release_whole_subtree);
                 return Ok(());
             }
@@ -592,6 +592,13 @@ impl<S: Sink> Engine<S> {
             item_box
         };
         let Some(item_box) = item_box else {
+            remove_subtree_styles(
+                &self.parser.dom(),
+                node,
+                &mut state.styles,
+                &mut state.background_images,
+                &state.pinned,
+            );
             release_processed(self.parser.dom_mut(), node, state.release_whole_subtree);
             return Ok(());
         };
@@ -625,6 +632,7 @@ impl<S: Sink> Engine<S> {
                     node,
                     &mut state.styles,
                     &mut state.background_images,
+                    &state.pinned,
                 );
                 release_processed(self.parser.dom_mut(), node, state.release_whole_subtree);
             }
@@ -762,12 +770,24 @@ impl<S: Sink> Engine<S> {
         let dom = parser.dom();
         for page in &pages {
             for root in collect_completed_subtree_roots(page) {
-                remove_subtree_styles(&dom, root, &mut state.styles, &mut state.background_images);
+                remove_subtree_styles(
+                    &dom,
+                    root,
+                    &mut state.styles,
+                    &mut state.background_images,
+                    &state.pinned,
+                );
             }
         }
         // A box that is never drawn needs none of its styles either.
         for root in leftovers.dropped.iter().filter_map(|pb| pb.laid.node) {
-            remove_subtree_styles(&dom, root, &mut state.styles, &mut state.background_images);
+            remove_subtree_styles(
+                &dom,
+                root,
+                &mut state.styles,
+                &mut state.background_images,
+                &state.pinned,
+            );
         }
         let written = state.writer.page_count();
         state.finished_runs.retain(|(last_page, nodes)| {
@@ -775,24 +795,17 @@ impl<S: Sink> Engine<S> {
                 return true;
             }
             for &node in nodes {
-                remove_subtree_styles(&dom, node, &mut state.styles, &mut state.background_images);
+                remove_subtree_styles(
+                    &dom,
+                    node,
+                    &mut state.styles,
+                    &mut state.background_images,
+                    &state.pinned,
+                );
             }
             false
         });
         drop(dom);
-        // Put back what the passes above took from a `fixed` box still to be drawn.
-        state.styles.extend(
-            state
-                .pinned_styles
-                .iter()
-                .map(|(id, style)| (*id, Rc::clone(style))),
-        );
-        state.background_images.extend(
-            state
-                .pinned_background_images
-                .iter()
-                .map(|(id, image)| (*id, Rc::clone(image))),
-        );
 
         Ok(())
     }
@@ -878,14 +891,22 @@ impl<S: Sink> Engine<S> {
 /// Remove from `styles` the `ComputedStyle`s of the nodes in the subtree under `root`.
 /// `dom` may already have had everything under `root` freed by [`Dom::release_subtree`]
 /// (tombstoned), since the tree links themselves survive.
+///
+/// The subtrees of the `fixed` boxes in `pinned` are left alone: they are drawn on every page
+/// from where they appear, so their styles must stay in `styles`.
 fn remove_subtree_styles(
     dom: &Dom,
     root: NodeId,
     styles: &mut HashMap<NodeId, Rc<ComputedStyle>>,
     background_images: &mut HashMap<NodeId, Rc<PreparedImage>>,
+    pinned: &HashSet<NodeId>,
 ) {
     let mut stack = vec![root];
     while let Some(id) = stack.pop() {
+        // A pinned node's whole subtree is pinned too.
+        if pinned.contains(&id) {
+            continue;
+        }
         stack.extend(dom.children(id));
         styles.remove(&id);
         background_images.remove(&id);
@@ -908,6 +929,43 @@ mod tests {
             path: PathBuf::from(DEJAVU_PATH),
             index: 0,
         }
+    }
+
+    #[test]
+    fn streaming_mode_releases_computed_styles_of_hidden_top_level_elements() {
+        // 200 `display: none` elements, each with a few descendants. They are never laid out,
+        // so their styles must be freed as soon as they are processed.
+        let mut html_src = String::from("<style>.hidden { display: none; }</style><body>");
+        for i in 0..200 {
+            html_src.push_str(&format!(
+                r#"<div class="hidden"><p>item <b>{i}</b></p></div>"#
+            ));
+        }
+        html_src.push_str("</body>");
+
+        let options = EngineOptions {
+            mode: Mode::Streaming,
+            fonts: vec![font_spec()],
+            settings: PageSettings::default(),
+            ..EngineOptions::default()
+        };
+        let mut engine = Engine::new(options, MemorySink::new());
+        engine.feed(html_src.as_bytes()).unwrap();
+
+        let styles_len = engine
+            .streaming
+            .as_ref()
+            .expect("<body> should have been detected by now")
+            .styles
+            .len();
+        assert!(
+            styles_len < 20,
+            "expected the styles of display: none elements to be freed, but the styles map \
+             grew to {styles_len} entries"
+        );
+
+        let bytes = engine.finish().unwrap();
+        assert!(bytes.starts_with(b"%PDF-"));
     }
 
     #[test]
