@@ -47,7 +47,7 @@
 
 | 擬似要素 | 対応 | 備考 |
 | - | - | - |
-| `::before` / `::after` | ⚠️ | `content`による生成テキストのみ。ホスト要素の計算スタイルをそのまま流用して描画し、擬似要素専用のボックススタイル(margin/padding/display等)は持たない。ブロック子を持つ要素では生成されない |
+| `::before` / `::after` | ⚠️ | 要素の最初と最後の子として、それ自身のボックスを生成する。擬似要素に書いた宣言(`font-size`・`color`・`display`・`margin`・`position`・`transform`等)が適用され、書かれていないプロパティは要素から継承する。ブロック子を持つ要素でも生成され、`display: none`なら生成しない。擬似要素自身の`counter-reset`/`counter-increment`は適用されない。表(`display: table`)の要素には生成されない |
 | `::first-letter` | ⚠️ | `font-family`/`font-size`/`font-weight`/`font-style`/`color`/`text-decoration-line`/`text-transform`のみ上書きできる(`float`・box model系は非対応) |
 | `::first-line` | ❌ | パースエラー |
 | `::backdrop` / `::file-selector-button` / `::placeholder` / `::selection` / `::marker` | ⚠️ | パースは通るが常に非マッチ。静的なPDFには最上位レイヤー・ファイル入力・空のフォーム欄・選択範囲がなく、`::marker`も専用のスタイルを持たない(リストマーカーは`list-style-*`で決まる)ため。Tailwind v4のpreflightにある`*, ::after, ::before, ::backdrop, ::file-selector-button { ... }`のようなセレクタリストの他の項が捨てられないようにするためのもの |

@@ -534,17 +534,24 @@ fn collect_rendered_chars<'a>(
         NodeData::Text { contents } => Some(contents.as_str()),
         _ => None,
     };
-    let generated = [
-        style.pseudo_before_content.as_deref(),
-        style.pseudo_after_content.as_deref(),
-    ];
-    out.extend(
-        text.into_iter()
-            .chain(generated.into_iter().flatten())
-            .flat_map(str::chars)
+    let drawn = |text: &'a str, style: &'a ComputedStyle| {
+        text.chars()
             .filter(|c| !c.is_whitespace() && !c.is_control())
-            .map(|c| (c, style)),
-    );
+            .map(move |c| (c, style))
+    };
+    out.extend(text.into_iter().flat_map(|text| drawn(text, style)));
+    // Generated content is drawn with the pseudo-element's own style. Only an element has
+    // one (a text node carries a copy of its parent's content strings).
+    if matches!(dom.node(node).data, NodeData::Element { .. }) {
+        for (text, pseudo) in [
+            (style.pseudo_before_content.as_deref(), node.before()),
+            (style.pseudo_after_content.as_deref(), node.after()),
+        ] {
+            if let (Some(text), Some(pseudo_style)) = (text, styles.get(&pseudo)) {
+                out.extend(drawn(text, pseudo_style));
+            }
+        }
+    }
 
     // An inline `<svg>` is drawn as one replaced box, so its `<title>`, `<desc>` and
     // `<style>` text is never page text. Only `<text>` is drawn, with the document's fonts.

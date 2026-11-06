@@ -4548,7 +4548,7 @@ msgstr ""
 #: src/supports/properties.md:165
 msgid ""
 "`::before`/`::after`/`::first-letter`および`@page`のmargin "
-"box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応。ブロック子を持つ要素の`::before`/`::after`は生成されない(簡略化)"
+"box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応"
 msgstr ""
 
 #: src/supports/properties.md:166
@@ -5211,7 +5211,9 @@ msgstr ""
 
 #: src/supports/selectors.md:50
 msgid ""
-"`content`による生成テキストのみ。ホスト要素の計算スタイルをそのまま流用して描画し、擬似要素専用のボックススタイル(margin/padding/display等)は持たない。ブロック子を持つ要素では生成されない"
+"要素の最初と最後の子として、それ自身のボックスを生成する。擬似要素に書いた宣言(`font-size`・`color`・`display`・`margin`・`position`・`transform`等)が適用され、書かれていないプロパティは要素から継承する。ブロック子を持つ要素でも生成され、`display: "
+"none`なら生成しない。擬似要素自身の`counter-reset`/`counter-increment`は適用されない。表(`display: "
+"table`)の要素には生成されない"
 msgstr ""
 
 #: src/supports/selectors.md:51

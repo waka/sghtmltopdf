@@ -189,7 +189,11 @@ impl<S: Sink> StreamingState<S> {
     fn pin_subtree_styles(&mut self, dom: &Dom, root: NodeId) {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
-            stack.extend(dom.children(id));
+            // A `::before`/`::after` has no node in the DOM, and no children.
+            if id.pseudo_element_of().is_none() {
+                stack.extend(dom.children(id));
+                stack.extend([id.before(), id.after()]);
+            }
             self.pinned.insert(id);
         }
     }
@@ -907,7 +911,11 @@ fn remove_subtree_styles(
         if pinned.contains(&id) {
             continue;
         }
-        stack.extend(dom.children(id));
+        // A `::before`/`::after` has no node in the DOM, and no children.
+        if id.pseudo_element_of().is_none() {
+            stack.extend(dom.children(id));
+            stack.extend([id.before(), id.after()]);
+        }
         styles.remove(&id);
         background_images.remove(&id);
     }
