@@ -356,3 +356,66 @@ fn a_hoisted_top_margin_is_counted_once_whatever_the_nesting_depth() {
         "the first paragraph sits below the 40px that was hoisted out: {first:?}"
     );
 }
+
+/// The border boxes of every fragment of `target` on `page`.
+fn fragment_border_boxes(
+    page: &sghtmltopdf::layout::Page,
+    target: NodeId,
+) -> Vec<sghtmltopdf::layout::Rect> {
+    fn walk(b: &LaidOutBox, target: NodeId, out: &mut Vec<sghtmltopdf::layout::Rect>) {
+        if b.node == Some(target) {
+            out.push(b.layout.border_box());
+        }
+        if let LaidOutContent::Blocks(children) = &b.content {
+            children.iter().for_each(|c| walk(c, target, out));
+        }
+    }
+    let mut out = Vec::new();
+    page.boxes.iter().for_each(|b| walk(b, target, &mut out));
+    out
+}
+
+#[test]
+fn a_split_block_paints_its_decoration_to_the_page_break_and_over_its_declared_height() {
+    let html_src = "<header></header>\
+        <section><p>ONE</p><p>TWO</p><p>THREE</p></section>\
+        <footer>AFTER</footer>";
+    let css = "body { margin: 0; font-size: 12px; line-height: 20px; } \
+        header { height: 500px; } \
+        section { height: 300px; border: 1px solid black; background: #eee; } \
+        p { height: 50px; margin: 0; }";
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &settings);
+    assert_eq!(pages.len(), 2);
+
+    let section = find_tag(&dom, dom.document(), "section").unwrap();
+    let footer = find_tag(&dom, dom.document(), "footer").unwrap();
+
+    // The first fragment continues on the next page, so it runs to the page break rather
+    // than stopping under ONE.
+    let first = fragment_border_boxes(&pages[0], section);
+    assert_eq!(first.len(), 1, "{first:?}");
+    assert!(
+        (first[0].y + first[0].height - 600.0).abs() < 0.01,
+        "the first fragment should reach the page break: {first:?}"
+    );
+
+    // The last fragment covers the rest of the 300px height, ending where the footer starts.
+    let last = fragment_border_boxes(&pages[1], section);
+    assert_eq!(last.len(), 1, "{last:?}");
+    let footer_top = pages[1]
+        .boxes
+        .iter()
+        .find_map(|b| find_laid_out(b, footer))
+        .map(|f| f.layout.border_box().y)
+        .expect("the footer should be on the second page");
+    assert!(
+        (last[0].y + last[0].height - footer_top).abs() < 0.01,
+        "the last fragment should end at the footer top {footer_top}: {last:?}"
+    );
+}
