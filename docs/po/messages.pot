@@ -4169,7 +4169,7 @@ msgstr ""
 
 #: src/supports/properties.md:90
 msgid ""
-"`normal`/`bold`/`100`〜`900`。数値は600以上を`bold`とみなす2値化。太字フォントが無い場合は塗り+縁取りの疑似ボールドで描画"
+"`normal`/`bold`/`1`〜`1000`の数値(`bolder`/`lighter`は非対応)。同じファミリーの`@font-face`が複数の太さを持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選ぶ(宣言順によらない)。システムフォントは600以上をBold、それ未満をRegularとして探す。600以上の指定に600以上のフェイスが無い場合は塗り+縁取りの疑似ボールドで描画"
 msgstr ""
 
 #: src/supports/properties.md:91 src/supports/fonts.md:108
@@ -5804,7 +5804,7 @@ msgstr ""
 
 #: src/supports/fonts.md:107
 msgid ""
-"`normal`/`bold`/`100`〜`900`。数値は600以上を`bold`とみなす2値化。太字のフォントが無い場合は、塗りに縁取りを足した疑似ボールドで描画します"
+"`normal`/`bold`/`1`〜`1000`の数値。同じファミリーの`@font-face`が複数の太さを持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選びます(宣言順にはよりません)。システムフォントは600以上をBold、それ未満をRegularとして探します。600以上の指定に600以上のフェイスが無い場合は、塗りに縁取りを足した疑似ボールドで描画します"
 msgstr ""
 
 #: src/supports/fonts.md:108

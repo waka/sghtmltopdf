@@ -847,7 +847,7 @@ fn ensure_default_font<E>(
     if !fonts.is_empty() {
         return Ok(());
     }
-    match system.load_generic("sans-serif", FontWeight::Normal, FontStyle::Normal) {
+    match system.load_generic("sans-serif", FontWeight::NORMAL, FontStyle::Normal) {
         Some(font) => {
             fonts.push_font_face("sans-serif".to_string(), None, None, Vec::new(), font);
             Ok(())
@@ -2309,6 +2309,42 @@ mod tests {
                 count_occurrences(&stream, b"/F1 ") > 0,
                 "{label}: the CJK-range face (index 1) should be used for U+65E5"
             );
+        }
+    }
+
+    #[test]
+    fn font_face_weights_are_matched_by_closeness_not_declaration_order() {
+        // #151: three faces of one family declared as 500, 300, 400. Each of the three
+        // weights should get its own face; before, every weight below 600 took the first
+        // declared face (index 0, the 500 one).
+        let base_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts"));
+        let html_src = r#"<style>
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 500; }
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 300; }
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 400; }
+            p { font-family: "Brand"; }
+        </style><body>
+            <p style="font-weight: 300">light</p>
+            <p style="font-weight: 400">regular</p>
+            <p style="font-weight: 500">medium</p>
+        </body>"#;
+
+        for mode in [Mode::Batch, Mode::Streaming] {
+            let options = EngineOptions {
+                mode,
+                base_dir: Some(base_dir.to_path_buf()),
+                ..EngineOptions::default()
+            };
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(html_src.as_bytes()).unwrap();
+            let stream = decompressed_stream_bytes(&engine.finish().unwrap());
+            for (face, weight) in [(b"/F0 ", 500), (b"/F1 ", 300), (b"/F2 ", 400)] {
+                assert_eq!(
+                    count_occurrences(&stream, face),
+                    1,
+                    "{mode:?}: the {weight} face should draw exactly the font-weight: {weight} line"
+                );
+            }
         }
     }
 

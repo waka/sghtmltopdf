@@ -1588,7 +1588,7 @@ pub(super) fn shape_run(
     // (`fonts::FontCollection::select_for_char` prefers a real Bold/Italic face, so where one
     // exists among `--font`/`@font-face`/the system fonts, the synthesis is skipped here).
     // the synthesis is skipped here).
-    let needs_synthetic_bold = style.font_weight == FontWeight::Bold && !fonts.is_bold(font_index);
+    let needs_synthetic_bold = style.font_weight.is_bold() && !fonts.is_bold(font_index);
     let needs_synthetic_italic =
         style.font_style == FontStyle::Italic && !fonts.is_italic(font_index);
     let mut line_height = resolve_line_height(style, Some(font));

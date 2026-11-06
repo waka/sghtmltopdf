@@ -9,11 +9,6 @@ use crate::style::{FontStyle, FontWeight};
 
 use super::font::Font;
 
-/// Threshold for rounding a numeric `font-weight` to the two values Bold/Normal (600, the
-/// same as `parse_font_weight` in `style::properties`). Rounding a font's own OS/2 weight
-/// to those two values makes it comparable with `ComputedStyle::font_weight`.
-const BOLD_WEIGHT_THRESHOLD: u16 = 600;
-
 pub struct FontCollection {
     fonts: Vec<Font>,
     /// The family name declared in CSS for a font loaded from `@font-face` or from the
@@ -111,11 +106,10 @@ impl FontCollection {
     /// Return the index of a font whose name matches one in `families` (the CSS
     /// `font-family` list, in priority order) and that has a glyph for `c`.
     ///
-    /// Selection order: (1) a font whose family matches, that can draw `c`, and that also
-    /// really satisfies `weight`/`style`; (2) a font whose family matches and that can draw
-    /// `c` (weight/style ignored); (3) the first font that can draw `c` regardless of
-    /// family; (4) failing all that, the first font in the collection (which renders as
-    /// tofu). `None` only when the collection is empty.
+    /// Selection order: (1) of the fonts whose family matches and that can draw `c`, the
+    /// one closest to `weight`/`style` (see [`Self::best_match`]); (2) the same among all
+    /// fonts that can draw `c`, regardless of family; (3) failing all that, the first font
+    /// in the collection (which renders as tofu). `None` only when the collection is empty.
     ///
     /// Whether the chosen font really satisfies the requested `weight`/`style` can be
     /// checked separately with [`Self::is_bold`]/[`Self::is_italic`] (callers use that to
@@ -151,15 +145,15 @@ impl FontCollection {
     }
 
     /// Among the fonts satisfying `eligible`, whose `unicode-range` (if declared) contains
-    /// `c`, and that have a glyph for `c`, prefer one that also really satisfies
-    /// `weight`/`style` (decided by `Self::is_bold`/`Self::is_italic`).
-    /// If none matches, return the first font meeting the conditions.
+    /// `c`, and that have a glyph for `c`, pick the one closest to `weight`/`style`, in the
+    /// order of CSS Fonts 4 § 5.2 step 4: first the style (a face of the requested style
+    /// if there is one, any face otherwise), then the weight ([`weight_preference`]).
     ///
     /// `unicode-range` acts as a hard filter: if a declared range does not contain `c`, the
     /// font is excluded from the candidates even when it really does have a glyph for `c`.
-    /// The first font meeting the conditions in scan order (= registration order = CSS
-    /// source order) is taken, so overlapping ranges within the same family/weight/style
-    /// naturally resolve as "declaration order wins".
+    /// Between equally good fonts the first in scan order (= registration order = CSS source
+    /// order) is taken, so overlapping ranges within the same family/weight/style naturally
+    /// resolve as "declaration order wins".
     fn best_match(
         &self,
         weight: FontWeight,
@@ -167,19 +161,18 @@ impl FontCollection {
         c: char,
         mut eligible: impl FnMut(usize, &Font) -> bool,
     ) -> Option<usize> {
-        let mut first_match = None;
-        for (i, f) in self.fonts.iter().enumerate() {
-            if !eligible(i, f) || !self.in_unicode_range(i, c) || !f.has_glyph(c) {
-                continue;
-            }
-            first_match.get_or_insert(i);
-            if self.is_bold(i) == (weight == FontWeight::Bold)
-                && self.is_italic(i) == (style == FontStyle::Italic)
-            {
-                return Some(i);
-            }
-        }
-        first_match
+        let wants_italic = style == FontStyle::Italic;
+        self.fonts
+            .iter()
+            .enumerate()
+            .filter(|&(i, f)| eligible(i, f) && self.in_unicode_range(i, c) && f.has_glyph(c))
+            .min_by_key(|&(i, _)| {
+                (
+                    self.is_italic(i) != wants_italic,
+                    weight_preference(weight, self.weight(i)),
+                )
+            })
+            .map(|(i, _)| i)
     }
 
     /// Whether font `index`'s declared `unicode-range` (if any) contains `c`.
@@ -205,14 +198,14 @@ impl FontCollection {
             .any(|(i, f)| self.matches_family(i, f, family))
     }
 
-    /// Whether a font matching `family` that also really satisfies `weight`/`style` is
-    /// already in the collection. System font discovery uses this to look only for the
+    /// Whether a font matching `family` that also really satisfies `weight`/`style` (bold or
+    /// not, italic or not) is already in the collection. System font discovery uses this to look only for the
     /// weights and styles the existing fonts cannot cover (a Bold request against a family
     /// that only has Regular, say).
     pub fn has_matching_face(&self, family: &str, weight: FontWeight, style: FontStyle) -> bool {
         self.fonts.iter().enumerate().any(|(i, f)| {
             self.matches_family(i, f, family)
-                && self.is_bold(i) == (weight == FontWeight::Bold)
+                && self.is_bold(i) == weight.is_bold()
                 && self.is_italic(i) == (style == FontStyle::Italic)
         })
     }
@@ -263,20 +256,25 @@ impl FontCollection {
         if !self.auto_fallbacks.get(index).copied().unwrap_or(false) {
             return true;
         }
-        self.is_bold(index) == (weight == FontWeight::Bold)
+        self.is_bold(index) == weight.is_bold()
             && self.is_italic(index) == (style == FontStyle::Italic)
     }
 
-    /// Whether font `index` really counts as Bold. An `@font-face` `font-weight`
-    /// declaration wins; without one, the font's own OS/2 weight decides.
-    pub fn is_bold(&self, index: usize) -> bool {
+    /// The weight of font `index`. An `@font-face` `font-weight` declaration wins; without
+    /// one, the font's own OS/2 weight decides.
+    fn weight(&self, index: usize) -> FontWeight {
         match self.declared_weights.get(index).copied().flatten() {
-            Some(weight) => weight == FontWeight::Bold,
+            Some(weight) => weight,
             None => self
                 .fonts
                 .get(index)
-                .is_some_and(|f| f.weight() >= BOLD_WEIGHT_THRESHOLD),
+                .map_or(FontWeight::NORMAL, |f| FontWeight(f.weight())),
         }
+    }
+
+    /// Whether font `index` really counts as Bold ([`FontWeight::is_bold`] of its weight).
+    pub fn is_bold(&self, index: usize) -> bool {
+        self.weight(index).is_bold()
     }
 
     /// Whether font `index` really counts as Italic. An `@font-face` `font-style`
@@ -297,6 +295,26 @@ impl FontCollection {
                 .as_deref()
                 .is_some_and(|name| name.eq_ignore_ascii_case(family)),
         }
+    }
+}
+
+/// How well a face of weight `face` suits a request for `desired`: the lower, the better.
+/// This is the weight step of CSS Fonts 4 § 5.2 (step 4): an exact match first; then, for
+/// a desired weight of 400 to 500, heavier weights up to 500 ascending, lighter weights
+/// descending and weights above 500 ascending; below 400, lighter weights descending and
+/// then heavier ones ascending; above 500, heavier weights ascending and then lighter ones
+/// descending.
+fn weight_preference(desired: FontWeight, face: FontWeight) -> (u8, u16) {
+    let (desired, face) = (desired.0, face.0);
+    let (lighter, heavier) = (desired.saturating_sub(face), face.saturating_sub(desired));
+    match desired {
+        400..=500 if face >= desired && face <= 500 => (0, heavier),
+        400..=500 if face < desired => (1, lighter),
+        400..=500 => (2, heavier),
+        ..400 if face <= desired => (0, lighter),
+        ..400 => (1, heavier),
+        _ if face >= desired => (0, heavier),
+        _ => (1, lighter),
     }
 }
 
@@ -343,7 +361,7 @@ mod tests {
         let index = select(
             &collection,
             "DejaVu Sans",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -359,7 +377,7 @@ mod tests {
         let index = select(
             &collection,
             "sans-serif",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             '日',
         )
@@ -383,8 +401,8 @@ mod tests {
         // "DejaVu Sans" itself is registered, but only in Regular. A Bold request should
         // not match (in contrast to has_family, which ignores weight and is therefore true).
         assert!(collection.has_family("DejaVu Sans"));
-        assert!(collection.has_matching_face("DejaVu Sans", FontWeight::Normal, FontStyle::Normal));
-        assert!(!collection.has_matching_face("DejaVu Sans", FontWeight::Bold, FontStyle::Normal));
+        assert!(collection.has_matching_face("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal));
+        assert!(!collection.has_matching_face("DejaVu Sans", FontWeight::BOLD, FontStyle::Normal));
     }
 
     #[test]
@@ -395,16 +413,16 @@ mod tests {
         let mut collection = FontCollection::new(vec![]);
         collection.push_fallback_font_face("DejaVu Sans".to_string(), dejavu_bold());
 
-        assert!(collection.can_render(&[], FontWeight::Normal, FontStyle::Normal, 'A'));
+        assert!(collection.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, 'A'));
         assert!(!collection.can_render_with_matching_face(
             &[],
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A'
         ));
         assert!(collection.can_render_with_matching_face(
             &[],
-            FontWeight::Bold,
+            FontWeight::BOLD,
             FontStyle::Normal,
             'A'
         ));
@@ -413,7 +431,7 @@ mod tests {
         collection.push_fallback_font_face("DejaVu Sans".to_string(), dejavu());
         assert!(collection.can_render_with_matching_face(
             &[],
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A'
         ));
@@ -427,7 +445,7 @@ mod tests {
         let collection = FontCollection::new(vec![dejavu()]);
         assert!(collection.can_render_with_matching_face(
             &[],
-            FontWeight::Bold,
+            FontWeight::BOLD,
             FontStyle::Normal,
             'A'
         ));
@@ -446,7 +464,7 @@ mod tests {
         let index = select(
             &collection,
             "Custom Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -461,7 +479,7 @@ mod tests {
         let index = select(
             &collection,
             "sans-serif",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             '日',
         )
@@ -473,7 +491,7 @@ mod tests {
     fn empty_collection_returns_none() {
         let collection = FontCollection::new(vec![]);
         assert_eq!(
-            collection.select_for_char(&[], FontWeight::Normal, FontStyle::Normal, 'A'),
+            collection.select_for_char(&[], FontWeight::NORMAL, FontStyle::Normal, 'A'),
             None
         );
     }
@@ -492,7 +510,7 @@ mod tests {
         // `@font-face { font-weight: bold; font-style: italic; }`. The declaration should win over the real metrics.
         collection.push_font_face(
             "Declared Brand".to_string(),
-            Some(FontWeight::Bold),
+            Some(FontWeight::BOLD),
             Some(FontStyle::Italic),
             Vec::new(),
             dejavu(),
@@ -509,7 +527,7 @@ mod tests {
         let index = select(
             &collection,
             "DejaVu Sans",
-            FontWeight::Bold,
+            FontWeight::BOLD,
             FontStyle::Normal,
             'A',
         )
@@ -525,13 +543,139 @@ mod tests {
         let index = select(
             &collection,
             "DejaVu Sans",
-            FontWeight::Bold,
+            FontWeight::BOLD,
             FontStyle::Normal,
             'A',
         )
         .unwrap();
         assert_eq!(index, 0);
         assert!(!collection.is_bold(index));
+    }
+
+    /// One `@font-face` family "Brand" with a face per `(weight, style)`, declared in the
+    /// given order. Every face is the same Regular DejaVu Sans; only the declared
+    /// descriptors tell them apart.
+    fn brand_faces(faces: &[(u16, FontStyle)]) -> FontCollection {
+        let mut collection = FontCollection::new(vec![]);
+        for &(weight, style) in faces {
+            collection.push_font_face(
+                "Brand".to_string(),
+                Some(FontWeight(weight)),
+                Some(style),
+                Vec::new(),
+                dejavu(),
+            );
+        }
+        collection
+    }
+
+    /// The declared `(weight, style)` of the face chosen for `weight`/`style`.
+    fn chosen(
+        collection: &FontCollection,
+        faces: &[(u16, FontStyle)],
+        weight: u16,
+        style: FontStyle,
+    ) -> (u16, FontStyle) {
+        let index = select(collection, "Brand", FontWeight(weight), style, 'A').unwrap();
+        faces[index]
+    }
+
+    /// The declared weight of the upright face chosen for `weight`, with upright faces of
+    /// the `declared` weights.
+    fn chosen_weight(declared: &[u16], weight: u16) -> u16 {
+        let faces: Vec<_> = declared.iter().map(|&w| (w, FontStyle::Normal)).collect();
+        chosen(&brand_faces(&faces), &faces, weight, FontStyle::Normal).0
+    }
+
+    #[test]
+    fn select_for_char_matches_font_face_weights_regardless_of_declaration_order() {
+        // #151: with 300 to 700 declared, each weight gets its own face (100 and 200 the
+        // lightest, 800 and 900 the heaviest), whatever order the rules come in.
+        for declared in [
+            [300, 400, 500, 600, 700],
+            [700, 600, 500, 400, 300],
+            [500, 300, 700, 400, 600],
+        ] {
+            for (requested, expected) in [
+                (100, 300),
+                (200, 300),
+                (300, 300),
+                (400, 400),
+                (500, 500),
+                (600, 600),
+                (700, 700),
+                (800, 700),
+                (900, 700),
+            ] {
+                assert_eq!(
+                    chosen_weight(&declared, requested),
+                    expected,
+                    "font-weight: {requested} with faces declared as {declared:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn select_for_char_falls_back_between_weights_in_css_fonts_4_order() {
+        // 400 to 500: heavier up to 500, then lighter, then above 500.
+        assert_eq!(chosen_weight(&[400, 500, 600], 450), 500);
+        assert_eq!(chosen_weight(&[300, 600], 400), 300);
+        assert_eq!(chosen_weight(&[600, 300], 500), 300);
+        assert_eq!(chosen_weight(&[900, 600], 400), 600);
+        // Below 400: lighter first, then heavier.
+        assert_eq!(chosen_weight(&[400, 200], 300), 200);
+        assert_eq!(chosen_weight(&[500, 400], 300), 400);
+        // Above 500: heavier first, then lighter.
+        assert_eq!(chosen_weight(&[500, 800, 700], 600), 700);
+        assert_eq!(chosen_weight(&[400, 500], 600), 500);
+        // Only 400 and 500, in either order: 400 and 500 each get their own face.
+        for declared in [[400, 500], [500, 400]] {
+            assert_eq!(chosen_weight(&declared, 400), 400);
+            assert_eq!(chosen_weight(&declared, 500), 500);
+        }
+    }
+
+    #[test]
+    fn select_for_char_leaves_synthetic_bold_to_a_bold_request_without_a_heavy_face() {
+        // 700 against 400 and 500 takes the 500 face, which is not bold, so the caller
+        // still draws it with synthetic bold.
+        let faces = [(500, FontStyle::Normal), (400, FontStyle::Normal)];
+        let collection = brand_faces(&faces);
+        let index = select(
+            &collection,
+            "Brand",
+            FontWeight::BOLD,
+            FontStyle::Normal,
+            'A',
+        )
+        .unwrap();
+        assert_eq!(faces[index].0, 500);
+        assert!(!collection.is_bold(index));
+    }
+
+    #[test]
+    fn select_for_char_matches_the_style_before_the_weight() {
+        // As in CSS Fonts 4 § 5.2, a face of the right style wins over one of the right
+        // weight: italic 400 text takes the 700 italic face rather than the 400 upright one,
+        // and upright 700 text takes the 400 upright face (with synthetic bold).
+        let faces = [(400, FontStyle::Normal), (700, FontStyle::Italic)];
+        let collection = brand_faces(&faces);
+        assert_eq!(
+            chosen(&collection, &faces, 400, FontStyle::Italic),
+            (700, FontStyle::Italic)
+        );
+        assert_eq!(
+            chosen(&collection, &faces, 700, FontStyle::Normal),
+            (400, FontStyle::Normal)
+        );
+        // With no face of the requested style, the weight decides among the others.
+        let faces = [(300, FontStyle::Normal), (500, FontStyle::Normal)];
+        let collection = brand_faces(&faces);
+        assert_eq!(
+            chosen(&collection, &faces, 500, FontStyle::Italic),
+            (500, FontStyle::Normal)
+        );
     }
 
     #[test]
@@ -562,7 +706,7 @@ mod tests {
         let index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'é',
         )
@@ -587,7 +731,7 @@ mod tests {
         let index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -603,7 +747,7 @@ mod tests {
         let index = select(
             &collection,
             "DejaVu Sans",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -641,7 +785,7 @@ mod tests {
         let index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -666,7 +810,7 @@ mod tests {
         let index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             '日',
         )
@@ -703,7 +847,7 @@ mod tests {
         let latin_index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             'A',
         )
@@ -716,7 +860,7 @@ mod tests {
         let cjk_index = select(
             &collection,
             "Brand",
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             '日',
         )
