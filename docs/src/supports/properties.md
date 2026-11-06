@@ -21,7 +21,7 @@
 | - | - | - |
 | `display` | ⚠️ | `block`/`inline`/`inline-block`/`list-item`/`table`/`table-row`/`table-cell`/`table-caption`/`flex`/`inline-flex`/`none`のみ。`grid`は対応([Grid](#grid)節)。`inline-flex`は[Flexbox](#flexbox)節。`inline-grid`・`table-row-group`等のテーブル内部値・`flow-root`は非対応。`<thead>`/`<tbody>`/`<tfoot>`はUAスタイルで`block`のままだが、行収集が透過するのでテーブルとして機能する |
 | `visibility` | ⚠️ | `visible`/`hidden`/`collapse`。`collapse`は`hidden`と同一視(テーブル行/列の高さ再計算はしない)。継承プロパティ |
-| `overflow` | ⚠️ | `visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は非対応 |
+| `overflow` | ⚠️ | `visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。クリップ領域はpadding boxで、`border-radius`があればborderの太さだけ半径を小さくした角丸(padding edge)に沿う。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は非対応 |
 | `opacity` | ⚠️ | `<number>`/`<percentage>`を0〜1にクランプ。PDFの透明グループ+ExtGStateで実装。要素単位の合成で、`mix-blend-mode`等のブレンドは非対応 |
 | `z-index` | ⚠️ | `auto`/`<integer>`。`position: relative`の要素にのみ効く(仕様では他のpositioned要素にも効く)。同じ親を持つ兄弟間の描画順のみを制御し、スタッキングコンテキストの分離は非対応。絶対配置要素は常に通常フローの上に描かれる |
 | `box-sizing` | ⚠️ | `content-box`/`border-box`。標準外の`padding-box`は非対応 |
@@ -52,7 +52,7 @@
 | `border-*-width` | ⚠️ | `<length>`のみ。`thin`/`medium`/`thick`キーワードは非対応 |
 | `border-*-style` | ⚠️ | `none`/`hidden`/`solid`/`dashed`/`dotted`/`double`/`groove`/`ridge`/`inset`/`outset`。`hidden`は`none`と同一視(テーブルの枠線競合解決でも区別しない)。`groove`/`ridge`/`inset`/`outset`は`border-color`から2階調の陰影を算出して描画 |
 | `border-*-color` | ✅ | 初期値は`currentcolor` |
-| `border-radius` | ⚠️ | 1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`のみ)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォールバックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック |
+| `border-radius` | ⚠️ | 1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`のみ)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォールバックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック。背景画像、`overflow`のクリップ、`<img>`の画像も角丸に沿ってクリップする(CSS Backgrounds 3 § 5.3) |
 | `border-top-left-radius`ほか3隅 | ⚠️ | `<length>{1,2}`(水平/垂直半径)。制約は`border-radius`と同じ |
 | `border-start-start-radius`ほか3隅 | ⚠️ | 論理プロパティ。1つ目がblock方向、2つ目がinline方向を指す(`border-start-end-radius`=右上)。写像規則は[`margin-inline`](#ボックスモデル)と同じ |
 | `outline` | ✅ | `<width> \|\| <style> \|\| <color>`。border-boxの外側に描画し、レイアウトには影響しない |
@@ -121,7 +121,7 @@
 | `background-attachment` | ⚠️ | `scroll`/`fixed`(スクロールの概念が無いため`fixed`は`scroll`と同一視) |
 | `background-clip` / `background-origin` / `background-blend-mode` | ❌ | 未実装。背景はborder-box基準で描画する |
 
-`border-radius`と`background-image`を併用した場合、角丸によるクリップは行わない(角丸は背景色の塗りにのみ効く)。
+`border-radius`を指定した場合、`background-image`も背景色と同じ角丸(border edge)でクリップする。
 
 ## テーブル
 
