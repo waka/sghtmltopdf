@@ -448,7 +448,8 @@ pub(crate) fn collect_completed_subtree_roots(page: &Page) -> Vec<NodeId> {
 }
 
 fn collect_completed_subtree_roots_in_box(b: &LaidOutBox, roots: &mut Vec<NodeId>) {
-    if let Some(node) = b.node {
+    // A `::before`/`::after` is no DOM subtree. Its style goes with its element's.
+    if let Some(node) = b.node.filter(|node| node.pseudo_element_of().is_none()) {
         if matches!(
             b.layout.fragment,
             FragmentPosition::Whole | FragmentPosition::Last

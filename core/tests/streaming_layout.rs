@@ -283,3 +283,28 @@ fn an_inline_element_directly_under_body_has_no_vertical_margin() {
         r#"<body><div>a</div><span style="margin:20px">s</span><div>b</div></body>"#,
     );
 }
+
+// ---- ::before / ::after (#152) ----
+
+/// A `::before`/`::after` box has no DOM node of its own. Streaming draws it where batch does,
+/// frees its style once its page is written (the `::before` of the decorated `.block` is
+/// complete while `.block` goes on to the next page), and repeats a `fixed` one on every page.
+#[test]
+fn pseudo_element_boxes_are_drawn_where_batch_draws_them() {
+    let batch = assert_streaming_matches_batch(
+        r#"<head><style>
+ .block { background: #eee }
+ .block::before { content: "B"; display: block; color: #cc0000 }
+ .abs { position: relative }
+ .abs::after { content: "A"; position: absolute; right: 0; top: 0; color: #cc0000 }
+ .fixed::before { content: "F"; position: fixed; left: 0; bottom: 0; color: #cc0000 }
+</style></head><body><div class="fixed">x</div><div class="abs"><p>one</p></div>
+<div class="block"><p>two</p><div style="height:1500px">tall</div></div><p>three</p></body>"#,
+    );
+    let counts: Vec<usize> = marked_positions(&batch).iter().map(Vec::len).collect();
+    assert_eq!(
+        counts,
+        [3, 1, 1],
+        "F on every page, A and B on the first: {batch:?}"
+    );
+}

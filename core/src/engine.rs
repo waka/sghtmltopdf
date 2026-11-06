@@ -562,7 +562,8 @@ fn collect_headings(
         seen: &mut Vec<NodeId>,
         out: &mut Vec<(NodeId, u8, usize)>,
     ) {
-        if let Some(node) = b.node {
+        // A `::before`/`::after` box has no DOM node, and is no heading.
+        if let Some(node) = b.node.filter(|node| node.pseudo_element_of().is_none()) {
             if let Some(level) = heading_level(dom, node) {
                 if !seen.contains(&node) {
                     seen.push(node);
@@ -1554,6 +1555,23 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(count_occurrences(&bytes, b"%%EOF") > 0);
         assert!(count_occurrences(&bytes, b"/MediaBox") > 0);
+    }
+
+    #[test]
+    fn the_toc_skips_the_boxes_of_pseudo_elements() {
+        // A block-level `::before` is a box with no DOM node of its own, next to the heading's.
+        let mut options = EngineOptions {
+            fonts: vec![font_spec()],
+            ..EngineOptions::default()
+        };
+        options.toc.enabled = true;
+        let mut engine = Engine::new(options, MemorySink::new());
+        engine
+            .feed(b"<style>h1::before { content: '#'; display: block }</style><h1>Title</h1>")
+            .unwrap();
+        let bytes = engine.finish().unwrap();
+
+        assert!(bytes.starts_with(b"%PDF-"));
     }
 
     #[test]

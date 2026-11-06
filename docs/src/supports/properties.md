@@ -162,7 +162,7 @@
 
 | プロパティ | 対応 | 備考 |
 | - | - | - |
-| `content` | ⚠️ | `::before`/`::after`/`::first-letter`および`@page`のmargin box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応。ブロック子を持つ要素の`::before`/`::after`は生成されない(簡略化) |
+| `content` | ⚠️ | `::before`/`::after`/`::first-letter`および`@page`のmargin box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応 |
 | `counter-reset` | ✅ | `none`または`name [<integer>]`の繰り返し |
 | `counter-increment` | ✅ | `none`または`name [<integer>]`の繰り返し(値省略時は1) |
 | `counter-set` | ❌ | 未実装 |
