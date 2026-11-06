@@ -1052,6 +1052,14 @@ fn place_split<T>(
         return;
     }
 
+    // Where the flow left the container: the in-page bottom of its content box on the page
+    // it ended on. An explicit `height` taller than the children is reserved below them.
+    let end_page = current_page;
+    let end_content_bottom = *cursor
+        - container.layout.margin.bottom
+        - container.layout.border.bottom
+        - container.layout.padding.bottom;
+
     // Keep only the segments that actually received content (the first child
     // may have forced a break at the top of a page, for one, leaving the page
     // before it empty).
@@ -1073,8 +1081,16 @@ fn place_split<T>(
                 return None;
             }
             let end_index = state.get(seg.page_index).boxes.len();
-            let (top, bottom) =
+            let (top, mut bottom) =
                 extent_of(&state.get(seg.page_index).boxes[seg.start_index..end_index]);
+            // The children alone leave out blank space the box still owns: a fragment that
+            // continues on the next page runs to the page break, and the last one covers the
+            // rest of its declared height.
+            if !is_last {
+                bottom = bottom.max(page_height);
+            } else if seg.page_index == end_page {
+                bottom = bottom.max(end_content_bottom);
+            }
             let layout = fragment_layout(&container.layout, top, bottom, is_first, is_last);
             // The marker stays on `b`'s first fragment only, so that a box split
             // across pages does not paint it again on every later fragment. Its

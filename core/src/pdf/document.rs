@@ -6093,8 +6093,9 @@ mod tests {
             assert_eq!(count_occurrences(page.as_bytes(), b" c\n"), 2);
         }
         // The sides run to the fragment's edge at the break (the stroke's centre line is 2px
-        // inside the 4px border; the first fragment ends 154px down the 200px page).
-        assert!(first.contains("2 46 m\n2 192 l\n"), "{first}");
+        // inside the 4px border). The first fragment continues on the next page, so it runs
+        // to the bottom of the 200px page rather than stopping under its last row at 154px.
+        assert!(first.contains("2 0 m\n2 192 l\n"), "{first}");
         assert!(last.contains("398 200 m\n398 154 l\n"), "{last}");
 
         // The middle fragment has no rounded corner left, so it paints its two sides as
