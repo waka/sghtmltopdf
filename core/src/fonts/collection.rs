@@ -107,8 +107,10 @@ impl FontCollection {
     /// `font-family` list, in priority order) and that has a glyph for `c`.
     ///
     /// Selection order: (1) of the fonts whose family matches and that can draw `c`, the
-    /// one closest to `weight`/`style` (see [`Self::best_match`]); (2) the same among all
-    /// fonts that can draw `c`, regardless of family; (3) failing all that, the first font
+    /// one closest to `weight`/`style` (see [`Self::best_match`]); (2) regardless of family,
+    /// the family of the first registered font that can draw `c` (one that is bold/italic
+    /// as requested if there is one), and in it the face closest to `weight`/`style`
+    /// (see [`Self::first_registered_match`]); (3) failing all that, the first font
     /// in the collection (which renders as tofu). `None` only when the collection is empty.
     ///
     /// Whether the chosen font really satisfies the requested `weight`/`style` can be
@@ -136,12 +138,56 @@ impl FontCollection {
         // Even when no family matches, prefer a font whose weight/style match, ignoring the
         // family (a setting such as the default "sans-serif" commonly matches no font's
         // internal family name, and we do not want to give up the chance to pick a real
-        // bold or italic face here either).
-        if let Some(index) = self.best_match(weight, style, c, |_, _| true) {
-            return Some(index);
+        // bold or italic face here either). Registration order picks the family: the first
+        // font that can draw `c` and is bold/italic as requested, or else the first that
+        // can draw `c`. Weight closeness only picks the face within that family, so a
+        // fallback family registered later (a CJK font added for Japanese text, say) never
+        // takes over Latin text because one of its faces is nearer the requested weight.
+        if let Some(first) = self.first_registered_match(weight, style, c) {
+            let family = self.family_of(first);
+            return self.best_match(weight, style, c, |i, _| {
+                i == first
+                    || family.is_some_and(|family| {
+                        self.family_of(i)
+                            .is_some_and(|other| other.eq_ignore_ascii_case(family))
+                    })
+            });
         }
 
         Some(0)
+    }
+
+    /// The first font in registration order whose `unicode-range` (if declared) contains
+    /// `c`, that has a glyph for `c` and that is bold/italic as `weight`/`style` ask; failing
+    /// that, the first font that can draw `c` at all.
+    fn first_registered_match(
+        &self,
+        weight: FontWeight,
+        style: FontStyle,
+        c: char,
+    ) -> Option<usize> {
+        let mut first_match = None;
+        for (i, f) in self.fonts.iter().enumerate() {
+            if !self.in_unicode_range(i, c) || !f.has_glyph(c) {
+                continue;
+            }
+            first_match.get_or_insert(i);
+            if self.is_bold(i) == weight.is_bold()
+                && self.is_italic(i) == (style == FontStyle::Italic)
+            {
+                return Some(i);
+            }
+        }
+        first_match
+    }
+
+    /// The family font `index` is matched under: its CSS-declared family, or else the
+    /// family in its own `name` table (the same names [`Self::matches_family`] compares).
+    fn family_of(&self, index: usize) -> Option<&str> {
+        match self.declared_families.get(index)? {
+            Some(declared) => Some(declared),
+            None => self.fonts.get(index)?.family_name_str(),
+        }
     }
 
     /// Among the fonts satisfying `eligible`, whose `unicode-range` (if declared) contains
@@ -652,6 +698,48 @@ mod tests {
         .unwrap();
         assert_eq!(faces[index].0, 500);
         assert!(!collection.is_bold(index));
+    }
+
+    #[test]
+    fn select_for_char_keeps_registration_order_between_families_when_none_is_named() {
+        // A `--font` Medium (500) registered before a fallback at 400: text with no
+        // `font-family` stays in the first family, even though the other face is the
+        // closer weight. Within that family, the closest face still wins.
+        let face = |collection: &mut FontCollection, family: &str, weight: u16| {
+            collection.push_font_face(
+                family.to_string(),
+                Some(FontWeight(weight)),
+                Some(FontStyle::Normal),
+                Vec::new(),
+                dejavu(),
+            );
+        };
+        let normal = |collection: &FontCollection, weight: FontWeight| {
+            collection
+                .select_for_char(&[], weight, FontStyle::Normal, 'A')
+                .unwrap()
+        };
+
+        let mut collection = FontCollection::new(vec![]);
+        face(&mut collection, "Main", 500);
+        face(&mut collection, "Other", 400);
+        assert_eq!(normal(&collection, FontWeight::NORMAL), 0);
+
+        // With a 300 and a 400 face of `Main` ahead of `Other`, 400 takes Main's 400 face
+        // and 300 its 300 face.
+        let mut collection = FontCollection::new(vec![]);
+        face(&mut collection, "Main", 300);
+        face(&mut collection, "Other", 400);
+        face(&mut collection, "Main", 400);
+        assert_eq!(normal(&collection, FontWeight::NORMAL), 2);
+        assert_eq!(normal(&collection, FontWeight(300)), 0);
+
+        // A bold request still goes to the first registered bold face, as before, when the
+        // first family has none.
+        let mut collection = FontCollection::new(vec![]);
+        face(&mut collection, "Main", 500);
+        face(&mut collection, "Other", 700);
+        assert_eq!(normal(&collection, FontWeight::BOLD), 1);
     }
 
     #[test]

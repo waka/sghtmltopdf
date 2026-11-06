@@ -582,6 +582,11 @@ impl Font {
     pub fn family_name(&self) -> Option<String> {
         self.metrics.family_name.clone()
     }
+
+    /// [`Self::family_name`] without the copy, for comparisons made once per character.
+    pub(crate) fn family_name_str(&self) -> Option<&str> {
+        self.metrics.family_name.as_deref()
+    }
 }
 
 /// Read face number `index` from the bytes. For anything other than a TrueType Collection,
