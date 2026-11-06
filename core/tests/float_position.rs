@@ -389,3 +389,97 @@ fn an_auto_width_float_is_clamped_to_the_available_width() {
     let width = find_laid_out(&laid, ds[0]).unwrap().layout.content.width;
     assert!(width <= PageSettings::default().content_width() + 0.5);
 }
+
+/// The page each `<p>` label lands on, with how many times it was placed, for the issue #148
+/// layout: a right float crossing a page boundary next to a normal-flow column.
+fn label_pages_for_float_column(parent_css: &str) -> (usize, Vec<(String, Vec<usize>)>) {
+    let html_src = "<header></header><div class=\"wrap\">\
+        <aside><p>FLOAT_ONE</p><p>FLOAT_TWO</p><p>FLOAT_THREE</p><p>FLOAT_FOUR</p></aside>\
+        <main><p>MAIN_ONE</p><p>MAIN_TWO</p><p>MAIN_THREE</p><p>MAIN_FOUR</p>\
+        <p>MAIN_FIVE</p><p>MAIN_SIX</p></main>\
+        </div><footer><p>AFTER_BOTH</p></footer>";
+    let css = format!(
+        "* {{ box-sizing: border-box; }} \
+         body {{ margin: 0; font-size: 12px; line-height: 20px; }} \
+         header {{ height: 480px; }} \
+         aside {{ float: right; width: 100px; }} \
+         main {{ width: 300px; margin-right: 100px; }} \
+         p {{ height: 50px; margin: 0; }} \
+         .wrap {{ {parent_css} }}"
+    );
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let fonts = test_fonts();
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &fonts, &settings);
+
+    fn collect(b: &LaidOutBox, out: &mut Vec<String>) {
+        match &b.content {
+            LaidOutContent::Inline(lines) => {
+                let text: String = lines
+                    .iter()
+                    .flat_map(|l| l.runs.iter())
+                    .map(|r| r.text.as_str())
+                    .collect();
+                if !text.trim().is_empty() {
+                    out.push(text.trim().to_string());
+                }
+            }
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                children.iter().for_each(|c| collect(c, out));
+            }
+            _ => {}
+        }
+    }
+    let mut labels: Vec<(String, Vec<usize>)> = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        let mut texts = Vec::new();
+        page.boxes.iter().for_each(|b| collect(b, &mut texts));
+        for t in texts {
+            match labels.iter_mut().find(|(l, _)| *l == t) {
+                Some((_, ps)) => ps.push(i + 1),
+                None => labels.push((t, vec![i + 1])),
+            }
+        }
+    }
+    (pages.len(), labels)
+}
+
+fn assert_float_column_paginates_in_parallel(parent_css: &str) {
+    let (page_count, labels) = label_pages_for_float_column(parent_css);
+    let expected = [
+        ("FLOAT_ONE", 1),
+        ("FLOAT_TWO", 1),
+        ("FLOAT_THREE", 2),
+        ("FLOAT_FOUR", 2),
+        ("MAIN_ONE", 1),
+        ("MAIN_TWO", 1),
+        ("MAIN_THREE", 2),
+        ("MAIN_FOUR", 2),
+        ("MAIN_FIVE", 2),
+        ("MAIN_SIX", 2),
+        ("AFTER_BOTH", 2),
+    ];
+    for (label, page) in expected {
+        let found = labels.iter().find(|(l, _)| l == label).map(|(_, p)| p);
+        assert_eq!(
+            found,
+            Some(&vec![page]),
+            "{label} should be placed once, on page {page} (all: {labels:?})"
+        );
+    }
+    assert_eq!(page_count, 2, "labels: {labels:?}");
+}
+
+#[test]
+fn a_float_crossing_a_page_does_not_push_the_following_flow_to_the_next_page() {
+    assert_float_column_paginates_in_parallel("");
+}
+
+#[test]
+fn a_float_crossing_a_page_inside_a_bordered_parent_keeps_the_flow_alongside() {
+    assert_float_column_paginates_in_parallel("border: 1px solid black;");
+}

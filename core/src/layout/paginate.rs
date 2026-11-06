@@ -92,6 +92,14 @@ struct PaginationBuffer {
     /// The stack of first-touched absolute page indices for the `place_split` calls currently
     /// active (pushed and popped by `enter_split`/`exit_split`).
     active_min_page: Vec<usize>,
+    /// The absolute index of the page the normal flow is currently placing on. Usually the
+    /// last buffered page, but a float crossing a page boundary leaves pages after it, which
+    /// the flow then reuses when it reaches them (see [`PaginationState::advance_page`]).
+    active: usize,
+    /// For each buffered page (parallel to `buffer`), how many boxes it already held when the
+    /// flow last moved onto it. A page created fresh holds none; a page a float filled first
+    /// holds the float's boxes, which a container entering it must not count as its own.
+    flow_entry: Vec<usize>,
 }
 
 impl PaginationBuffer {
@@ -100,6 +108,8 @@ impl PaginationBuffer {
             buffer: vec![Page::default()],
             flushed: 0,
             active_min_page: Vec::new(),
+            active: 0,
+            flow_entry: vec![0],
         }
     }
 }
@@ -136,23 +146,18 @@ impl<'a> PaginationState<'a> {
         self.inner.flushed + self.inner.buffer.len()
     }
 
-    /// The absolute index of the last (most recent) active page.
+    /// The absolute index of the page the normal flow is placing on.
     fn current_index(&self) -> usize {
-        self.len() - 1
+        self.inner.active
     }
 
-    fn last_mut(&mut self) -> &mut Page {
-        self.inner
-            .buffer
-            .last_mut()
-            .expect("the buffer always holds at least one page")
+    fn active_mut(&mut self) -> &mut Page {
+        let active = self.inner.active;
+        self.get_mut(active)
     }
 
-    fn last(&self) -> &Page {
-        self.inner
-            .buffer
-            .last()
-            .expect("the buffer always holds at least one page")
+    fn active(&self) -> &Page {
+        self.get(self.inner.active)
     }
 
     /// A reference to the page at absolute index `absolute`. The caller guarantees it has
@@ -166,9 +171,34 @@ impl<'a> PaginationState<'a> {
         &mut self.inner.buffer[absolute - self.inner.flushed]
     }
 
-    /// Start a new page.
-    fn push_new_page(&mut self) {
-        self.inner.buffer.push(Page::default());
+    /// Move the flow on to the next page: one a float already started if there is one,
+    /// otherwise a new page.
+    fn advance_page(&mut self) {
+        self.inner.active += 1;
+        if self.inner.active < self.len() {
+            let entry = self.active().boxes.len();
+            let i = self.inner.active - self.inner.flushed;
+            self.inner.flow_entry[i] = entry;
+        } else {
+            self.inner.buffer.push(Page::default());
+            self.inner.flow_entry.push(0);
+        }
+    }
+
+    /// How many boxes page `absolute` held when the flow moved onto it.
+    fn flow_entry(&self, absolute: usize) -> usize {
+        self.inner.flow_entry[absolute - self.inner.flushed]
+    }
+
+    /// Place a float, whose pages run independently of the flow beside it: the flow comes
+    /// back to the page it was on afterwards, and that page is kept from being flushed while
+    /// the float moves on past it.
+    fn place_float(&mut self, place: impl FnOnce(&mut Self)) {
+        let origin = self.current_index();
+        self.enter_split();
+        place(self);
+        self.inner.active = origin;
+        self.exit_split();
     }
 
     /// On entering [`place_split`], record the current page as "the first page this container
@@ -198,6 +228,7 @@ impl<'a> PaginationState<'a> {
             .unwrap_or_else(|| self.current_index());
         while self.inner.flushed < safe_until {
             let page = self.inner.buffer.remove(0);
+            self.inner.flow_entry.remove(0);
             (self.on_flush)(page);
             self.inner.flushed += 1;
         }
@@ -913,7 +944,7 @@ fn place_split<T>(
         if needs_fragments {
             segments.push(Segment {
                 page_index: *current_page,
-                start_index: 0,
+                start_index: state.flow_entry(*current_page),
             });
         }
     };
@@ -941,8 +972,11 @@ fn place_split<T>(
             // makes the `shift = margin_box_top - *cursor` inside `place_one`
             // (that is, `place_box`) the same translation as the surrounding
             // flow, which puts the float at the right in-page position.
+            //
+            // Its pages run independently of the flow too: a float crossing a
+            // page boundary must not carry the flow beside it onto the next page.
             let mut local_cursor = item_extent(item).0 - shift_reference;
-            place_one(item, page_height, state, &mut local_cursor);
+            state.place_float(|state| place_one(item, page_height, state, &mut local_cursor));
         } else {
             // Map the absolute coordinates layout produced straight into the
             // page. Stacking margin box heights instead would count margin boxes
@@ -978,13 +1012,14 @@ fn place_split<T>(
 
             let now_page = state.current_index();
             if now_page != current_page {
-                // Moved on to a new page. Nothing but this `b`'s own content can
-                // get in, so the pages created here start at index 0.
+                // Moved on to a new page. Only a float placed earlier can have
+                // filled it before the flow reached it, and that is not part of
+                // this fragment.
                 if needs_fragments {
                     for p in (current_page + 1)..=now_page {
                         segments.push(Segment {
                             page_index: p,
-                            start_index: 0,
+                            start_index: state.flow_entry(p),
                         });
                     }
                 }
@@ -1193,7 +1228,7 @@ fn place_line(line: &LineBox, page_height: f32, state: &mut PaginationState<'_>,
         link: None,
     };
     *cursor += line.rect.height;
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// Split a table across pages row by row.
@@ -1336,7 +1371,7 @@ fn flush_grid_fragment(
         }),
         link: container.link.clone(),
     };
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// The unit a flex container taller than a page is split into: a band grouping
@@ -1663,7 +1698,7 @@ fn flush_table_fragment(
         marker: None,
         link: container.link.clone(),
     };
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// The absolute Y of the top of a table row's margin box (the topmost among its cells).
@@ -1727,11 +1762,11 @@ fn place_leaf(b: &mut LaidOutBox, state: &mut PaginationState<'_>, cursor: &mut 
     shift_box_y_in_place(&mut translated, shift);
 
     *cursor += height;
-    state.last_mut().boxes.push(translated);
+    state.active_mut().boxes.push(translated);
 }
 
 fn new_page(state: &mut PaginationState<'_>, cursor: &mut f32) {
-    state.push_new_page();
+    state.advance_page();
     // When the call stack holds only containers with no decoration (which never call
     // `enter_split`/`exit_split`), no flush ever happens via `exit_split`, so the flush check
     // also runs here whenever a new page starts. That gives the finest streaming granularity:
@@ -1746,7 +1781,7 @@ fn new_page(state: &mut PaginationState<'_>, cursor: &mut f32) {
 /// with nothing drawn yet), so this, rather than `cursor`, is what decides "is a forced break
 /// really a meaningful move (that is, does it avoid discarding the current page while empty)".
 fn current_page_has_content(state: &PaginationState<'_>) -> bool {
-    !state.last().boxes.is_empty()
+    !state.active().boxes.is_empty()
 }
 
 #[cfg(test)]
