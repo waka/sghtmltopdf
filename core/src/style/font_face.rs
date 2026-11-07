@@ -269,7 +269,7 @@ mod tests {
             rule.src,
             vec![FontFaceSource::Url("fonts/brand.ttf".to_string())]
         );
-        assert_eq!(rule.weight, FontWeight::Normal);
+        assert_eq!(rule.weight, FontWeight::NORMAL);
         assert_eq!(rule.style, FontStyle::Normal);
         assert!(rule.unicode_range.is_empty());
     }
@@ -331,8 +331,20 @@ mod tests {
             rule.src,
             vec![FontFaceSource::Url("brand-bold.ttf".to_string())]
         );
-        assert_eq!(rule.weight, FontWeight::Bold);
+        assert_eq!(rule.weight, FontWeight::BOLD);
         assert_eq!(rule.style, FontStyle::Italic);
+    }
+
+    #[test]
+    fn keeps_a_numeric_weight_descriptor_as_written() {
+        // A 300 or 500 face is told apart from a 400 one, so faces can be matched by
+        // weight (#151).
+        let sheet = parse_stylesheet(
+            "@font-face { font-family: Brand; src: url(a.ttf); font-weight: 300; }
+             @font-face { font-family: Brand; src: url(b.ttf); font-weight: 500; }",
+        );
+        assert_eq!(sheet.font_faces[0].weight, FontWeight(300));
+        assert_eq!(sheet.font_faces[1].weight, FontWeight(500));
     }
 
     #[test]

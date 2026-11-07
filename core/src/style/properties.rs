@@ -1288,25 +1288,23 @@ fn parse_bookmark_state<'i>(
     })
 }
 
-/// Accepts both keywords (`normal`/`bold`) and numbers (`100` to `900`).
-/// A simplified implementation treats any number of 600 or more as `Bold` (we hold no real
-/// bold font and render it as faux bold, so finer weight steps are not distinguished).
+/// Accepts both keywords (`normal`/`bold`) and numbers from 1 to 1000 (CSS Fonts 4), which
+/// are kept as they are (rounded to an integer). `bolder`/`lighter` are not supported.
 pub(crate) fn parse_font_weight<'i>(
     input: &mut Parser<'i, '_>,
 ) -> Result<FontWeight, ParseError<'i, ()>> {
     if let Ok(ident) = input.try_parse(|input| input.expect_ident_cloned()) {
         return Ok(match_ignore_ascii_case! { &ident,
-            "normal" => FontWeight::Normal,
-            "bold" => FontWeight::Bold,
+            "normal" => FontWeight::NORMAL,
+            "bold" => FontWeight::BOLD,
             _ => return Err(input.new_custom_error(())),
         });
     }
     let value = input.expect_number()?;
-    Ok(if value >= 600.0 {
-        FontWeight::Bold
-    } else {
-        FontWeight::Normal
-    })
+    if !(1.0..=1000.0).contains(&value) {
+        return Err(input.new_custom_error(()));
+    }
+    Ok(FontWeight(value.round() as u16))
 }
 
 pub(crate) fn parse_font_style<'i>(

@@ -1927,7 +1927,7 @@ mod tests {
                 alpha: 1.0
             }
         );
-        assert_eq!(loud_style.font_weight, crate::style::FontWeight::Bold);
+        assert_eq!(loud_style.font_weight, crate::style::FontWeight::BOLD);
     }
 
     #[test]

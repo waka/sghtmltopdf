@@ -433,7 +433,7 @@ impl Default for ComputedStyle {
             // `select_for_char` falls back to the caller's font (`--font`/`@font-face`)
             // (`sans-serif` resolves to a gothic face only when written explicitly).
             font_family: Vec::new(),
-            font_weight: FontWeight::Normal,
+            font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
             color: RgbaColor {
                 red: 0,
@@ -2743,11 +2743,11 @@ mod tests {
         let author = parse_stylesheet("b { font-weight: bold; } i { font-style: italic; }");
 
         let styles = compute_styles(&dom, &ua, &author);
-        assert_eq!(styles[&p].font_weight, super::FontWeight::Normal);
-        assert_eq!(styles[&b].font_weight, super::FontWeight::Bold);
+        assert_eq!(styles[&p].font_weight, super::FontWeight::NORMAL);
+        assert_eq!(styles[&b].font_weight, super::FontWeight::BOLD);
         assert_eq!(styles[&b].font_style, super::FontStyle::Normal);
         // <i> inherits font-weight: bold from <b> and adds its own font-style: italic.
-        assert_eq!(styles[&i].font_weight, super::FontWeight::Bold);
+        assert_eq!(styles[&i].font_weight, super::FontWeight::BOLD);
         assert_eq!(styles[&i].font_style, super::FontStyle::Italic);
     }
 
@@ -2836,23 +2836,33 @@ mod tests {
     }
 
     #[test]
-    fn numeric_font_weight_is_thresholded_to_bold_or_normal() {
+    fn numeric_font_weight_keeps_its_value() {
         let dom = html::parse(br#"<p>a</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
+        let weight_of = |css: &str| {
+            compute_styles(&dom, &Stylesheet::default(), &parse_stylesheet(css))[&p].font_weight
+        };
 
-        let light = compute_styles(
-            &dom,
-            &Stylesheet::default(),
-            &parse_stylesheet("p { font-weight: 400; }"),
+        assert_eq!(
+            weight_of("p { font-weight: 400; }"),
+            super::FontWeight::NORMAL
         );
-        assert_eq!(light[&p].font_weight, super::FontWeight::Normal);
-
-        let heavy = compute_styles(
-            &dom,
-            &Stylesheet::default(),
-            &parse_stylesheet("p { font-weight: 700; }"),
+        assert_eq!(
+            weight_of("p { font-weight: 700; }"),
+            super::FontWeight::BOLD
         );
-        assert_eq!(heavy[&p].font_weight, super::FontWeight::Bold);
+        // Weights between the keywords are not rounded to normal/bold (#151).
+        assert_eq!(weight_of("p { font-weight: 300; }"), super::FontWeight(300));
+        assert_eq!(weight_of("p { font-weight: 500; }"), super::FontWeight(500));
+        // Outside 1 to 1000 the declaration is invalid and the initial value stays.
+        assert_eq!(
+            weight_of("p { font-weight: 0; }"),
+            super::FontWeight::NORMAL
+        );
+        assert_eq!(
+            weight_of("p { font-weight: 1200; }"),
+            super::FontWeight::NORMAL
+        );
     }
 
     #[test]

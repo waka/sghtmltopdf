@@ -87,7 +87,7 @@
 | - | - | - |
 | `font-family` | ⚠️ | カンマ区切りリスト。汎用family名は`serif`/`sans-serif`/`monospace`をシステムフォントから解決する(`cursive`/`fantasy`は解決しない)。`sans-serif`の解決先はCLIの`--gothic-font`で決定的に上書きできる |
 | `font-size` | ⚠️ | `<length>`(`px`/`em`/`rem`)のみ。`smaller`/`larger`/`medium`等のキーワード、パーセンテージ指定は非対応 |
-| `font-weight` | ⚠️ | `normal`/`bold`/`100`〜`900`。数値は600以上を`bold`とみなす2値化。太字フォントが無い場合は塗り+縁取りの疑似ボールドで描画 |
+| `font-weight` | ⚠️ | `normal`/`bold`/`1`〜`1000`の数値(`bolder`/`lighter`は非対応)。同じファミリーの`@font-face`が複数の太さを持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選ぶ(宣言順によらない)。システムフォントは600以上をBold、それ未満をRegularとして探す。600以上の指定に600以上のフェイスが無い場合は塗り+縁取りの疑似ボールドで描画 |
 | `font-style` | ⚠️ | `normal`/`italic`/`oblique`(`oblique`は`italic`と同一視、傾斜角の指定は不可)。イタリック字形が無い場合はテキスト行列のせん断による疑似イタリック |
 | `font`(ショートハンド) | ❌ | 個別のロングハンドを使う |
 | `color` | ✅ | 継承プロパティ。指定できる色の記法は[セレクタ・値・at-rule](selectors.md#色)を参照 |

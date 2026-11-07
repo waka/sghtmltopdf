@@ -473,7 +473,7 @@ mod tests {
                 let style = style_of(&html_src, tag);
                 assert_eq!(
                     style.font_weight,
-                    FontWeight::Bold,
+                    FontWeight::BOLD,
                     "<{tag}> should be bold"
                 );
                 style.font_size.0
@@ -527,7 +527,7 @@ mod tests {
     #[test]
     fn table_header_cells_are_bold_and_centered() {
         let style = style_of("<table><tr><th>x</th></tr></table>", "th");
-        assert_eq!(style.font_weight, FontWeight::Bold);
+        assert_eq!(style.font_weight, FontWeight::BOLD);
         assert_eq!(style.text_align, TextAlign::Center);
     }
 
