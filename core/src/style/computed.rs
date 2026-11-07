@@ -23,16 +23,16 @@ use super::selector_impl::PseudoElement;
 use super::stylesheet::{parse_inline_style, Stylesheet};
 use super::values::{
     AlignContent, AlignItems, AlignSelf, AspectRatio, BackgroundAttachment, BackgroundPosition,
-    BackgroundRepeat, BackgroundSize, BorderCollapse, BorderStyle, BoxSizing, BreakBetween,
-    BreakInside, CaptionSide, Clear, Color, ContentPart, CornerRadius, Display, EmphasisPosition,
-    EmphasisStyle, EmptyCells, FlexBasis, FlexDirection, FlexWrap, Float, FontStyle, FontWeight,
-    GridArea, GridAutoFlow, GridLine, Hyphens, JustifyContent, Length, LengthPercentage,
-    LengthPercentageOrAuto, ListStylePosition, ListStyleType, MaxSize, ObjectFit, Overflow,
-    OverflowWrap, Position, QuotePair, SpecifiedCornerRadius, SpecifiedLength,
-    SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight,
-    SpecifiedMaxSize, SpecifiedTrackSize, TableLayout, TextAlign, TextDecorationLine, TextOverflow,
-    TextTransform, TrackList, TrackSize, TransformFunction, VerticalAlign, Visibility, WhiteSpace,
-    WordBreak, ZIndex,
+    BackgroundRepeat, BackgroundSize, BookmarkLabelPart, BookmarkState, BorderCollapse,
+    BorderStyle, BoxSizing, BreakBetween, BreakInside, CaptionSide, Clear, Color, ContentPart,
+    CornerRadius, Display, EmphasisPosition, EmphasisStyle, EmptyCells, FlexBasis, FlexDirection,
+    FlexWrap, Float, FontStyle, FontWeight, GridArea, GridAutoFlow, GridLine, Hyphens,
+    JustifyContent, Length, LengthPercentage, LengthPercentageOrAuto, ListStylePosition,
+    ListStyleType, MaxSize, ObjectFit, Overflow, OverflowWrap, Position, QuotePair,
+    SpecifiedCornerRadius, SpecifiedLength, SpecifiedLengthPercentage,
+    SpecifiedLengthPercentageOrAuto, SpecifiedLineHeight, SpecifiedMaxSize, SpecifiedTrackSize,
+    TableLayout, TextAlign, TextDecorationLine, TextOverflow, TextTransform, TrackList, TrackSize,
+    TransformFunction, VerticalAlign, Visibility, WhiteSpace, WordBreak, ZIndex,
 };
 
 /// The computed value of `color`/`background-color`. Unlike at parse time, `currentcolor` is already resolved.
@@ -144,10 +144,10 @@ pub struct ComputedStyle {
     /// simplification that matches the appearance in the common nesting cases (such as
     /// `<u>bold <b>text</b></u>`). An explicit override on a descendant still wins, as with ordinary inheritance.
     pub text_decoration_line: TextDecorationLine,
-    /// The generated content of `::before { content: "..." }`. It is drawn reusing the
-    /// element's own style (a simplification: pseudo-elements have no computed style of their own).
+    /// The generated content of `::before { content: "..." }`. It is drawn with the
+    /// pseudo-element's own computed style, stored under [`NodeId::before`].
     pub pseudo_before_content: Option<String>,
-    /// The generated content of `::after { content: "..." }`.
+    /// The generated content of `::after { content: "..." }` (its style is under [`NodeId::after`]).
     pub pseudo_after_content: Option<String>,
     /// CSS Fragmentation. Not inherited (per the spec).
     pub break_before: BreakBetween,
@@ -157,6 +157,13 @@ pub struct ComputedStyle {
     pub orphans: u32,
     /// Minimum number of lines that may be carried to the start of a page. Not inherited; initial value 2 (per the spec).
     pub widows: u32,
+    /// `bookmark-level`: the outline level of this element, or `None` for no outline entry.
+    /// Not inherited.
+    pub bookmark_level: Option<u32>,
+    /// `bookmark-label`. `None` is the initial value, `content(text)`. Not inherited.
+    pub bookmark_label: Option<Vec<BookmarkLabelPart>>,
+    /// `bookmark-state`. Not inherited.
+    pub bookmark_state: BookmarkState,
     /// `float`. Not inherited. Anything but `none` makes `display` compute to block-level
     /// (CSS2.1 9.7, applied in `compute_element_style` below).
     pub float: Float,
@@ -426,7 +433,7 @@ impl Default for ComputedStyle {
             // `select_for_char` falls back to the caller's font (`--font`/`@font-face`)
             // (`sans-serif` resolves to a gothic face only when written explicitly).
             font_family: Vec::new(),
-            font_weight: FontWeight::Normal,
+            font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
             color: RgbaColor {
                 red: 0,
@@ -453,6 +460,9 @@ impl Default for ComputedStyle {
             break_inside: BreakInside::Auto,
             orphans: 2,
             widows: 2,
+            bookmark_level: None,
+            bookmark_label: None,
+            bookmark_state: BookmarkState::Open,
             float: Float::None,
             clear: Clear::None,
             position: Position::Static,
@@ -699,6 +709,7 @@ pub fn compute_single_element_style(
     compute_element_style(
         dom,
         element,
+        None,
         parent_style,
         root_font_size,
         ua,
@@ -771,9 +782,10 @@ fn compute_recursive(
 ) -> Vec<String> {
     let (mut style, own_pushed_counter_names, after_parts) = match &dom.node(node).data {
         NodeData::Element { .. } => {
-            let (style, pushed_counter_names, after_parts) = compute_element_style(
+            let (mut style, pushed_counter_names, after_parts) = compute_element_style(
                 dom,
                 node,
+                None,
                 parent_style,
                 ctx.root_font_size.get(),
                 ctx.ua,
@@ -785,6 +797,14 @@ fn compute_recursive(
             // The first element directly under the document (usually <html>) is the root element.
             if is_root_candidate {
                 ctx.root_font_size.set(style.font_size.0);
+            }
+            if style.pseudo_before_content.is_some() {
+                match compute_pseudo_element_style(dom, node, PseudoElement::Before, &style, ctx) {
+                    Some(before) => {
+                        out.insert(node.before(), interner.intern(before));
+                    }
+                    None => style.pseudo_before_content = None,
+                }
             }
             (style, pushed_counter_names, after_parts)
         }
@@ -823,9 +843,51 @@ fn compute_recursive(
     let quotes = style.quotes.clone();
     style.pseudo_after_content =
         resolve_content_parts(after_parts, dom, node, counters, quote_depth, &quotes);
+    if style.pseudo_after_content.is_some() {
+        match compute_pseudo_element_style(dom, node, PseudoElement::After, &style, ctx) {
+            Some(after) => {
+                out.insert(node.after(), interner.intern(after));
+            }
+            None => style.pseudo_after_content = None,
+        }
+    }
 
     out.insert(node, interner.intern(style));
     own_pushed_counter_names
+}
+
+/// The computed style of `element`'s `::before` or `::after`, which inherits from
+/// `element_style` like a child element. Stored under the pseudo-element's own id
+/// ([`NodeId::before`]), it is what layout and drawing use for the generated content.
+/// `None` when it is `display: none`, which generates nothing.
+fn compute_pseudo_element_style(
+    dom: &Dom,
+    element: NodeId,
+    pseudo: PseudoElement,
+    element_style: &ComputedStyle,
+    ctx: &StyleContext<'_>,
+) -> Option<ComputedStyle> {
+    // Its `counter-reset`/`counter-increment` are not applied (a simplification): they would
+    // change the counters before its own `content`, which is resolved with `element`.
+    let (mut style, _, _) = compute_element_style(
+        dom,
+        element,
+        Some(pseudo),
+        Some(element_style),
+        ctx.root_font_size.get(),
+        ctx.ua,
+        ctx.author,
+        &ctx.registrations,
+        &mut HashMap::new(),
+        &mut 0,
+    );
+    // Line layout shifts each run by its own `vertical-align` only, without adding up the
+    // inline boxes around it. A baseline-aligned box sits on its parent's baseline, so in a
+    // shifted inline element (`sup`, say) the pseudo-element takes the element's shift.
+    if element_style.display == Display::Inline && style.vertical_align == VerticalAlign::Baseline {
+        style.vertical_align = element_style.vertical_align;
+    }
+    (style.display != Display::None).then_some(style)
 }
 
 /// Compute the style of `element`. Returns the triple (style, list of pushed counter names,
@@ -841,10 +903,15 @@ fn compute_recursive(
 /// `counter()`/`quotes` (which should reflect changes made by the descendants) can only be
 /// resolved once those are processed (the caller's `compute_recursive` calls
 /// `resolve_content_parts` after the child loop and fills in `ComputedStyle::pseudo_after_content`).
+///
+/// With `pseudo`, it is the style of `element`'s `::before` or `::after` instead, from the
+/// rules matching that pseudo-element, with `parent` being `element`'s own style. Its
+/// `content` is resolved with `element`, so it generates none of its own.
 #[allow(clippy::too_many_arguments)]
 fn compute_element_style(
     dom: &Dom,
     element: NodeId,
+    pseudo: Option<PseudoElement>,
     parent: Option<&ComputedStyle>,
     root_font_size: f32,
     ua: &Stylesheet,
@@ -853,13 +920,32 @@ fn compute_element_style(
     counters: &mut HashMap<String, Vec<i32>>,
     quote_depth: &mut i32,
 ) -> (ComputedStyle, Vec<String>, Option<Vec<ContentPart>>) {
-    let (ua_declarations, author_declarations) =
-        matching_declarations_by_origin(dom, element, ua, author);
-    let inline_declarations = inline_style_declarations(dom, element);
-    // Legacy presentational attributes (`bgcolor`/`align` and friends) and the
-    // `data-page-break` sugar sit stronger than the UA stylesheet and weaker than author CSS.
-    let mut attribute_declarations = presentational_hint_declarations(dom, element);
-    attribute_declarations.extend(data_page_break_declarations(dom, element));
+    let (ua_declarations, author_declarations, inline_declarations, attribute_declarations) =
+        match pseudo {
+            // Already in cascade order across both origins. The attributes style only the
+            // element itself.
+            Some(pseudo) => (
+                Vec::new(),
+                matching_pseudo_declarations(dom, element, pseudo, ua, author),
+                Vec::new(),
+                Vec::new(),
+            ),
+            None => {
+                let (ua_declarations, author_declarations) =
+                    matching_declarations_by_origin(dom, element, ua, author);
+                // Legacy presentational attributes (`bgcolor`/`align` and friends) and the
+                // `data-page-break` sugar sit stronger than the UA stylesheet and weaker
+                // than author CSS.
+                let mut attribute_declarations = presentational_hint_declarations(dom, element);
+                attribute_declarations.extend(data_page_break_declarations(dom, element));
+                (
+                    ua_declarations,
+                    author_declarations,
+                    inline_style_declarations(dom, element),
+                    attribute_declarations,
+                )
+            }
+        };
 
     let mut display = None;
     let mut width = None;
@@ -905,6 +991,9 @@ fn compute_element_style(
     let mut break_inside = None;
     let mut orphans = None;
     let mut widows = None;
+    let mut bookmark_level = None;
+    let mut bookmark_label = None;
+    let mut bookmark_state = None;
     let mut float = None;
     let mut clear = None;
     let mut position = None;
@@ -1114,6 +1203,11 @@ fn compute_element_style(
                 PropertyDeclaration::BreakInside(v) => break_inside = sel(reset, *v),
                 PropertyDeclaration::Orphans(v) => orphans = sel(reset, *v),
                 PropertyDeclaration::Widows(v) => widows = sel(reset, *v),
+                PropertyDeclaration::BookmarkLevel(v) => bookmark_level = sel(reset, *v),
+                PropertyDeclaration::BookmarkLabel(v) => {
+                    bookmark_label = sel(reset, Some(v.clone()))
+                }
+                PropertyDeclaration::BookmarkState(v) => bookmark_state = sel(reset, *v),
                 PropertyDeclaration::Float(v) => float = sel(reset, *v),
                 PropertyDeclaration::Clear(v) => clear = sel(reset, *v),
                 PropertyDeclaration::Position(v) => position = sel(reset, *v),
@@ -1485,22 +1579,27 @@ fn compute_element_style(
     // resolved here (the `counter()`/`quotes` state should reflect changes made by the
     // descendants). The list of parts is returned unresolved to the caller
     // (`compute_recursive`), which resolves it once the descendants are processed.
-    let before_parts = matching_pseudo_content(
-        dom,
-        element,
-        PseudoElement::Before,
-        ua,
-        author,
-        &custom_properties,
-    );
-    let after_parts = matching_pseudo_content(
-        dom,
-        element,
-        PseudoElement::After,
-        ua,
-        author,
-        &custom_properties,
-    );
+    let (before_parts, after_parts) = match pseudo {
+        Some(_) => (None, None),
+        None => (
+            matching_pseudo_content(
+                dom,
+                element,
+                PseudoElement::Before,
+                ua,
+                author,
+                &custom_properties,
+            ),
+            matching_pseudo_content(
+                dom,
+                element,
+                PseudoElement::After,
+                ua,
+                author,
+                &custom_properties,
+            ),
+        ),
+    };
     let pseudo_before_content = resolve_content_parts(
         before_parts,
         dom,
@@ -1511,8 +1610,10 @@ fn compute_element_style(
     );
 
     // `::first-letter`. A limited override style covering only the supported properties.
-    let mut first_letter_declarations =
-        matching_pseudo_declarations(dom, element, PseudoElement::FirstLetter, ua, author);
+    let mut first_letter_declarations = match pseudo {
+        Some(_) => Vec::new(),
+        None => matching_pseudo_declarations(dom, element, PseudoElement::FirstLetter, ua, author),
+    };
     let first_letter_resolved;
     if uses_variables(first_letter_declarations.iter().copied()) {
         let properties = compute_custom_properties(
@@ -1595,6 +1696,9 @@ fn compute_element_style(
         break_inside: break_inside.unwrap_or(initial.break_inside),
         orphans: orphans.unwrap_or(initial.orphans),
         widows: widows.unwrap_or(initial.widows),
+        bookmark_level: bookmark_level.unwrap_or(initial.bookmark_level),
+        bookmark_label: bookmark_label.unwrap_or_else(|| initial.bookmark_label.clone()),
+        bookmark_state: bookmark_state.unwrap_or(initial.bookmark_state),
         float: resolved_float,
         clear: clear.unwrap_or(initial.clear),
         position: resolved_position,
@@ -2639,11 +2743,11 @@ mod tests {
         let author = parse_stylesheet("b { font-weight: bold; } i { font-style: italic; }");
 
         let styles = compute_styles(&dom, &ua, &author);
-        assert_eq!(styles[&p].font_weight, super::FontWeight::Normal);
-        assert_eq!(styles[&b].font_weight, super::FontWeight::Bold);
+        assert_eq!(styles[&p].font_weight, super::FontWeight::NORMAL);
+        assert_eq!(styles[&b].font_weight, super::FontWeight::BOLD);
         assert_eq!(styles[&b].font_style, super::FontStyle::Normal);
         // <i> inherits font-weight: bold from <b> and adds its own font-style: italic.
-        assert_eq!(styles[&i].font_weight, super::FontWeight::Bold);
+        assert_eq!(styles[&i].font_weight, super::FontWeight::BOLD);
         assert_eq!(styles[&i].font_style, super::FontStyle::Italic);
     }
 
@@ -2732,23 +2836,33 @@ mod tests {
     }
 
     #[test]
-    fn numeric_font_weight_is_thresholded_to_bold_or_normal() {
+    fn numeric_font_weight_keeps_its_value() {
         let dom = html::parse(br#"<p>a</p>"#);
         let p = find(&dom, dom.document(), "p").expect("p not found");
+        let weight_of = |css: &str| {
+            compute_styles(&dom, &Stylesheet::default(), &parse_stylesheet(css))[&p].font_weight
+        };
 
-        let light = compute_styles(
-            &dom,
-            &Stylesheet::default(),
-            &parse_stylesheet("p { font-weight: 400; }"),
+        assert_eq!(
+            weight_of("p { font-weight: 400; }"),
+            super::FontWeight::NORMAL
         );
-        assert_eq!(light[&p].font_weight, super::FontWeight::Normal);
-
-        let heavy = compute_styles(
-            &dom,
-            &Stylesheet::default(),
-            &parse_stylesheet("p { font-weight: 700; }"),
+        assert_eq!(
+            weight_of("p { font-weight: 700; }"),
+            super::FontWeight::BOLD
         );
-        assert_eq!(heavy[&p].font_weight, super::FontWeight::Bold);
+        // Weights between the keywords are not rounded to normal/bold (#151).
+        assert_eq!(weight_of("p { font-weight: 300; }"), super::FontWeight(300));
+        assert_eq!(weight_of("p { font-weight: 500; }"), super::FontWeight(500));
+        // Outside 1 to 1000 the declaration is invalid and the initial value stays.
+        assert_eq!(
+            weight_of("p { font-weight: 0; }"),
+            super::FontWeight::NORMAL
+        );
+        assert_eq!(
+            weight_of("p { font-weight: 1200; }"),
+            super::FontWeight::NORMAL
+        );
     }
 
     #[test]
@@ -3153,6 +3267,75 @@ mod tests {
             &parse_stylesheet("p { orphans: 0; }"),
         );
         assert_eq!(styles[&p].orphans, 2);
+    }
+
+    #[test]
+    fn bookmark_properties_default_to_no_entry_and_are_not_inherited() {
+        let dom = html::parse(br#"<div><p>a</p></div>"#);
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let defaults = compute_styles(&dom, &Stylesheet::default(), &Stylesheet::default());
+        assert_eq!(defaults[&div].bookmark_level, None);
+        assert_eq!(defaults[&div].bookmark_label, None);
+        assert_eq!(defaults[&div].bookmark_state, BookmarkState::Open);
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "div { bookmark-level: 2; bookmark-state: closed; \
+                 bookmark-label: 'n ' content(text) attr(id); }",
+            ),
+        );
+        assert_eq!(styles[&div].bookmark_level, Some(2));
+        assert_eq!(styles[&div].bookmark_state, BookmarkState::Closed);
+        assert_eq!(
+            styles[&div].bookmark_label,
+            Some(vec![
+                BookmarkLabelPart::String("n ".to_string()),
+                BookmarkLabelPart::Text,
+                BookmarkLabelPart::Attr("id".to_string()),
+            ])
+        );
+        assert_eq!(styles[&p].bookmark_level, None);
+        assert_eq!(styles[&p].bookmark_label, None);
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Open);
+    }
+
+    #[test]
+    fn bookmark_level_rejects_zero_and_unknown_label_functions() {
+        let dom = html::parse(br#"<p>a</p>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "p { bookmark-level: 0; bookmark-label: content(before); bookmark-state: x; }",
+            ),
+        );
+        assert_eq!(styles[&p].bookmark_level, None);
+        assert_eq!(styles[&p].bookmark_label, None);
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Open);
+    }
+
+    #[test]
+    fn bookmark_properties_take_css_wide_keywords() {
+        let dom = html::parse(br#"<div><p>a</p></div>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+
+        let styles = compute_styles(
+            &dom,
+            &Stylesheet::default(),
+            &parse_stylesheet(
+                "div { bookmark-level: 3; bookmark-label: 'x'; bookmark-state: closed; } \
+                 p { bookmark-level: inherit; bookmark-label: inherit; bookmark-state: inherit; }",
+            ),
+        );
+        assert_eq!(styles[&p].bookmark_level, Some(3));
+        assert_eq!(styles[&p].bookmark_label.as_ref().map(Vec::len), Some(1));
+        assert_eq!(styles[&p].bookmark_state, BookmarkState::Closed);
     }
 
     #[test]
@@ -3850,6 +4033,50 @@ mod tests {
         let styles = compute_styles(&dom, &ua, &author);
         assert_eq!(styles[&span].pseudo_before_content, None);
         assert_eq!(styles[&span].pseudo_after_content, None);
+    }
+
+    #[test]
+    fn before_and_after_get_a_style_of_their_own_that_inherits_from_the_element() {
+        let dom = html::parse(br#"<p class="q" style="color: #00f">Text</p>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+        let author = parse_stylesheet(
+            ".q { font-size: 10px; margin-left: 7px } \
+             .q::before { content: \"X\"; font-size: 4.8em; color: #f00; position: absolute } \
+             .q::after { content: \"Y\" }",
+        );
+        let styles = compute_styles(&dom, &Stylesheet::default(), &author);
+
+        let before = &styles[&p.before()];
+        assert_eq!(before.font_size.0, 48.0, "em is the element's font-size");
+        assert_eq!(before.color.red, 255);
+        // `position: absolute` blockifies it, as it would an element.
+        assert_eq!(before.display, Display::Block);
+        let after = &styles[&p.after()];
+        assert_eq!(after.font_size.0, 10.0);
+        assert_eq!(
+            after.color.blue, 255,
+            "inherits the element's `style` colour"
+        );
+        // `margin-left` is not inherited.
+        let px = |v| LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(v));
+        assert_eq!(after.margin_left, px(0.0));
+        assert_eq!(styles[&p].margin_left, px(7.0));
+        assert_eq!(styles[&p].font_size.0, 10.0);
+    }
+
+    #[test]
+    fn a_pseudo_element_with_display_none_generates_no_content() {
+        let dom = html::parse(br#"<p>Text</p>"#);
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+        let author = parse_stylesheet(
+            "p::before { content: \"X\"; display: none } p::after { content: \"Y\" }",
+        );
+        let styles = compute_styles(&dom, &Stylesheet::default(), &author);
+
+        assert_eq!(styles[&p].pseudo_before_content, None);
+        assert!(!styles.contains_key(&p.before()));
+        assert_eq!(styles[&p].pseudo_after_content.as_deref(), Some("Y"));
+        assert!(styles.contains_key(&p.after()));
     }
 
     #[test]

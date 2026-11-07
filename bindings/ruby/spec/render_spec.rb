@@ -21,6 +21,40 @@ RSpec.describe "Sghtmltopdf.render" do
     expect(a4).not_to eq(a5)
   end
 
+  describe "document metadata" do
+    let(:options) do
+      {title: "Raport Zażółć", author: "Владимир Путин", creator: "Acme Reports",
+       creation_date: Time.new(2026, 10, 22, 10, 30, 0, "+02:00")}
+    end
+
+    it "writes the creator and the creation date to the Info dictionary and the XMP" do
+      pdf = Sghtmltopdf.render(html, **options)
+      expect(pdf).to include("/Creator (Acme Reports)")
+      expect(pdf).to include("/CreationDate (D:20261022083000Z)")
+      expect(pdf).to include("/ModDate (D:20261022083000Z)")
+      xmp = pdf.dup.force_encoding(Encoding::UTF_8)
+      expect(xmp).to include("<xmp:CreatorTool>Acme Reports</xmp:CreatorTool>")
+      expect(xmp).to include("<rdf:li>Владимир Путин</rdf:li>")
+      expect(xmp).to include("<xmp:CreateDate>2026-10-22T08:30:00Z</xmp:CreateDate>")
+    end
+
+    it "accepts the creation date as an ISO 8601 string" do
+      pdf = Sghtmltopdf.render(html, creation_date: "2026-10-22T10:30:00+02:00")
+      expect(pdf).to include("/CreationDate (D:20261022083000Z)")
+    end
+
+    it "renders the same bytes twice when the creation date is fixed" do
+      first = Sghtmltopdf.render(html, **options)
+      sleep 1.1
+      expect(Sghtmltopdf.render(html, **options)).to eq(first)
+    end
+
+    it "rejects a creation date that is not a date" do
+      expect { Sghtmltopdf.render(html, creation_date: "yesterday") }
+        .to raise_error(Sghtmltopdf::UsageError)
+    end
+  end
+
   describe "exception classes" do
     # When Rust panics inside the native extension, leaving it to magnus gives Ruby's
     # `fatal`, which not even `rescue Exception` catches and which takes the worker down.
@@ -139,7 +173,7 @@ end
 # Confirm from the bytes that the CLI and the gem converge on the same execution path.
 RSpec.describe "matching the CLI's output" do
   # The binary `cargo build --release` produces at the repository root.
-  CLI_PATH = File.expand_path("../../../target/release/sghtmltopdf", __dir__)
+  CLI_PATH = File.expand_path("../../../target/release/sghtmltopdf#{Gem.win_platform? ? ".exe" : ""}", __dir__)
 
   before do
     skip "no CLI binary (build it with cargo build --release): #{CLI_PATH}" unless File.executable?(CLI_PATH)
@@ -159,6 +193,7 @@ RSpec.describe "matching the CLI's output" do
     ["grayscale", ["--grayscale"], {grayscale: true}],
     ["metadata", ["--title", "請求書", "--author", "わか"], {title: "請求書", author: "わか"}],
     ["no compression", ["--no-pdf-compression"], {no_pdf_compression: true}],
+    ["tagged", ["--tagged"], {tagged: true}],
   ].each do |name, cli_args, gem_options|
     it "produces the same PDF as the CLI with #{name}" do
       html = "<html><head><title>t</title></head><body><h1>見出し</h1><p>本文です。</p></body></html>"

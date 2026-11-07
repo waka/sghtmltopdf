@@ -41,8 +41,8 @@ use crate::pdf::ImageAssetCache;
 
 use super::block::{
     layout_document, layout_document_positioned, shift_box_x, shift_box_y, shift_box_y_in_place,
-    FragmentationHints, LaidOutBox, LaidOutContent, LaidOutTable, LaidOutTableRow, PositionedBox,
-    PositionedKind,
+    CollapsedBoundary, FragmentationHints, LaidOutBox, LaidOutContent, LaidOutTable,
+    LaidOutTableRow, PositionedBox, PositionedKind, TableBreak,
 };
 use super::box_tree::TableSection;
 use super::box_tree::{build_box_tree, resolve_images};
@@ -51,6 +51,11 @@ use super::grid::{LaidOutGrid, LaidOutGridRow};
 use super::inline::LineBox;
 use super::page::PageSettings;
 use crate::style::CaptionSide;
+
+mod streaming;
+
+pub(crate) use streaming::PositionedLeftovers;
+pub use streaming::StreamingPaginator;
 
 #[derive(Debug, Clone, Default)]
 pub struct Page {
@@ -87,6 +92,14 @@ struct PaginationBuffer {
     /// The stack of first-touched absolute page indices for the `place_split` calls currently
     /// active (pushed and popped by `enter_split`/`exit_split`).
     active_min_page: Vec<usize>,
+    /// The absolute index of the page the normal flow is currently placing on. Usually the
+    /// last buffered page, but a float crossing a page boundary leaves pages after it, which
+    /// the flow then reuses when it reaches them (see [`PaginationState::advance_page`]).
+    active: usize,
+    /// For each buffered page (parallel to `buffer`), how many boxes it already held when the
+    /// flow last moved onto it. A page created fresh holds none; a page a float filled first
+    /// holds the float's boxes, which a container entering it must not count as its own.
+    flow_entry: Vec<usize>,
 }
 
 impl PaginationBuffer {
@@ -95,6 +108,8 @@ impl PaginationBuffer {
             buffer: vec![Page::default()],
             flushed: 0,
             active_min_page: Vec::new(),
+            active: 0,
+            flow_entry: vec![0],
         }
     }
 }
@@ -131,23 +146,18 @@ impl<'a> PaginationState<'a> {
         self.inner.flushed + self.inner.buffer.len()
     }
 
-    /// The absolute index of the last (most recent) active page.
+    /// The absolute index of the page the normal flow is placing on.
     fn current_index(&self) -> usize {
-        self.len() - 1
+        self.inner.active
     }
 
-    fn last_mut(&mut self) -> &mut Page {
-        self.inner
-            .buffer
-            .last_mut()
-            .expect("the buffer always holds at least one page")
+    fn active_mut(&mut self) -> &mut Page {
+        let active = self.inner.active;
+        self.get_mut(active)
     }
 
-    fn last(&self) -> &Page {
-        self.inner
-            .buffer
-            .last()
-            .expect("the buffer always holds at least one page")
+    fn active(&self) -> &Page {
+        self.get(self.inner.active)
     }
 
     /// A reference to the page at absolute index `absolute`. The caller guarantees it has
@@ -161,9 +171,34 @@ impl<'a> PaginationState<'a> {
         &mut self.inner.buffer[absolute - self.inner.flushed]
     }
 
-    /// Start a new page.
-    fn push_new_page(&mut self) {
-        self.inner.buffer.push(Page::default());
+    /// Move the flow on to the next page: one a float already started if there is one,
+    /// otherwise a new page.
+    fn advance_page(&mut self) {
+        self.inner.active += 1;
+        if self.inner.active < self.len() {
+            let entry = self.active().boxes.len();
+            let i = self.inner.active - self.inner.flushed;
+            self.inner.flow_entry[i] = entry;
+        } else {
+            self.inner.buffer.push(Page::default());
+            self.inner.flow_entry.push(0);
+        }
+    }
+
+    /// How many boxes page `absolute` held when the flow moved onto it.
+    fn flow_entry(&self, absolute: usize) -> usize {
+        self.inner.flow_entry[absolute - self.inner.flushed]
+    }
+
+    /// Place a float, whose pages run independently of the flow beside it: the flow comes
+    /// back to the page it was on afterwards, and that page is kept from being flushed while
+    /// the float moves on past it.
+    fn place_float(&mut self, place: impl FnOnce(&mut Self)) {
+        let origin = self.current_index();
+        self.enter_split();
+        place(self);
+        self.inner.active = origin;
+        self.exit_split();
     }
 
     /// On entering [`place_split`], record the current page as "the first page this container
@@ -193,6 +228,7 @@ impl<'a> PaginationState<'a> {
             .unwrap_or_else(|| self.current_index());
         while self.inner.flushed < safe_until {
             let page = self.inner.buffer.remove(0);
+            self.inner.flow_entry.remove(0);
             (self.on_flush)(page);
             self.inner.flushed += 1;
         }
@@ -224,87 +260,6 @@ pub fn paginate_streaming(
     }
     for page in paginator.finish() {
         on_page(page);
-    }
-}
-
-/// A streaming paginator: several `LaidOutBox`es (normally one per top-level block element
-/// of the document) are added in turn with [`Self::push_item`], and [`Self::finish`] flushes
-/// the remaining pages.
-///
-/// [`paginate_streaming`] assumes "one complete `LaidOutBox` tree" processed at once, while
-/// `StreamingPaginator` can continue ordinary top-to-bottom pagination (`cursor` and the
-/// [`PaginationBuffer`] flush decision included) across several calls. The intended use, with
-/// genuinely streaming input, is to lay out each top-level element directly under `<body>`
-/// on its own with `layout::layout_document_from` as it becomes final, and `push_item` it.
-///
-/// The `on_page` callback is not held as a field: `push_item`/`finish` return the settled
-/// pages as a `Vec<Page>` instead (giving the struct the callback's lifetime would cause
-/// self-referential borrowing problems for a use case such as `Engine`, which wants to hold
-/// the struct itself across several calls).
-pub struct StreamingPaginator {
-    buffer: PaginationBuffer,
-    cursor: f32,
-    page_height: f32,
-    /// Whether the item added just before had `break-after: always`.
-    /// It is consumed as a page break when the next item is added.
-    pending_break_after: bool,
-    shift_reference: Option<f32>,
-}
-
-impl StreamingPaginator {
-    pub fn new(page_height: f32) -> Self {
-        Self {
-            buffer: PaginationBuffer::new(),
-            cursor: 0.0,
-            page_height,
-            pending_break_after: false,
-            shift_reference: None,
-        }
-    }
-
-    /// Add one item. Returns the pages this call settled.
-    ///
-    /// The item's own `break-before`/`break-after` are handled here: `place_box` only looks
-    /// at forced breaks within a child list, and the relationship between items (that is,
-    /// siblings directly under `<body>`) exists only on the paginator's side. It matches the
-    /// decision [`place_split`] makes for siblings in the batch version.
-    pub fn push_item(&mut self, item: &mut LaidOutBox) -> Vec<Page> {
-        let break_before =
-            self.pending_break_after || item.fragmentation.break_before == BreakBetween::Always;
-        // `break-after` means "break the page before the next sibling", so it is only recorded
-        // here and consumed by the next `push_item`. The last item's `break-after` is ignored
-        // by `finish`, so no empty page is left at the end.
-        self.pending_break_after = item.fragmentation.break_after == BreakBetween::Always;
-
-        let mut flushed = Vec::new();
-        {
-            let mut on_flush = |page: Page| flushed.push(page);
-            let mut state = PaginationState::new(&mut self.buffer, &mut on_flush);
-            // With nothing placed on the current page, breaking would only add an empty page,
-            // so nothing is done (a `break-before` on the first element, say).
-            if break_before && current_page_has_content(&state) {
-                new_page(&mut state, &mut self.cursor);
-                self.shift_reference = None;
-            }
-            // Preserve layout's overlapping margin boxes across calls, matching
-            // place_split's sibling traversal instead of stacking their heights.
-            if let Some(shift) = self.shift_reference {
-                self.cursor = margin_box_top(item) - shift;
-            }
-            place_box(item, self.page_height, &mut state, &mut self.cursor);
-            self.shift_reference =
-                Some(margin_box_top(item) + item.layout.margin_box_height() - self.cursor);
-        }
-        flushed
-    }
-
-    /// Signal that there are no more items and return every remaining page.
-    pub fn finish(self) -> Vec<Page> {
-        debug_assert!(
-            self.buffer.active_min_page.is_empty(),
-            "finish should be called after leaving every place_split call"
-        );
-        self.buffer.buffer
     }
 }
 
@@ -354,7 +309,8 @@ pub(crate) fn apply_positioned_overlays(pages: &mut [Page], positioned: &[Positi
                 node,
                 padding_box_origin,
             } => {
-                if let Some((idx, (px, py))) = find_ancestor_padding_box_origin(pages, node) {
+                if let Some((idx, (px, py))) = find_ancestor_padding_box_origin(pages.iter(), node)
+                {
                     let dx = px - padding_box_origin.0;
                     let dy = py - padding_box_origin.1;
                     // `shift_box_y`'s delta is an amount to subtract, so moving down means `-dy`.
@@ -367,8 +323,11 @@ pub(crate) fn apply_positioned_overlays(pages: &mut [Page], positioned: &[Positi
 }
 
 /// Find the page where `node` first appears, and the within-page coordinates of the top left of its padding box.
-fn find_ancestor_padding_box_origin(pages: &[Page], node: NodeId) -> Option<(usize, (f32, f32))> {
-    for (i, page) in pages.iter().enumerate() {
+fn find_ancestor_padding_box_origin<'a>(
+    pages: impl Iterator<Item = &'a Page>,
+    node: NodeId,
+) -> Option<(usize, (f32, f32))> {
+    for (i, page) in pages.enumerate() {
         for b in &page.boxes {
             if let Some(origin) = find_node_padding_origin(b, node) {
                 return Some((i, origin));
@@ -489,7 +448,8 @@ pub(crate) fn collect_completed_subtree_roots(page: &Page) -> Vec<NodeId> {
 }
 
 fn collect_completed_subtree_roots_in_box(b: &LaidOutBox, roots: &mut Vec<NodeId>) {
-    if let Some(node) = b.node {
+    // A `::before`/`::after` is no DOM subtree. Its style goes with its element's.
+    if let Some(node) = b.node.filter(|node| node.pseudo_element_of().is_none()) {
         if matches!(
             b.layout.fragment,
             FragmentPosition::Whole | FragmentPosition::Last
@@ -887,6 +847,8 @@ struct SplitContainer {
     marker: Option<Box<LineBox>>,
     /// An `<a href>` box is a link area on every page it reaches, so each one gets a fragment.
     link: Option<Rc<str>>,
+    /// The box has a `bookmark-level`, so its first fragment is kept to mark where it starts.
+    bookmarked: bool,
 }
 
 impl SplitContainer {
@@ -898,6 +860,7 @@ impl SplitContainer {
             has_visible_decoration: b.has_visible_decoration,
             marker: b.marker.take(),
             link: b.link.take(),
+            bookmarked: b.fragmentation.bookmarked,
         }
     }
 
@@ -945,8 +908,10 @@ fn place_split<T>(
     // An outside marker (`list-style-position: outside`) is painted on the first
     // fragment, so a fragment is still needed even without decoration. Skipping
     // it would drop the marker of an `li` split across pages.
-    let needs_fragments =
-        needs_decoration || container.marker.is_some() || container.link.is_some();
+    let needs_fragments = needs_decoration
+        || container.marker.is_some()
+        || container.link.is_some()
+        || container.bookmarked;
     if needs_fragments {
         // Record the absolute index of the first page this container touches.
         state.enter_split();
@@ -980,7 +945,7 @@ fn place_split<T>(
         if needs_fragments {
             segments.push(Segment {
                 page_index: *current_page,
-                start_index: 0,
+                start_index: state.flow_entry(*current_page),
             });
         }
     };
@@ -1008,8 +973,11 @@ fn place_split<T>(
             // makes the `shift = margin_box_top - *cursor` inside `place_one`
             // (that is, `place_box`) the same translation as the surrounding
             // flow, which puts the float at the right in-page position.
+            //
+            // Its pages run independently of the flow too: a float crossing a
+            // page boundary must not carry the flow beside it onto the next page.
             let mut local_cursor = item_extent(item).0 - shift_reference;
-            place_one(item, page_height, state, &mut local_cursor);
+            state.place_float(|state| place_one(item, page_height, state, &mut local_cursor));
         } else {
             // Map the absolute coordinates layout produced straight into the
             // page. Stacking margin box heights instead would count margin boxes
@@ -1045,13 +1013,14 @@ fn place_split<T>(
 
             let now_page = state.current_index();
             if now_page != current_page {
-                // Moved on to a new page. Nothing but this `b`'s own content can
-                // get in, so the pages created here start at index 0.
+                // Moved on to a new page. Only a float placed earlier can have
+                // filled it before the flow reached it, and that is not part of
+                // this fragment.
                 if needs_fragments {
                     for p in (current_page + 1)..=now_page {
                         segments.push(Segment {
                             page_index: p,
-                            start_index: 0,
+                            start_index: state.flow_entry(p),
                         });
                     }
                 }
@@ -1084,6 +1053,14 @@ fn place_split<T>(
         return;
     }
 
+    // Where the flow left the container: the in-page bottom of its content box on the page
+    // it ended on. An explicit `height` taller than the children is reserved below them.
+    let end_page = current_page;
+    let end_content_bottom = *cursor
+        - container.layout.margin.bottom
+        - container.layout.border.bottom
+        - container.layout.padding.bottom;
+
     // Keep only the segments that actually received content (the first child
     // may have forced a break at the top of a page, for one, leaving the page
     // before it empty).
@@ -1105,8 +1082,16 @@ fn place_split<T>(
                 return None;
             }
             let end_index = state.get(seg.page_index).boxes.len();
-            let (top, bottom) =
+            let (top, mut bottom) =
                 extent_of(&state.get(seg.page_index).boxes[seg.start_index..end_index]);
+            // The children alone leave out blank space the box still owns: a fragment that
+            // continues on the next page runs to the page break, and the last one covers the
+            // rest of its declared height.
+            if !is_last {
+                bottom = bottom.max(page_height);
+            } else if seg.page_index == end_page {
+                bottom = bottom.max(end_content_bottom);
+            }
             let layout = fragment_layout(&container.layout, top, bottom, is_first, is_last);
             // The marker stays on `b`'s first fragment only, so that a box split
             // across pages does not paint it again on every later fragment. Its
@@ -1260,7 +1245,7 @@ fn place_line(line: &LineBox, page_height: f32, state: &mut PaginationState<'_>,
         link: None,
     };
     *cursor += line.rect.height;
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// Split a table across pages row by row.
@@ -1403,7 +1388,7 @@ fn flush_grid_fragment(
         }),
         link: container.link.clone(),
     };
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// The unit a flex container taller than a page is split into: a band grouping
@@ -1511,7 +1496,10 @@ fn place_table(
         .filter(|row| row.section == TableSection::Head)
         .cloned()
         .collect();
-    let head_top = head_rows.iter().map(table_row_top).fold(f32::MAX, f32::min);
+    let head_top = head_rows
+        .iter()
+        .map(|row| table_row_top(row) - row.boundary_above.gap())
+        .fold(f32::MAX, f32::min);
     let head_bottom = head_rows
         .iter()
         .map(table_row_bottom)
@@ -1521,6 +1509,18 @@ fn place_table(
     } else {
         head_bottom - head_top
     };
+    // The boundary below the head's last row, whose upper side a repeated head brings along.
+    let head_boundary_below = table
+        .rows
+        .iter()
+        .position(|row| row.section != TableSection::Head)
+        .map_or(CollapsedBoundary::default(), |i| {
+            table.rows[i].boundary_above
+        });
+    let row_count = table.rows.len();
+    // The row placed last (its cells left out), to hand to the fragment that follows a break.
+    let mut previous_row: Option<LaidOutTableRow> = None;
+
     let repeat_head = !head_rows.is_empty() && head_height < page_height;
     // A `caption-side: top` caption goes on the first fragment.
     let caption_is_top = table.caption_side == CaptionSide::Top;
@@ -1544,11 +1544,20 @@ fn place_table(
 
     for (index, mut row) in std::mem::take(&mut table.rows).into_iter().enumerate() {
         let row_top = table_row_top(&row);
-        let row_bottom = table_row_bottom(&row);
+        let cells_bottom = table_row_bottom(&row);
+        // The last row needs room for the table's closing collapsed border too. Other rows
+        // need none: at a break after them the border can move to the next page whole.
+        let row_bottom = cells_bottom
+            + if index + 1 == row_count {
+                table.trailing_gap
+            } else {
+                0.0
+            };
         let extra_above = if index == 0 { caption_height } else { 0.0 };
 
         if pending.is_empty() {
-            let (top, s) = start_new_fragment(cursor, row_top, extra_above);
+            let gap_above = row.boundary_above.gap();
+            let (top, s) = start_new_fragment(cursor, row_top - gap_above, extra_above);
             fragment_top = top;
             shift = s;
 
@@ -1561,7 +1570,7 @@ fn place_table(
                 if is_first_fragment {
                     *cursor += top_extra;
                 }
-                let (top, s) = start_new_fragment(cursor, row_top, extra_above);
+                let (top, s) = start_new_fragment(cursor, row_top - gap_above, extra_above);
                 fragment_top = top;
                 shift = s;
             }
@@ -1573,6 +1582,20 @@ fn place_table(
         // content at the top of a page, and never creating an empty fragment guarantees progress.
         let row_bottom_on_page = row_bottom - shift;
         if row_bottom_on_page > page_height && !pending.is_empty() {
+            let boundary = &row.boundary_above;
+            let share_above = if *cursor + boundary.split_gaps(0.5).0 <= page_height {
+                0.5
+            } else {
+                0.0
+            };
+            let (end_gap, start_gap) = boundary.split_gaps(share_above);
+            *cursor += end_gap;
+            if let Some(last) = pending.last_mut() {
+                last.break_below = Some(TableBreak {
+                    row: Box::new(without_cells(&row)),
+                    share: share_above,
+                });
+            }
             flush_table_fragment(
                 container,
                 &mut pending,
@@ -1588,20 +1611,30 @@ fn place_table(
             fragment_top = *cursor;
             // Copy the heading rows to the top of the new page (the original rows are placed
             // on the first page as-is, so copies only appear from the second page on).
-            if repeat_head {
+            // Below a repeated head the row meets the head rather than the break, as in Chrome.
+            let gap_above = if repeat_head {
                 let head_shift = head_top - *cursor;
                 for head_row in &head_rows {
                     pending.push(shift_table_row_y(head_row, head_shift));
                 }
                 *cursor += head_height;
-            }
-            shift = row_top - *cursor;
+                head_boundary_below.joined_with(&row.boundary_above).gap()
+            } else {
+                row.break_above = previous_row.take().map(|previous| TableBreak {
+                    row: Box::new(previous),
+                    share: 1.0 - share_above,
+                });
+                start_gap
+            };
+            shift = row_top - gap_above - *cursor;
         }
 
+        previous_row = Some(without_cells(&row));
         shift_table_row_y_in_place(&mut row, shift);
         pending.push(row);
-        *cursor = row_bottom - shift;
+        *cursor = cells_bottom - shift;
     }
+    *cursor += table.trailing_gap;
 
     // A `caption-side: bottom` caption goes on the last fragment.
     if !caption_is_top {
@@ -1623,6 +1656,21 @@ fn place_table(
         state,
     );
     *cursor += bottom_extra;
+}
+
+/// A copy of `row` without its cells, for a fragment to know the row across a break.
+fn without_cells(row: &LaidOutTableRow) -> LaidOutTableRow {
+    LaidOutTableRow {
+        node: row.node,
+        cells: Vec::new(),
+        section: row.section,
+        group: row.group,
+        first_in_group: row.first_in_group,
+        last_in_group: row.last_in_group,
+        boundary_above: row.boundary_above,
+        break_above: None,
+        break_below: None,
+    }
 }
 
 /// Push the rows `place_table` assembled onto the page as one fragment.
@@ -1662,11 +1710,12 @@ fn flush_table_fragment(
             caption: caption.take().map(Box::new),
             caption_side: CaptionSide::Top,
             rows: std::mem::take(rows),
+            trailing_gap: 0.0,
         }),
         marker: None,
         link: container.link.clone(),
     };
-    state.last_mut().boxes.push(fragment);
+    state.active_mut().boxes.push(fragment);
 }
 
 /// The absolute Y of the top of a table row's margin box (the topmost among its cells).
@@ -1699,6 +1748,11 @@ fn shift_table_row_y(row: &LaidOutTableRow, shift: f32) -> LaidOutTableRow {
         cells: row.cells.iter().map(|c| shift_box_y(c, shift)).collect(),
         section: row.section,
         group: row.group,
+        first_in_group: row.first_in_group,
+        last_in_group: row.last_in_group,
+        boundary_above: row.boundary_above,
+        break_above: None,
+        break_below: None,
     }
 }
 
@@ -1725,11 +1779,11 @@ fn place_leaf(b: &mut LaidOutBox, state: &mut PaginationState<'_>, cursor: &mut 
     shift_box_y_in_place(&mut translated, shift);
 
     *cursor += height;
-    state.last_mut().boxes.push(translated);
+    state.active_mut().boxes.push(translated);
 }
 
 fn new_page(state: &mut PaginationState<'_>, cursor: &mut f32) {
-    state.push_new_page();
+    state.advance_page();
     // When the call stack holds only containers with no decoration (which never call
     // `enter_split`/`exit_split`), no flush ever happens via `exit_split`, so the flush check
     // also runs here whenever a new page starts. That gives the finest streaming granularity:
@@ -1744,7 +1798,7 @@ fn new_page(state: &mut PaginationState<'_>, cursor: &mut f32) {
 /// with nothing drawn yet), so this, rather than `cursor`, is what decides "is a forced break
 /// really a meaningful move (that is, does it avoid discarding the current page while empty)".
 fn current_page_has_content(state: &PaginationState<'_>) -> bool {
-    !state.last().boxes.is_empty()
+    !state.active().boxes.is_empty()
 }
 
 #[cfg(test)]
@@ -3048,80 +3102,6 @@ mod tests {
         );
         for (batched, streamed) in batched_pages.iter().zip(streamed_pages.iter()) {
             assert_eq!(batched.boxes.len(), streamed.boxes.len());
-        }
-    }
-
-    #[test]
-    fn streaming_paginator_preserves_negative_content_coordinates() {
-        let dom = html::parse(b"<style>body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }</style><div id='one'>A</div><div id='two'>B</div>");
-        let author = parse_stylesheet(
-            "body { margin:0; } div { height:40px; margin:0; } #one { margin-bottom:-80px; }",
-        );
-        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
-        let fonts = test_fonts();
-        let nodes = crate::html::collect_anchor_targets(&dom);
-        let mut paginator = StreamingPaginator::new(100.0);
-        let mut y = 0.0;
-        for (node, _) in nodes {
-            let tree = build_box_for_element(&dom, &styles, node).unwrap();
-            let mut laid = layout_document_from(&tree, &styles, &fonts, 200.0, 0.0, y);
-            y += laid.layout.margin_box_height();
-            assert!(paginator.push_item(&mut laid).is_empty());
-        }
-        let pages = paginator.finish();
-        assert_eq!(pages.len(), 1);
-        assert_eq!(pages[0].boxes.len(), 2);
-        assert_eq!(pages[0].boxes[0].layout.content.y, 0.0);
-        assert_eq!(pages[0].boxes[1].layout.content.y, -40.0);
-    }
-
-    #[test]
-    fn streaming_paginator_preserves_collapsed_sibling_coordinates() {
-        for margins in ["10px 0", "-4px 0", "12px 0 -3px"] {
-            let dom = html::parse(b"<div id='root'><p>first</p><p>second</p><p style='break-before:page'>third</p><p>fourth</p></div>");
-            let ua = user_agent_stylesheet();
-            let author = parse_stylesheet(&format!(
-                "div {{ margin:0; padding:1px; }} p {{ margin:{margins}; }}"
-            ));
-            let styles = compute_styles(&dom, &ua, &author);
-            let fonts = test_fonts();
-            let root = crate::html::collect_anchor_targets(&dom)
-                .into_iter()
-                .find(|(_, id)| id == "root")
-                .unwrap()
-                .0;
-            let tree = build_box_for_element(&dom, &styles, root).unwrap();
-            let mut laid = layout_document_from(&tree, &styles, &fonts, 200.0, 0.0, 0.0);
-            let LaidOutContent::Blocks(children) = &laid.content else {
-                panic!("expected blocks")
-            };
-            let mut children = children.clone();
-            let expected = paginate(&mut laid, 100.0);
-            let mut paginator = StreamingPaginator::new(100.0);
-            let mut actual = Vec::new();
-            // The root's padding is handled by the batch traversal; use the same
-            // initial content origin when passing its children individually.
-            paginator.cursor = 1.0;
-            for child in &mut children {
-                actual.extend(paginator.push_item(child));
-            }
-            actual.extend(paginator.finish());
-            let positions = |pages: &[Page]| {
-                pages
-                    .iter()
-                    .map(|page| {
-                        page.boxes
-                            .iter()
-                            .map(|b| b.layout.content.y)
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            assert_eq!(
-                positions(&actual),
-                positions(&expected),
-                "margins {margins}"
-            );
         }
     }
 

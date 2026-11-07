@@ -203,9 +203,9 @@ pub fn embed_font(
         remapper.remap(old_gid);
     }
 
-    let subset_data = subsetter::subset(font.data(), font.face_index(), &remapper)
-        .unwrap_or_else(|_| font.data().to_vec());
+    let (subset_data, subsetted) = subset_or_whole(font, &remapper, subsetter::subset);
     let compressed = maybe_deflate(&subset_data, compress);
+    let name = embedded_font_name(font, usage, subsetted);
 
     let mut font_file = pdf.stream(ids.font_file, &compressed);
     if compress {
@@ -220,7 +220,7 @@ pub fn embed_font(
     let bbox = font.bounding_box();
 
     pdf.font_descriptor(ids.descriptor)
-        .name(Name(b"EmbeddedFont"))
+        .name(Name(name.as_bytes()))
         .flags(FontFlags::NON_SYMBOLIC)
         .bbox(PdfRect::new(
             to_1000(bbox.x_min as f32),
@@ -250,7 +250,7 @@ pub fn embed_font(
 
     let mut cid_font = pdf.cid_font(ids.cid_font);
     cid_font.subtype(CidFontType::Type2);
-    cid_font.base_font(Name(b"EmbeddedFont"));
+    cid_font.base_font(Name(name.as_bytes()));
     cid_font.system_info(SystemInfo {
         registry: Str(b"Adobe"),
         ordering: Str(b"Identity"),
@@ -283,7 +283,7 @@ pub fn embed_font(
     to_unicode.finish();
 
     pdf.type0_font(ids.type0_font)
-        .base_font(Name(b"EmbeddedFont"))
+        .base_font(Name(name.as_bytes()))
         .encoding_predefined(Name(b"Identity-H"))
         .descendant_font(ids.cid_font)
         .to_unicode(ids.to_unicode);
@@ -312,10 +312,10 @@ pub fn embed_font_streaming_chunks(
     for &old_gid in usage.glyphs.keys() {
         remapper.remap(old_gid);
     }
-    let subset_data = subsetter::subset(font.data(), font.face_index(), &remapper)
-        .unwrap_or_else(|_| font.data().to_vec());
+    let (subset_data, subsetted) = subset_or_whole(font, &remapper, subsetter::subset);
 
     let compressed_font = maybe_deflate(&subset_data, compress);
+    let name = embedded_font_name(font, usage, subsetted);
     let mut chunk = Chunk::new();
     let mut font_file = chunk.stream(ids.font_file, &compressed_font);
     if compress {
@@ -332,7 +332,7 @@ pub fn embed_font_streaming_chunks(
     let mut chunk = Chunk::new();
     chunk
         .font_descriptor(ids.descriptor)
-        .name(Name(b"EmbeddedFont"))
+        .name(Name(name.as_bytes()))
         .flags(FontFlags::NON_SYMBOLIC)
         .bbox(PdfRect::new(
             to_1000(bbox.x_min as f32),
@@ -373,7 +373,7 @@ pub fn embed_font_streaming_chunks(
     let mut chunk = Chunk::new();
     let mut cid_font = chunk.cid_font(ids.cid_font);
     cid_font.subtype(CidFontType::Type2);
-    cid_font.base_font(Name(b"EmbeddedFont"));
+    cid_font.base_font(Name(name.as_bytes()));
     cid_font.system_info(SystemInfo {
         registry: Str(b"Adobe"),
         ordering: Str(b"Identity"),
@@ -413,13 +413,72 @@ pub fn embed_font_streaming_chunks(
     let mut chunk = Chunk::new();
     chunk
         .type0_font(ids.type0_font)
-        .base_font(Name(b"EmbeddedFont"))
+        .base_font(Name(name.as_bytes()))
         .encoding_predefined(Name(b"Identity-H"))
         .descendant_font(ids.cid_font)
         .to_unicode(ids.to_unicode);
     chunks.push((ids.type0_font, chunk));
 
     chunks
+}
+
+/// The font program to embed: `font` cut down to the glyphs in `remapper` by `subset`, or the
+/// whole file when that fails. The flag says which one it is.
+fn subset_or_whole<E>(
+    font: &Font,
+    remapper: &GlyphRemapper,
+    subset: impl FnOnce(&[u8], u32, &GlyphRemapper) -> Result<Vec<u8>, E>,
+) -> (Vec<u8>, bool) {
+    match subset(font.data(), font.face_index(), remapper) {
+        Ok(data) => (data, true),
+        Err(_) => (font.data().to_vec(), false),
+    }
+}
+
+/// The name of an embedded font: the font's PostScript name, behind a six-letter tag and a
+/// `+` when only a subset is embedded (`ABCDEF+DMSans-Regular`), as ISO 32000-1 9.6.4
+/// requires. It is the `/FontName` of the descriptor and the `/BaseFont` of the CIDFont and,
+/// for a CIDFontType2 as the spec says, of the Type0 font as well.
+///
+/// The tag is derived from the font and the glyphs in the subset, so different subsets of one
+/// font get different tags and identical input gives identical output. A whole font, which
+/// the spec does not give a tag, is named without one.
+fn embedded_font_name(font: &Font, usage: &FontUsage, subsetted: bool) -> String {
+    if !subsetted {
+        return font.pdf_name().to_string();
+    }
+    format!(
+        "{}+{}",
+        subset_tag(font, usage.glyphs.keys().copied()),
+        font.pdf_name()
+    )
+}
+
+/// Six uppercase letters taken from an FNV-1a hash of the font's identity (name, face and
+/// size of the file) and the glyph IDs of the subset. Hashing the glyph IDs rather than the
+/// subsetted bytes keeps the cost off the font's size.
+fn subset_tag(font: &Font, glyph_ids: impl Iterator<Item = u16>) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for &byte in bytes {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    feed(font.pdf_name().as_bytes());
+    feed(&[0]);
+    feed(&font.face_index().to_be_bytes());
+    feed(&(font.data().len() as u64).to_be_bytes());
+    for glyph_id in glyph_ids {
+        feed(&glyph_id.to_be_bytes());
+    }
+    (0..6)
+        .map(|_| {
+            let letter = (b'A' + (hash % 26) as u8) as char;
+            hash /= 26;
+            letter
+        })
+        .collect()
 }
 
 /// Compress with zlib (`/FlateDecode`). Returns the data uncompressed when `compress` is
@@ -491,6 +550,36 @@ mod tests {
         usage.record(&font, 100, "fl");
 
         assert_eq!(usage.glyphs[&100].1, "fl");
+    }
+
+    #[test]
+    fn a_subset_tag_is_six_uppercase_letters_that_follow_the_glyphs() {
+        let font = Font::load(TEST_FONT).expect("should load bundled test font");
+        let tag = subset_tag(&font, [3, 36, 68].into_iter());
+        assert_eq!(tag.len(), 6);
+        assert!(tag.bytes().all(|b| b.is_ascii_uppercase()));
+        assert_eq!(tag, subset_tag(&font, [3, 36, 68].into_iter()));
+        assert_ne!(tag, subset_tag(&font, [3, 36, 69].into_iter()));
+    }
+
+    #[test]
+    fn a_font_embedded_whole_is_named_without_a_subset_tag() {
+        let font = Font::load(TEST_FONT).expect("should load bundled test font");
+        let mut usage = FontUsage::default();
+        usage.record(&font, 36, "A");
+        let remapper = GlyphRemapper::new();
+
+        let (data, subsetted) = subset_or_whole(&font, &remapper, |_, _, _| {
+            Err::<Vec<u8>, _>("cannot subset")
+        });
+        assert!(!subsetted);
+        assert_eq!(data, font.data());
+        assert_eq!(embedded_font_name(&font, &usage, subsetted), "DejaVuSans");
+
+        let (_, subsetted) = subset_or_whole(&font, &remapper, |_, _, _| Ok::<_, ()>(vec![0]));
+        assert!(subsetted);
+        let name = embedded_font_name(&font, &usage, subsetted);
+        assert!(name.ends_with("+DejaVuSans") && name.len() == 17, "{name}");
     }
 
     #[test]

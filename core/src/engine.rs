@@ -16,41 +16,40 @@
 //! layout, pagination, PDF writing and DOM release.
 //! The styles of `<html>`/`<body>` themselves are computed once, before the first top-level
 //! element is final, and used as the starting point (the inherited source) for computing
-//! each later top-level element's styles.
+//! each later top-level element's styles. This pipeline lives in the `streaming` submodule.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::fonts::{
-    ensure_cjk_fallback_font, load_font_faces, load_fonts_for_uncovered_chars,
-    load_missing_system_fonts, warn_font_cannot_render, warn_uncovered_chars, Font, FontCollection,
-    SystemFonts,
+    load_font_faces, load_fonts_for_uncovered_chars, load_missing_system_fonts,
+    warn_font_cannot_render, warn_uncovered_chars, Font, FontCollection, SystemFonts,
 };
 use crate::html::{
-    collect_anchor_targets, find_base_href, find_document_title, Dom, NodeData, NodeId,
-    StreamingParser,
+    collect_anchor_targets, find_base_href, find_document_language, find_document_title, Dom,
+    NodeData, NodeId, StreamingParser,
 };
 use crate::img::{DocumentImageCache, ImageFetcher};
 use crate::layout::{
-    build_box_for_element, collect_completed_subtree_roots, has_visible_decoration,
-    layout_document_from, paginate_document, paginate_document_with_absolutes,
-    resolve_background_images, resolve_border, resolve_images, resolve_lpa_or_zero,
-    resolve_padding, resolve_width_and_horizontal_margins, EdgeSizes, LaidOutBox, LaidOutContent,
-    PageSettings, Rect, StreamingPaginator,
+    paginate_document, paginate_document_with_absolutes, resolve_background_images, EdgeSizes,
+    LaidOutBox, LaidOutContent, PageSettings, Rect,
 };
 use crate::pdf::{
-    anchor_destination_name, ImageAssetCache, LinkSettings, PageOverlay, PageRole,
-    PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, collect_tag_roles, Bookmark, ImageAssetCache, LinkSettings,
+    PageOverlay, PageRole, PdfOutputOptions, PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
-    compute_single_element_style, compute_styles, compute_styles_with_parent,
-    extract_author_stylesheet, needs_preceding_siblings, resolve_page_rule_variables,
-    resolve_page_rules, root_custom_properties, rules_use_page_count, streaming_unsafe_selectors,
-    user_agent_stylesheet, ComputedStyle, CustomProperties, LengthPercentageOrAuto, PageRule,
+    compute_styles, extract_author_stylesheet, resolve_page_rule_variables, resolve_page_rules,
+    root_custom_properties, rules_use_page_count, user_agent_stylesheet, BookmarkLabelPart,
+    BookmarkState, ComputedStyle, CustomProperties, Display, LengthPercentageOrAuto, PageRule,
     RgbaColor, Stylesheet,
 };
 use crate::style::{FontStyle, FontWeight};
+
+mod streaming;
+
+use streaming::StreamingState;
 
 /// Selects batch or streaming processing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -639,7 +638,8 @@ fn collect_headings<'a>(
         seen: &mut Vec<NodeId>,
         out: &mut Vec<(NodeId, u8, usize)>,
     ) {
-        if let Some(node) = b.node {
+        // A `::before`/`::after` box has no DOM node, and is no heading.
+        if let Some(node) = b.node.filter(|node| node.pseudo_element_of().is_none()) {
             if let Some(level) = heading_level(dom, node) {
                 if !seen.contains(&node) {
                     seen.push(node);
@@ -714,6 +714,120 @@ fn collect_headings<'a>(
             )
         })
         .collect()
+}
+
+/// Resolve the outline entry of every element under `root` with a `bookmark-level`: its label
+/// from `bookmark-label` (the element's text, `content()`, by default) with the CSS white
+/// space collapsed. An element whose label comes out empty gets no entry.
+///
+/// `display: none` subtrees are skipped, as are `<html>` and `<body>`, which have no box of
+/// their own in streaming mode. Streaming calls this per top-level element, before its DOM is
+/// released, so `next_order` (each entry's [`Bookmark::order`]) carries on across the calls.
+fn collect_bookmarks(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    root: NodeId,
+    next_order: &mut usize,
+) -> HashMap<NodeId, Bookmark> {
+    /// The text of `node` and its descendants, leaving out what `display: none` hides. A
+    /// `<br>` and the edges of a block-level child are a space, as the lines they break are.
+    fn text_of(
+        dom: &Dom,
+        styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+        node: NodeId,
+        out: &mut String,
+    ) {
+        match &dom.node(node).data {
+            NodeData::Text { contents } => out.push_str(contents),
+            NodeData::Element { name, .. } => {
+                let display = styles.get(&node).map(|s| s.display);
+                if display == Some(Display::None) {
+                    return;
+                }
+                let breaks = &*name.local == "br"
+                    || !matches!(
+                        display,
+                        None | Some(Display::Inline | Display::InlineBlock | Display::InlineFlex)
+                    );
+                if breaks {
+                    out.push(' ');
+                }
+                for child in dom.children(node) {
+                    text_of(dom, styles, child, out);
+                }
+                if breaks {
+                    out.push(' ');
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn visit(
+        dom: &Dom,
+        styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+        node: NodeId,
+        next_order: &mut usize,
+        out: &mut HashMap<NodeId, Bookmark>,
+    ) {
+        if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
+            let Some(style) = styles.get(&node) else {
+                return;
+            };
+            if style.display == Display::None {
+                return;
+            }
+            if let (Some(level), false) = (
+                style.bookmark_level,
+                matches!(&*name.local, "html" | "body"),
+            ) {
+                let mut label = String::new();
+                match &style.bookmark_label {
+                    None => text_of(dom, styles, node, &mut label),
+                    Some(parts) => {
+                        for part in parts {
+                            match part {
+                                BookmarkLabelPart::String(s) => label.push_str(s),
+                                BookmarkLabelPart::Text => text_of(dom, styles, node, &mut label),
+                                BookmarkLabelPart::Attr(name) => {
+                                    if let Some(attr) =
+                                        attrs.iter().find(|a| &*a.name.local == name)
+                                    {
+                                        label.push_str(&attr.value);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Only CSS white space collapses; a no-break space is part of the label.
+                let title = label
+                    .split([' ', '\t', '\n', '\r', '\x0c'])
+                    .filter(|word| !word.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if !title.is_empty() {
+                    out.insert(
+                        node,
+                        Bookmark {
+                            level,
+                            title,
+                            open: style.bookmark_state == BookmarkState::Open,
+                            order: *next_order,
+                        },
+                    );
+                    *next_order += 1;
+                }
+            }
+        }
+        for child in dom.children(node) {
+            visit(dom, styles, child, next_order, out);
+        }
+    }
+
+    let mut bookmarks = HashMap::new();
+    visit(dom, styles, root, next_order, &mut bookmarks);
+    bookmarks
 }
 
 /// Lay out an independent HTML document (a cover or TOC) into a list of pages.
@@ -865,7 +979,7 @@ fn ensure_default_font<E>(
     if !fonts.is_empty() {
         return Ok(());
     }
-    match system.load_generic("sans-serif", FontWeight::Normal, FontStyle::Normal) {
+    match system.load_generic("sans-serif", FontWeight::NORMAL, FontStyle::Normal) {
         Some(font) => {
             fonts.push_font_face("sans-serif".to_string(), None, None, Vec::new(), font);
             Ok(())
@@ -1058,76 +1172,6 @@ fn check_deadline<E>(deadline: Option<std::time::Instant>) -> Result<(), EngineE
     }
 }
 
-/// The state needed to process top-level elements under `Mode::Streaming`, settled once when
-/// `<head>` closes (that is, when `<body>` is detected).
-struct StreamingState<S: Sink> {
-    ua: Stylesheet,
-    author: Stylesheet,
-    fonts: FontCollection,
-    /// The persistent map accumulating the styles of every top-level element processed.
-    /// One page can hold boxes from several top-level elements, so
-    /// `StreamingPdfWriter::write_page` needs all of it.
-    styles: HashMap<NodeId, Rc<ComputedStyle>>,
-    /// The side map letting the decoded image of an element with a `background-image` be
-    /// looked up by `NodeId`. Like `styles`, it accumulates the top-level elements processed
-    /// so far.
-    background_images: HashMap<NodeId, Rc<PreparedImage>>,
-    root_font_size: f32,
-    /// The CSS counter state. It depends on document order, so it has to persist across
-    /// top-level elements and is held here alongside `root_font_size`.
-    counters: HashMap<String, Vec<i32>>,
-    /// The nesting depth of `quotes` (a single counter unrelated to the tree structure).
-    quote_depth: i32,
-    /// The computed style of the `<body>` element itself. Used as the parent style when
-    /// computing each top-level element's styles.
-    body_style: ComputedStyle,
-    /// The containing width for a top-level element, reflecting `<body>`'s `padding`,
-    /// `border` and `margin`.
-    content_width: f32,
-    /// `<body>`'s `margin-left` + `border-left` + `padding-left`.
-    start_x: f32,
-    /// The starting Y coordinate of the next top-level element (the accumulated height so far).
-    cursor_y: f32,
-    previous_margin_bottom: Option<f32>,
-    /// The page geometry (used to compute the overlay areas).
-    page_settings: PageSettings,
-    /// The layout result of a header/footer HTML that does not depend on the page number.
-    overlay_cache: OverlayCache,
-    /// The `font-family` names already warned about as unresolvable (so the same warning is
-    /// not repeated).
-    warned_font_families: Vec<String>,
-    /// The characters already warned about as undrawable by any font. Streaming decides this
-    /// per top-level element, so the characters already warned about are carried along to
-    /// prevent duplicates.
-    warned_uncovered_chars: HashSet<char>,
-    /// Whether a processed top-level element may be freed along with its subtree.
-    ///
-    /// In a document using selectors that need the preceding sibling, such as `+`/`~` or
-    /// `:first-child`, the freeing is limited to the descendants and the element itself is
-    /// kept. Without it, a later element would see itself as "the first child".
-    release_whole_subtree: bool,
-    paginator: StreamingPaginator,
-    writer: StreamingPdfWriter<S>,
-    page_offset: usize,
-    headings: Vec<TocHeading>,
-    pending_headings: HashMap<NodeId, TocHeading>,
-    heading_serial: usize,
-    /// The cache memoising `<img>` fetch and decode results within the document.
-    image_cache: ImageAssetCache,
-}
-
-/// Free a processed top-level element.
-///
-/// With `whole` as `false`, only the descendants are freed and the element itself is kept.
-/// A kept element retains its tag name, classes and id, so a later sibling still sees it as "the preceding sibling".
-fn release_processed(mut dom: std::cell::RefMut<'_, Dom>, node: NodeId, whole: bool) {
-    if whole {
-        dom.release_subtree(node);
-    } else {
-        dom.release_descendants(node);
-    }
-}
-
 /// Register `--gothic-font` as the concrete font for `font-family: sans-serif`.
 /// It is added with `push_font_face` under the declared family name `"sans-serif"`, so
 /// `select_for_char`'s ordinary family matching picks it up as-is.
@@ -1247,620 +1291,17 @@ impl<S: Sink> Engine<S> {
         Ok(())
     }
 
-    /// Create the `StreamingState` if `<body>` has been detected and one has not been created
-    /// yet. `sink` is moved into `StreamingState::writer` here (`self.sink` is `None` from
-    /// then on).
-    fn ensure_streaming_state_initialized(&mut self) -> Result<(), EngineError<S::Error>> {
-        if self.streaming.is_some() {
-            return Ok(());
-        }
-        let Some(body) = self.parser.body_node() else {
-            return Ok(());
-        };
-        let sink = self
-            .sink
-            .take()
-            .expect("the sink is taken exactly once, when the streaming state is initialised");
-        let state = self.init_streaming_state(body, sink)?;
-        self.streaming = Some(state);
-        Ok(())
-    }
-
-    /// The initialisation done once when `<head>` closes (that is, when `<body>` is
-    /// detected): resolving the fonts, computing the `<html>`/`<body>` styles, checking
-    /// `<body>`'s decoration, and building the `StreamingPdfWriter`.
-    fn init_streaming_state(
-        &self,
-        body: NodeId,
-        sink: S,
-    ) -> Result<StreamingState<S>, EngineError<S::Error>> {
-        let mut ua = user_agent_stylesheet();
-        append_user_stylesheets(&mut ua, &self.options.content.user_stylesheets);
-        let base_dir = self
-            .options
-            .base_dir
-            .as_deref()
-            .unwrap_or_else(|| Path::new("."));
-        // The fetcher and cache for retrieving external stylesheets (`<link>`). It is a
-        // separate instance from the image `ImageAssetCache` (`image_cache` below).
-        // `<base href>` appears in `<head>`, so it is already parsed by this point (when the
-        // first top-level element becomes final).
-        let base_href =
-            find_base_href(&self.parser.dom()).or_else(|| self.options.base_href.clone());
-        let css_fetcher =
-            ImageFetcher::new(base_dir.to_path_buf(), self.options.allow_remote_assets)
-                .with_base_href(base_href.clone())
-                .with_local_access(
-                    self.options.local_access.allow,
-                    self.options.local_access.allowed_dirs.clone(),
-                );
-        let css_cache = DocumentImageCache::new();
-        let author = {
-            let dom = self.parser.dom();
-            extract_author_stylesheet(&dom, &css_fetcher, &css_cache)
-        };
-        let root_properties = root_custom_properties(&self.parser.dom(), &ua, &author);
-        let page_rules = page_rules_with_extra(
-            self.options.extra_page_css.as_deref(),
-            &author.page_rules,
-            &root_properties,
-        );
-        let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
-        // A backward-referencing selector always fails to match. It is not an error, but the
-        // result changing silently is worth avoiding, so it is warned about.
-        let unsafe_selectors = streaming_unsafe_selectors(&author);
-        if !unsafe_selectors.is_empty() {
-            eprintln!(
-                "warning: {} gives a different result in streaming mode\n  \
-                 (an element directly under <body> becomes final before its siblings either side are known).\n  \
-                 To use them, drop --streaming",
-                unsafe_selectors.join(", ")
-            );
-        }
-
-        let system_fonts = if self.options.disable_system_fonts {
-            SystemFonts::none()
-        } else {
-            SystemFonts::scan()
-        };
-        let mut fonts = FontCollection::new(load_explicit_fonts(&self.options.fonts)?);
-
-        register_generic_fonts(&mut fonts, &self.options.generic_fonts)?;
-        for loaded in load_font_faces(&author.font_faces, &css_fetcher, &system_fonts) {
-            fonts.push_font_face(
-                loaded.family,
-                Some(loaded.weight),
-                Some(loaded.style),
-                loaded.unicode_range,
-                loaded.font,
-            );
-        }
-        // `load_missing_system_fonts` and `load_fonts_for_uncovered_chars` need the whole
-        // document's styles (and characters), which genuine streaming never holds at once, so
-        // they are not called here.
-        // Instead, where no font has been supplied at all, a font covering CJK is added up
-        // front alongside the default (latin) one.
-        // Nothing is added unasked when `--font`/`@font-face` has supplied a font, to avoid
-        // affecting the order of the faces (`unicode-range` being first-wins) and the
-        // principle that "the font passed with `--font` is the default".
-        let had_no_fonts = fonts.is_empty();
-        ensure_default_font(&mut fonts, &system_fonts)?;
-        if had_no_fonts {
-            ensure_cjk_fallback_font(&mut fonts, &system_fonts);
-        }
-
-        // The CSS counters and quote depth are state depending on document order, so the same
-        // state is carried consistently from <html> through each top-level element directly
-        // under <body> (`StreamingState` persists it from then on).
-        let mut counters = HashMap::new();
-        let mut quote_depth = 0;
-        let (html_style, body_style, root_font_size) = {
-            let dom = self.parser.dom();
-            let html_id = dom
-                .parent(body)
-                .expect("<body> should have a parent element (<html>)");
-            let default_root_font_size = ComputedStyle::default().font_size.0;
-            let html_style = compute_single_element_style(
-                &dom,
-                html_id,
-                None,
-                default_root_font_size,
-                &ua,
-                &author,
-                &mut counters,
-                &mut quote_depth,
-            );
-            let root_font_size = html_style.font_size.0;
-            let body_style = compute_single_element_style(
-                &dom,
-                body,
-                Some(&html_style),
-                root_font_size,
-                &ua,
-                &author,
-                &mut counters,
-                &mut quote_depth,
-            );
-            (html_style, body_style, root_font_size)
-        };
-        let _ = html_style;
-
-        let body_border = resolve_border(&body_style);
-        if has_visible_decoration(&body_style, &body_border) {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "a <body> with a background colour or borders cannot be used in streaming mode\n  \
-                 (decoration spanning several pages cannot be reproduced).\n  \
-                 To use them, drop --streaming",
-            ));
-        }
-
-        // The candidate destinations for `<a href="#id">`. Under `Mode::Streaming` only what
-        // has been parsed by this point (when the first top-level element became final) is
-        // visible, but a destination is recorded from "the box found when that page is
-        // written", so elements parsed later are covered too (what is collected here is not a
-        // list of `id`s but the mapping of which node has which name).
-
-        let anchor_names: HashMap<NodeId, String> = collect_anchor_targets(&self.parser.dom())
-            .into_iter()
-            .map(|(node, id)| (node, anchor_destination_name(&id)))
-            .collect();
-
-        let page_width = page_settings.content_width();
-        let body_padding = resolve_padding(&body_style, page_width);
-        let (body_content_width, body_margin_left, _) = resolve_width_and_horizontal_margins(
-            &body_style,
-            page_width,
-            body_padding.left + body_padding.right,
-            body_border.left + body_border.right,
-        );
-        let start_x = body_margin_left + body_border.left + body_padding.left;
-        let start_y = resolve_lpa_or_zero(body_style.margin_top, page_width)
-            + body_border.top
-            + body_padding.top;
-
-        // With no `--title`, the `<title>` becomes the PDF's `/Title`.
-        let mut output = self.options.output.clone();
-        output
-            .metadata
-            .fill_title_from_document(find_document_title(&self.parser.dom()));
-
-        let mut writer = StreamingPdfWriter::with_options(
-            &fonts,
-            page_settings,
-            sink,
-            page_rules.clone(),
-            LinkSettings {
-                anchor_names: anchor_names.clone(),
-                base_href: base_href.clone(),
-                external: self.options.content.external_links,
-                internal: self.options.content.internal_links,
-                keep_relative: self.options.content.keep_relative_links,
-            },
-            output,
-        )
-        .map_err(EngineError::Io)?;
-        if let Some(html) = &self.options.cover_html {
-            writer.replace_anchor_names(HashMap::new());
-            for page in render_standalone_document(html, &fonts, &page_settings) {
-                check_deadline(self.options.deadline)?;
-                writer.set_next_page_role(PageRole::Cover);
-                writer.set_next_page_number(None);
-                writer
-                    .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, None)
-                    .map_err(EngineError::Io)?;
-            }
-        }
-        writer.replace_anchor_names(anchor_names);
-        writer.defer_page_overlays(
-            self.options.toc.enabled || self.options.header_footer_html.uses_total_pages(),
-        );
-        let image_cache = ImageAssetCache::with_fetcher(
-            ImageFetcher::new(base_dir.to_path_buf(), self.options.allow_remote_assets)
-                .with_base_href(base_href)
-                .with_local_access(
-                    self.options.local_access.allow,
-                    self.options.local_access.allowed_dirs.clone(),
-                ),
-        )
-        // `<text>` inside an SVG is drawn with the document's fonts. `fonts` is complete by
-        // this point (and never changes afterwards), so it can be built here.
-        .with_svg_fonts(SvgFontDb::from_collection(&fonts));
-
-        // In a document not using selectors that need the preceding sibling, the whole subtree
-        // is freed as before (keeping the element would accumulate one node per top-level
-        // element, so it is not kept unless needed).
-        let release_whole_subtree = !needs_preceding_siblings(&author);
-
-        Ok(StreamingState {
-            ua,
-            author,
-            fonts,
-            styles: HashMap::new(),
-            background_images: HashMap::new(),
-            root_font_size,
-            counters,
-            quote_depth,
-            body_style,
-            content_width: body_content_width,
-            start_x,
-            cursor_y: start_y,
-            previous_margin_bottom: None,
-            page_settings,
-            overlay_cache: OverlayCache::default(),
-            warned_font_families: Vec::new(),
-            warned_uncovered_chars: HashSet::new(),
-            release_whole_subtree,
-            paginator: StreamingPaginator::new(page_settings.content_height()),
-            writer,
-            page_offset: self.options.page_offset,
-            headings: Vec::new(),
-            pending_headings: HashMap::new(),
-            heading_serial: 0,
-            image_cache,
-        })
-    }
-
-    /// Take one settled top-level element (a child directly under `<body>`) all the way
-    /// through style computation, layout, pagination, PDF writing and DOM release.
-    fn process_top_level_element(&mut self, node: NodeId) -> Result<(), EngineError<S::Error>> {
-        // Checked before entering the layout and writing for this one element.
-        self.check_deadline()?;
-        let Engine {
-            parser,
-            streaming,
-            options,
-            ..
-        } = self;
-        let options_content = &options.content;
-        let state = streaming.as_mut().expect(
-            "process_top_level_element is only called after the streaming state is initialised",
-        );
-
-        let (sub_styles, item_box) = {
-            let dom = parser.dom();
-            let sub_styles = compute_styles_with_parent(
-                &dom,
-                node,
-                &state.body_style,
-                state.root_font_size,
-                &state.ua,
-                &state.author,
-                &mut state.counters,
-                &mut state.quote_depth,
-            );
-            let mut sub_styles = sub_styles;
-            apply_content_options(&mut sub_styles, options_content);
-            warn_unresolved_font_families(
-                &sub_styles,
-                &state.fonts,
-                &mut state.warned_font_families,
-            );
-            // Streaming cannot top up fonts from the characters, so an undrawable character
-            // is warned about each time one appears.
-            warn_uncovered_chars(
-                &state.fonts,
-                &dom,
-                &sub_styles,
-                &mut state.warned_uncovered_chars,
-            );
-            let mut item_box = build_box_for_element(&dom, &sub_styles, node);
-            if let (Some(item_box), true) = (&mut item_box, options_content.load_images) {
-                resolve_images(item_box, &dom, &sub_styles, &state.image_cache);
-            }
-            (sub_styles, item_box)
-        };
-        if options_content.load_images {
-            state
-                .background_images
-                .extend(resolve_background_images(&sub_styles, &state.image_cache));
-        }
-        state.styles.extend(sub_styles);
-
-        let Some(item_box) = item_box else {
-            // An element generating no box, through `display: none` and the like.
-            release_processed(parser.dom_mut(), node, state.release_whole_subtree);
-            return Ok(());
-        };
-
-        let style = state.styles.get(&node).cloned().unwrap_or_default();
-        let in_flow = style.float == crate::style::Float::None && !style.position.is_out_of_flow();
-        if in_flow {
-            if let Some(previous_bottom) = state.previous_margin_bottom {
-                let top = resolve_lpa_or_zero(style.margin_top, state.content_width);
-                state.cursor_y -= previous_bottom + top
-                    - crate::layout::collapse_adjacent_margins(previous_bottom, top);
-            }
-        }
-        let laid_out = layout_document_from(
-            &item_box,
-            &state.styles,
-            &state.fonts,
-            state.content_width,
-            state.start_x,
-            state.cursor_y,
-        );
-        state.cursor_y += laid_out.layout.margin_box_height();
-        if in_flow {
-            // Keep the effective bottom margin after parent/child collapsing, just as
-            // the batch block-layout loop does between normal-flow siblings.
-            state.previous_margin_bottom = Some(laid_out.layout.margin.bottom);
-        }
-
-        // Layout is already complete and this DOM subtree (its text content, attributes and
-        // so on) is never read again, so it can be freed immediately without waiting for the
-        // page to flush (the `ComputedStyle`s are held separately in `state.styles`).
-
-        let mut anchors: HashMap<NodeId, String> =
-            crate::html::collect_anchor_targets_in_subtree(&parser.dom(), node)
-                .into_iter()
-                .map(|(node, id)| (node, anchor_destination_name(&id)))
-                .collect();
-        if options.toc.enabled {
-            for (heading_node, heading) in collect_headings(
-                &parser.dom(),
-                [std::slice::from_ref(&laid_out)],
-                &mut anchors,
-                state.heading_serial,
-            ) {
-                state.heading_serial += 1;
-                state.pending_headings.insert(heading_node, heading);
-            }
-        }
-        state.writer.extend_anchor_names(anchors);
-        release_processed(parser.dom_mut(), node, state.release_whole_subtree);
-
-        // Where this top-level element itself carries no decoration (a background, borders or
-        // a background-image; `has_visible_decoration` covers background-image too),
-        // `place_split` generates no decoration fragment and this node never appears in
-        // `page.boxes`. That is, `node`'s own `ComputedStyle` and background image are never
-        // referenced again by `write_page`, so they can be removed right here (with
-        // decoration, they are removed via `collect_completed_subtree_roots` below when the
-        // page the decoration fragment really landed on is flushed).
-
-        if !laid_out.has_visible_decoration {
-            state.styles.remove(&node);
-            state.background_images.remove(&node);
-        }
-
-        let mut laid_out = laid_out;
-        let pages = state.paginator.push_item(&mut laid_out);
-        for page in &pages {
-            record_streaming_headings(
-                &state.writer,
-                page,
-                &mut state.pending_headings,
-                &mut state.headings,
-            );
-            let page_number = checked_page_count_add::<S::Error>(
-                checked_page_count_add::<S::Error>(
-                    state.page_offset,
-                    state.writer.body_page_count(),
-                    "the body page number overflowed",
-                )?,
-                1,
-                "the body page number overflowed",
-            )?;
-            if !options.toc.enabled
-                && !options.header_footer_html.is_empty()
-                && !options.header_footer_html.uses_total_pages()
-            {
-                let overlays = build_page_overlays(
-                    &options.header_footer_html,
-                    &state.fonts,
-                    &state.page_settings,
-                    page_number,
-                    None,
-                    &overlay_fetcher(),
-                    &DocumentImageCache::new(),
-                    &mut state.overlay_cache,
-                    options.content.load_images,
-                );
-                if options.content.abort_on_media_error {
-                    if let Some(err) = state
-                        .overlay_cache
-                        .images
-                        .as_ref()
-                        .and_then(ImageAssetCache::had_errors)
-                    {
-                        return Err(EngineError::MediaLoad(err));
-                    }
-                }
-                state.writer.set_page_overlays(overlays);
-            }
-            state.writer.set_next_page_number(Some(page_number));
-            state
-                .writer
-                // Total-dependent decorations are defined after the last page.
-                .write_page(
-                    page,
-                    &state.styles,
-                    &state.background_images,
-                    &state.fonts,
-                    None,
-                )
-                .map_err(EngineError::Io)?;
-        }
-
-        // Free the `ComputedStyle`s and background images of the descendant nodes really
-        // placed on each page and not split further (`FragmentPosition::Whole`/`Last`).
-        // The DOM itself is already tombstoned above, but the tree links survive, so it can
-        // still be walked with `Dom::children`.
-        let dom = parser.dom();
-        for page in &pages {
-            for root in collect_completed_subtree_roots(page) {
-                remove_subtree_styles(&dom, root, &mut state.styles, &mut state.background_images);
-            }
-        }
-        drop(dom);
-
-        Ok(())
-    }
-
     /// Do all the remaining work and write to `sink`.
     ///
     /// Under `Mode::Batch` everything is processed at once, after the DOM is final. Under
     /// `Mode::Streaming`, every top-level element not yet processed (including the last one,
     /// which was being held back) is processed, and then `StreamingPdfWriter::finish` writes
     /// the font embedding, xref and trailer.
-    pub fn finish(mut self) -> Result<S::Output, EngineError<S::Error>> {
+    pub fn finish(self) -> Result<S::Output, EngineError<S::Error>> {
         if self.options.mode != Mode::Streaming {
             return self.finish_batch();
         }
-
-        self.ensure_depth_within_limit()?;
-        self.check_deadline()?;
-        self.ensure_streaming_state_initialized()?;
-        let remaining = self.parser.take_all_remaining_top_level_children();
-        for node in remaining {
-            self.process_top_level_element(node)?;
-        }
-
-        match self.streaming {
-            Some(state) => {
-                let StreamingState {
-                    styles,
-                    background_images,
-                    fonts,
-                    mut writer,
-                    paginator,
-                    image_cache,
-                    page_settings,
-                    mut overlay_cache,
-                    page_offset,
-                    mut headings,
-                    mut pending_headings,
-                    ..
-                } = state;
-                if self.options.content.abort_on_media_error {
-                    if let Some(err) = image_cache.had_errors() {
-                        return Err(EngineError::MediaLoad(err));
-                    }
-                }
-                for page in paginator.finish() {
-                    record_streaming_headings(&writer, &page, &mut pending_headings, &mut headings);
-                    let page_number = checked_page_count_add::<S::Error>(
-                        checked_page_count_add::<S::Error>(
-                            page_offset,
-                            writer.body_page_count(),
-                            "the body page number overflowed",
-                        )?,
-                        1,
-                        "the body page number overflowed",
-                    )?;
-                    if !self.options.toc.enabled
-                        && !self.options.header_footer_html.is_empty()
-                        && !self.options.header_footer_html.uses_total_pages()
-                    {
-                        let overlays = build_page_overlays(
-                            &self.options.header_footer_html,
-                            &fonts,
-                            &page_settings,
-                            page_number,
-                            None,
-                            &overlay_fetcher(),
-                            &DocumentImageCache::new(),
-                            &mut overlay_cache,
-                            self.options.content.load_images,
-                        );
-                        if self.options.content.abort_on_media_error {
-                            if let Some(err) = overlay_cache
-                                .images
-                                .as_ref()
-                                .and_then(ImageAssetCache::had_errors)
-                            {
-                                return Err(EngineError::MediaLoad(err));
-                            }
-                        }
-                        writer.set_page_overlays(overlays);
-                    }
-                    writer.set_next_page_number(Some(page_number));
-                    writer
-                        .write_page(&page, &styles, &background_images, &fonts, None)
-                        .map_err(EngineError::Io)?;
-                }
-                if self.options.toc.enabled {
-                    check_deadline(self.options.deadline)?;
-                    let (toc_pages, toc_styles) = build_toc_pages(
-                        &headings,
-                        &self.options.toc,
-                        page_offset,
-                        &fonts,
-                        &page_settings,
-                    )?;
-                    let numbering = PageNumberPlan::new(
-                        0,
-                        toc_pages.len(),
-                        writer.body_page_count(),
-                        page_offset,
-                    )?;
-                    if writer.body_page_count() > 0 {
-                        numbering.displayed_body_page::<S::Error>(writer.body_page_count() - 1)?;
-                    }
-                    writer.shift_deferred_page_numbers(toc_pages.len()).ok_or(
-                        EngineError::PageNumberOverflow("the body page number overflowed"),
-                    )?;
-                    writer.defer_page_overlays(false);
-                    // Independent DOM node IDs must not alias the body's anchors.
-                    writer.replace_anchor_names(HashMap::new());
-                    for (index, page) in toc_pages.iter().enumerate() {
-                        check_deadline(self.options.deadline)?;
-                        writer.set_next_page_role(PageRole::Toc);
-                        writer.set_next_page_number(Some(numbering.displayed_toc_page(index)?));
-                        writer
-                            .write_page(
-                                page,
-                                &toc_styles,
-                                &HashMap::new(),
-                                &fonts,
-                                Some(numbering.total_pages()?),
-                            )
-                            .map_err(EngineError::Io)?;
-                    }
-                }
-                writer.write_deferred_decorations(&fonts, |page, total| {
-                    check_deadline(self.options.deadline)?;
-                    let overlays = if self.options.toc.enabled
-                        || self.options.header_footer_html.uses_total_pages()
-                    {
-                        build_page_overlays(
-                            &self.options.header_footer_html,
-                            &fonts,
-                            &page_settings,
-                            page,
-                            Some(total),
-                            &overlay_fetcher(),
-                            &DocumentImageCache::new(),
-                            &mut overlay_cache,
-                            self.options.content.load_images,
-                        )
-                    } else {
-                        Vec::new()
-                    };
-                    if self.options.content.abort_on_media_error {
-                        if let Some(err) = overlay_cache
-                            .images
-                            .as_ref()
-                            .and_then(ImageAssetCache::had_errors)
-                        {
-                            return Err(EngineError::MediaLoad(err));
-                        }
-                    }
-                    check_deadline(self.options.deadline)?;
-                    Ok(overlays)
-                })?;
-                writer.finish(&fonts).map_err(EngineError::Io)
-            }
-            None => {
-                // `<body>` never appeared (an empty document, invalid input and so on).
-                // It is treated as an empty sink (not a zero-page PDF, but finished with
-                // nothing written).
-                let sink = self
-                    .sink
-                    .take()
-                    .expect("with streaming uninitialised, the sink should still be held");
-                sink.finish().map_err(EngineError::Io)
-            }
-        }
+        self.finish_streaming()
     }
 
     fn finish_batch(self) -> Result<S::Output, EngineError<S::Error>> {
@@ -1938,6 +1379,14 @@ impl<S: Sink> Engine<S> {
         output
             .metadata
             .fill_title_from_document(find_document_title(&dom));
+        output
+            .metadata
+            .fill_language_from_document(find_document_language(&dom));
+        let tag_roles = if output.tagged {
+            collect_tag_roles(&dom)
+        } else {
+            HashMap::new()
+        };
 
         let image_cache = ImageAssetCache::with_fetcher(
             ImageFetcher::new(base_dir.to_path_buf(), options.allow_remote_assets)
@@ -2038,8 +1487,10 @@ impl<S: Sink> Engine<S> {
                 external: options.content.external_links,
                 internal: options.content.internal_links,
                 keep_relative: options.content.keep_relative_links,
+                bookmarks: HashMap::new(),
             },
             output,
+            tag_roles,
         )
         .map_err(EngineError::Io)?;
 
@@ -2067,6 +1518,10 @@ impl<S: Sink> Engine<S> {
         }
 
         writer.replace_anchor_names(anchor_names);
+        // The cover and the TOC are separate documents whose `NodeId`s would collide with the
+        // body's, so the body's bookmarks are registered only after them.
+        writer.add_bookmarks(collect_bookmarks(&dom, &styles, dom.document(), &mut 0));
+
         let mut overlay_cache = OverlayCache::default();
         for (index, page) in pages.iter().enumerate() {
             check_deadline(options.deadline)?;
@@ -2152,23 +1607,6 @@ fn apply_page_rule_settings_override(base: PageSettings, page_rules: &[PageRule]
         settings.size.width,
     );
     settings
-}
-
-/// Remove from `styles` the `ComputedStyle`s of the nodes in the subtree under `root`.
-/// `dom` may already have had everything under `root` freed by [`Dom::release_subtree`]
-/// (tombstoned), since the tree links themselves survive.
-fn remove_subtree_styles(
-    dom: &Dom,
-    root: NodeId,
-    styles: &mut HashMap<NodeId, Rc<ComputedStyle>>,
-    background_images: &mut HashMap<NodeId, Rc<PreparedImage>>,
-) {
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        stack.extend(dom.children(id));
-        styles.remove(&id);
-        background_images.remove(&id);
-    }
 }
 
 #[cfg(test)]
@@ -2257,43 +1695,6 @@ mod tests {
     }
 
     #[test]
-    fn streaming_mode_releases_computed_styles_for_flushed_pages() {
-        // 200 undecorated <p>s. Holding every element's `ComputedStyle` until `finish` would
-        // leave 200 elements' worth (over 400 entries) in `styles`. Freeing them as each page
-        // is flushed keeps it to roughly the most recent unflushed page's worth (a few dozen entries).
-
-        let mut html_src = String::from("<style>@page { @bottom-center { content: counter(pages); } } .item { height: 100px; margin: 0; }</style><body>");
-        for i in 0..200 {
-            html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
-        }
-        html_src.push_str("</body>");
-
-        let options = EngineOptions {
-            mode: Mode::Streaming,
-            fonts: vec![font_spec()],
-            settings: PageSettings::default(),
-            ..EngineOptions::default()
-        };
-        let mut engine = Engine::new(options, MemorySink::new());
-        engine.feed(html_src.as_bytes()).unwrap();
-
-        let styles_len = engine
-            .streaming
-            .as_ref()
-            .expect("<body> should have been detected by now")
-            .styles
-            .len();
-        assert!(
-            styles_len < 50,
-            "expected the styles map to stay small while streaming (pages should \
-             release their entries once flushed), but it grew to {styles_len} entries"
-        );
-
-        let bytes = engine.finish().unwrap();
-        assert!(bytes.starts_with(b"%PDF-"));
-    }
-
-    #[test]
     fn engine_produces_a_valid_pdf_from_a_single_feed() {
         let options = EngineOptions {
             fonts: vec![font_spec()],
@@ -2306,6 +1707,23 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-"));
         assert!(count_occurrences(&bytes, b"%%EOF") > 0);
         assert!(count_occurrences(&bytes, b"/MediaBox") > 0);
+    }
+
+    #[test]
+    fn the_toc_skips_the_boxes_of_pseudo_elements() {
+        // A block-level `::before` is a box with no DOM node of its own, next to the heading's.
+        let mut options = EngineOptions {
+            fonts: vec![font_spec()],
+            ..EngineOptions::default()
+        };
+        options.toc.enabled = true;
+        let mut engine = Engine::new(options, MemorySink::new());
+        engine
+            .feed(b"<style>h1::before { content: '#'; display: block }</style><h1>Title</h1>")
+            .unwrap();
+        let bytes = engine.finish().unwrap();
+
+        assert!(bytes.starts_with(b"%PDF-"));
     }
 
     #[test]
@@ -2645,31 +2063,6 @@ mod tests {
         let decompressed = decompressed_stream_bytes(&bytes);
         assert!(count_occurrences(&decompressed, b"<0031>") > 0);
         assert!(count_occurrences(&bytes, b"/Subtype /Form") > 0);
-    }
-
-    #[test]
-    fn streaming_collapses_adjacent_top_level_margins() {
-        for (bottom, top, gap) in [(10, 10, 10), (20, 10, 20), (20, -10, 10), (-20, -10, -20)] {
-            let mut engine = Engine::new(
-                EngineOptions {
-                    mode: Mode::Streaming,
-                    fonts: vec![font_spec()],
-                    disable_system_fonts: true,
-                    ..EngineOptions::default()
-                },
-                MemorySink::new(),
-            );
-            let html = format!("<style>body {{ margin:0; padding:1px; }} div {{ height:40px; }} \
-                #one {{ margin:0 0 {bottom}px; }} #two {{ margin:{top}px 0 0; }}</style>\
-                <body><div id='one'></div><span style='display:none'></span><div id='two'></div><p>pending</p>");
-            engine.feed(html.as_bytes()).unwrap();
-            let state = engine.streaming.as_ref().unwrap();
-            assert_eq!(
-                state.cursor_y,
-                (81 + gap) as f32,
-                "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
-            );
-        }
     }
 
     #[test]
@@ -3303,6 +2696,42 @@ mod tests {
                 count_occurrences(&stream, b"/F1 ") > 0,
                 "{label}: the CJK-range face (index 1) should be used for U+65E5"
             );
+        }
+    }
+
+    #[test]
+    fn font_face_weights_are_matched_by_closeness_not_declaration_order() {
+        // #151: three faces of one family declared as 500, 300, 400. Each of the three
+        // weights should get its own face; before, every weight below 600 took the first
+        // declared face (index 0, the 500 one).
+        let base_dir = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts"));
+        let html_src = r#"<style>
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 500; }
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 300; }
+            @font-face { font-family: "Brand"; src: url("DejaVuSans.ttf"); font-weight: 400; }
+            p { font-family: "Brand"; }
+        </style><body>
+            <p style="font-weight: 300">light</p>
+            <p style="font-weight: 400">regular</p>
+            <p style="font-weight: 500">medium</p>
+        </body>"#;
+
+        for mode in [Mode::Batch, Mode::Streaming] {
+            let options = EngineOptions {
+                mode,
+                base_dir: Some(base_dir.to_path_buf()),
+                ..EngineOptions::default()
+            };
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(html_src.as_bytes()).unwrap();
+            let stream = decompressed_stream_bytes(&engine.finish().unwrap());
+            for (face, weight) in [(b"/F0 ", 500), (b"/F1 ", 300), (b"/F2 ", 400)] {
+                assert_eq!(
+                    count_occurrences(&stream, face),
+                    1,
+                    "{mode:?}: the {weight} face should draw exactly the font-weight: {weight} line"
+                );
+            }
         }
     }
 

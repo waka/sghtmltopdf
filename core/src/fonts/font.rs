@@ -136,6 +136,9 @@ struct Metrics {
     weight: u16,
     bounding_box: BoundingBox,
     family_name: Option<String>,
+    /// The name the PDF gives the font, made of characters a PDF name may hold. See
+    /// [`Font::pdf_name`].
+    pdf_name: String,
     /// Whether the font has glyph outlines (`glyf`/CFF/CFF2).
     ///
     /// Some fonts carry a `cmap` but no outlines, such as bitmap-only colour
@@ -167,6 +170,7 @@ impl Metrics {
                     .english_or_first()
             })
             .map(|name| name.chars().collect());
+        let pdf_name = read_pdf_name(font, family_name.as_deref());
 
         Self {
             units_per_em: m.units_per_em,
@@ -199,7 +203,48 @@ impl Metrics {
                 })
                 .unwrap_or_default(),
             family_name,
+            pdf_name,
         }
+    }
+}
+
+/// The longest PostScript name the `name` table allows (OpenType, Apple TrueType Reference).
+const MAX_PDF_NAME_LEN: usize = 63;
+
+/// Keep only the characters that are safe in a PDF name and in a PostScript name: ASCII
+/// letters and digits, `-`, `_` and `.`. Spaces, delimiters and non-ASCII characters are
+/// dropped, and the result is cut to [`MAX_PDF_NAME_LEN`].
+fn sanitize_pdf_name(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .take(MAX_PDF_NAME_LEN)
+        .collect()
+}
+
+/// The PostScript name (name ID 6), or when that is missing or has nothing usable left,
+/// the family and subfamily joined by a hyphen (`DejaVuSans-Bold`), or the family alone, or
+/// `Font` as the last resort.
+fn read_pdf_name(font: &FontRef<'_>, family: Option<&str>) -> String {
+    use skrifa::string::StringId;
+
+    let read = |id| {
+        font.localized_strings(id)
+            .english_or_first()
+            .map(|name| sanitize_pdf_name(&name.chars().collect::<String>()))
+            .filter(|name| !name.is_empty())
+    };
+    if let Some(name) = read(StringId::POSTSCRIPT_NAME) {
+        return name;
+    }
+    let family = family
+        .map(sanitize_pdf_name)
+        .filter(|name| !name.is_empty());
+    let subfamily =
+        read(StringId::TYPOGRAPHIC_SUBFAMILY_NAME).or_else(|| read(StringId::SUBFAMILY_NAME));
+    match (family, subfamily) {
+        (Some(family), Some(subfamily)) => sanitize_pdf_name(&format!("{family}-{subfamily}")),
+        (Some(name), None) | (None, Some(name)) => name,
+        (None, None) => "Font".to_string(),
     }
 }
 
@@ -525,10 +570,22 @@ impl Font {
             .is_ok()
     }
 
+    /// The name this font goes by in a PDF: the PostScript name from the `name` table, or
+    /// failing that the family and subfamily joined by a hyphen. It holds only ASCII letters,
+    /// digits, `-`, `_` and `.`, and is never empty.
+    pub fn pdf_name(&self) -> &str {
+        &self.metrics.pdf_name
+    }
+
     /// Font name (the `name` table's Typographic Family, or Family if absent).
     /// Returns the English name if there is one, otherwise the first name found.
     pub fn family_name(&self) -> Option<String> {
         self.metrics.family_name.clone()
+    }
+
+    /// [`Self::family_name`] without the copy, for comparisons made once per character.
+    pub(crate) fn family_name_str(&self) -> Option<&str> {
+        self.metrics.family_name.as_deref()
     }
 }
 
@@ -560,6 +617,20 @@ mod tests {
     fn reports_family_name() {
         let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
         assert_eq!(font.family_name().as_deref(), Some("DejaVu Sans"));
+    }
+
+    #[test]
+    fn reports_the_postscript_name_as_the_pdf_name() {
+        let font = Font::load(TEST_FONT_PATH).expect("should load bundled test font");
+        assert_eq!(font.pdf_name(), "DejaVuSans");
+    }
+
+    #[test]
+    fn sanitizes_a_name_down_to_what_a_pdf_name_may_hold() {
+        assert_eq!(sanitize_pdf_name("Noto Sans (CJK)/Bold"), "NotoSansCJKBold");
+        assert_eq!(sanitize_pdf_name("Fira_Code-1.0"), "Fira_Code-1.0");
+        assert_eq!(sanitize_pdf_name("Źółć"), "");
+        assert_eq!(sanitize_pdf_name(&"a".repeat(100)).len(), MAX_PDF_NAME_LEN);
     }
 
     #[test]

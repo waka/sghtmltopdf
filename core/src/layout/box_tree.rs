@@ -254,8 +254,8 @@ pub struct InlineSpan {
     /// `position` of the block.
     pub relative_insets: Vec<RelativeInset>,
     /// Whether this is text sitting directly in the block container, outside any inline
-    /// element: a text node, or text the container generates itself (its `::before`/`::after`,
-    /// or an inside list marker). Its computed style is the block's own
+    /// element: a text node, or text the container generates itself (an inside list marker,
+    /// or the text of a `::before`/`::after` box). Its computed style is the block's own
     /// or a clone of it, including the block's `vertical-align` (a table cell's `middle`, say),
     /// which applies to the box and must not shift the text within its line, so the run is
     /// laid out at `baseline` (`layout::inline`).
@@ -404,6 +404,9 @@ pub(crate) fn build_box_for_element(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
 ) -> Option<LayoutBox> {
+    if node.pseudo_element_of().is_some() {
+        return build_pseudo_element_box(styles, node);
+    }
     let mut b = build_element_box(dom, styles, node)?;
     // An inline `<a>` reaches here only as a top-level element in streaming mode. Its href is
     // already on the spans (`build_element_box`), so the area hugs the text rather than the
@@ -414,6 +417,53 @@ pub(crate) fn build_box_for_element(
         b.link = link_href(dom, node);
     }
     Some(b)
+}
+
+/// How a child of `<body>` takes part in `<body>`'s flow. `Mode::Streaming` is handed the
+/// children one at a time, so it asks this of each; batch decides the same in
+/// `build_children_boxes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TopLevelKind {
+    /// Generates no box, as with `display: none`. It does not end a run of inline content.
+    None,
+    /// A block of its own ([`build_box_for_element`]).
+    Block,
+    /// Joins the run of inline content around it, text and whitespace included
+    /// ([`build_box_for_inline_run`]).
+    Inline,
+}
+
+pub(crate) fn top_level_kind(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    node: NodeId,
+) -> TopLevelKind {
+    match child_kind(dom, styles, node) {
+        ChildKind::None => TopLevelKind::None,
+        ChildKind::Block => TopLevelKind::Block,
+        ChildKind::Inline | ChildKind::Whitespace => TopLevelKind::Inline,
+    }
+}
+
+/// Build the anonymous block box that wraps a run of consecutive inline-level children of
+/// `<body>` (CSS2.1 9.2.1.1), as `build_children_boxes` does in batch. `None` when the run
+/// holds nothing but collapsible whitespace, which generates no box between blocks.
+pub(crate) fn build_box_for_inline_run(
+    dom: &Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    nodes: &[NodeId],
+) -> Option<LayoutBox> {
+    let mut spans = Vec::new();
+    for &node in nodes {
+        match child_kind(dom, styles, node) {
+            ChildKind::Inline => collect_spans(dom, styles, node, &mut spans),
+            ChildKind::Whitespace => push_collapsible_whitespace(dom, styles, node, &mut spans),
+            ChildKind::Block | ChildKind::None => {}
+        }
+    }
+    let mut boxes = Vec::new();
+    flush_pending_spans(&mut spans, &mut boxes);
+    boxes.pop()
 }
 
 /// The body of [`build_box_for_element`], everything but the link.
@@ -453,14 +503,12 @@ fn build_element_box(
         ));
     }
 
-    let child_ids: Vec<NodeId> = dom.children(node).collect();
+    let child_ids: Vec<NodeId> = box_children(dom, styles, node).collect();
     let has_block_child = child_ids
         .iter()
         .any(|&c| child_kind(dom, styles, c) == ChildKind::Block);
 
     let content = if has_block_child {
-        // `::before`/`::after` are unsupported on an element with block children (a
-        // simplification), the combination with the anonymous box rules being complicated.
         let list_item_start = read_list_item_start(dom, node);
         BoxContent::Blocks(build_children_boxes(
             dom,
@@ -478,7 +526,6 @@ fn build_element_box(
             ..InlineContext::default()
         };
         let mut spans = Vec::new();
-        push_before_content(styles, node, true, &mut spans);
         for &child in &child_ids {
             match child_kind(dom, styles, child) {
                 ChildKind::Inline => {
@@ -490,7 +537,6 @@ fn build_element_box(
                 ChildKind::Block | ChildKind::None => {}
             }
         }
-        push_after_content(styles, node, true, &mut spans);
         apply_first_letter(node, style, &mut spans);
         // A `Vec` reserves room for at least 4 elements on its first push. In a document with
         // many boxes holding a single text (table cells, say) that slack simply accumulates.
@@ -523,7 +569,7 @@ pub fn resolve_images(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     image_cache: &ImageAssetCache,
 ) {
-    if let Some(node) = tree.node {
+    if let Some(node) = tree.node.filter(|node| node.pseudo_element_of().is_none()) {
         if let NodeData::Element { name, .. } = &dom.node(node).data {
             if &*name.local == "img" {
                 tree.content = BoxContent::Image(build_image_box_content(dom, node, image_cache));
@@ -982,7 +1028,7 @@ fn build_inline_block_box(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
 ) -> Option<LayoutBox> {
-    let child_ids: Vec<NodeId> = dom.children(node).collect();
+    let child_ids: Vec<NodeId> = box_children(dom, styles, node).collect();
     let has_block_child = child_ids
         .iter()
         .any(|&c| child_kind(dom, styles, c) == ChildKind::Block);
@@ -992,7 +1038,6 @@ fn build_inline_block_box(
     } else {
         let style = styles.get(&node)?;
         let mut spans = Vec::new();
-        push_before_content(styles, node, true, &mut spans);
         push_form_control_content(dom, styles, node, &mut spans);
         for &child in &child_ids {
             match child_kind(dom, styles, child) {
@@ -1003,7 +1048,6 @@ fn build_inline_block_box(
                 ChildKind::Block | ChildKind::None => {}
             }
         }
-        push_after_content(styles, node, true, &mut spans);
         apply_first_letter(node, style, &mut spans);
         // A `Vec` reserves room for at least 4 elements on its first push. In a document with
         // many boxes holding a single text (table cells, say) that slack simply accumulates.
@@ -1072,21 +1116,22 @@ fn build_flex_box(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: 
     let mut items = Vec::new();
     let mut pending_spans: Vec<InlineSpan> = Vec::new();
 
-    for child in dom.children(node) {
-        match &dom.node(child).data {
-            NodeData::Element { .. } => {
-                if styles.get(&child).map(|s| s.display) == Some(Display::None) {
-                    continue;
-                }
-                // An element always becomes its own item, so the text accumulated so far is
-                // settled as an anonymous item first.
-                flush_pending_spans(&mut pending_spans, &mut items);
-                if let Some(item) = build_box_for_element(dom, styles, child) {
-                    items.push(item);
-                }
+    for child in box_children(dom, styles, node) {
+        // A `::before`/`::after` is an item of its own, like a child element.
+        let is_element = child.pseudo_element_of().is_some()
+            || matches!(dom.node(child).data, NodeData::Element { .. });
+        if is_element {
+            if styles.get(&child).map(|s| s.display) == Some(Display::None) {
+                continue;
             }
-            NodeData::Text { .. } => collect_spans(dom, styles, child, &mut pending_spans),
-            _ => {}
+            // An element always becomes its own item, so the text accumulated so far is
+            // settled as an anonymous item first.
+            flush_pending_spans(&mut pending_spans, &mut items);
+            if let Some(item) = build_box_for_element(dom, styles, child) {
+                items.push(item);
+            }
+        } else if matches!(dom.node(child).data, NodeData::Text { .. }) {
+            collect_spans(dom, styles, child, &mut pending_spans);
         }
     }
     flush_pending_spans(&mut pending_spans, &mut items);
@@ -1391,8 +1436,13 @@ fn flush_pending_spans(pending: &mut Vec<InlineSpan>, result: &mut Vec<LayoutBox
 }
 
 fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: NodeId) -> ChildKind {
-    match &dom.node(node).data {
-        NodeData::Element { .. } => {
+    // A `::before`/`::after` is placed by its `display`, like an element.
+    let data = match node.pseudo_element_of() {
+        Some(_) => None,
+        None => Some(&dom.node(node).data),
+    };
+    match data {
+        None | Some(NodeData::Element { .. }) => {
             let display = styles.get(&node).map(|s| s.display);
             if display == Some(Display::None) {
                 return ChildKind::None;
@@ -1417,7 +1467,7 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
                 Some(Display::None) | None => ChildKind::None,
             }
         }
-        NodeData::Text { contents } => {
+        Some(NodeData::Text { contents }) => {
             // A text node of nothing but `&nbsp;` is not "whitespace only" (it has
             // non-collapsing content), so the CSS classification decides, not `str::trim`.
             if white_space::is_collapsible_only(contents) {
@@ -1426,15 +1476,14 @@ fn child_kind(dom: &Dom, styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: Node
                 ChildKind::Inline
             }
         }
-        _ => ChildKind::None,
+        Some(_) => ChildKind::None,
     }
 }
 
 /// Walk an inline element's descendants recursively and push an [`InlineSpan`] per text node.
 /// The cascade and inheritance from ancestor inline elements (`<b>`, `<span>` and so on) are
 /// already reflected in the text node's own computed style, so only the node ID needs keeping here.
-/// Each inline element's `::before`/`::after` generated content is also inserted as spans
-/// before and after the corresponding descendants.
+/// Each inline element's `::before`/`::after` is walked as its first and last child.
 fn collect_spans(
     dom: &Dom,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -1453,6 +1502,10 @@ fn collect_spans_in_context(
     context: &InlineContext,
     out: &mut Vec<InlineSpan>,
 ) {
+    if node.pseudo_element_of().is_some() {
+        collect_pseudo_element_spans(styles, node, context, out);
+        return;
+    }
     match &dom.node(node).data {
         NodeData::Text { contents } => out.push(InlineSpan::text_in_inline_context(
             node,
@@ -1514,77 +1567,106 @@ fn collect_spans_in_context(
                 }
                 return;
             }
-            // If this inline element has a background colour of its own, the descendants that
-            // follow are painted with it (when nested, the inner one wins; a simplification
-            // of CSS background layering). An `<a href>` link is likewise carried down to the descendants.
-            let mut context = context.clone();
-            context.inside_inline_element = true;
-            if let Some(background) = styles
-                .get(&node)
-                .map(|s| s.background_color)
-                .filter(|c| c.alpha > 0.0)
-            {
-                context.background_color = background;
-            }
+            // An `<a href>` link is carried down to the descendants.
+            let mut context = inline_element_context(styles, node, context);
             if let Some(href) = link_href(dom, node) {
                 context.link = Some(href);
             }
-            // A `position: relative` inline element shifts the runs of all its
-            // descendants together (#29).
-            if let Some(inset) = styles.get(&node).and_then(|s| RelativeInset::of(s)) {
-                context.relative_insets.push(inset);
-            }
-            push_before_content(styles, node, false, out);
-            for child in dom.children(node) {
+            for child in box_children(dom, styles, node) {
                 collect_spans_in_context(dom, styles, child, &context, out);
             }
-            push_after_content(styles, node, false, out);
         }
         _ => {}
     }
 }
 
-/// If `node` has `::before` generated content, push its spans along with the node ID used to
-/// look up the computed style (`node` itself). `block_container` is whether `node` is the
-/// block container of the line (a table cell, an `inline-block`) rather than an inline
-/// element, whose generated content moves with it under its `vertical-align`.
-fn push_before_content(
+/// The context for the content of the inline element (or inline `::before`/`::after`) `node`,
+/// which sits in `context`.
+fn inline_element_context(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
-    block_container: bool,
-    out: &mut Vec<InlineSpan>,
-) {
-    if let Some(text) = styles
+    context: &InlineContext,
+) -> InlineContext {
+    let mut context = context.clone();
+    context.inside_inline_element = true;
+    // If this inline element has a background colour of its own, the descendants that
+    // follow are painted with it (when nested, the inner one wins; a simplification
+    // of CSS background layering).
+    if let Some(background) = styles
         .get(&node)
-        .and_then(|s| s.pseudo_before_content.as_ref())
+        .map(|s| s.background_color)
+        .filter(|c| c.alpha > 0.0)
     {
-        out.push(if block_container {
-            InlineSpan::block_text(node, text.clone())
-        } else {
-            InlineSpan::text(node, text.clone())
-        });
+        context.background_color = background;
+    }
+    // A `position: relative` inline element shifts the runs of all its
+    // descendants together (#29).
+    if let Some(inset) = styles.get(&node).and_then(|s| RelativeInset::of(s)) {
+        context.relative_insets.push(inset);
+    }
+    context
+}
+
+/// `node`'s children for box generation: its DOM children, after its `::before` and before
+/// its `::after` when it has them (CSS Pseudo-Elements 4 § 3). A pseudo-element generates a
+/// box only if style computation gave it a style of its own.
+fn box_children<'a>(
+    dom: &'a Dom,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    node: NodeId,
+) -> impl Iterator<Item = NodeId> + 'a {
+    let generated = |id: NodeId| styles.contains_key(&id).then_some(id);
+    let (before, after) = (generated(node.before()), generated(node.after()));
+    before.into_iter().chain(dom.children(node)).chain(after)
+}
+
+/// The text of the `::before`/`::after` whose id is `node` (resolved with its element).
+fn pseudo_element_text(styles: &HashMap<NodeId, Rc<ComputedStyle>>, node: NodeId) -> Option<&str> {
+    let (element, is_after) = node.pseudo_element_of()?;
+    let style = styles.get(&element)?;
+    if is_after {
+        style.pseudo_after_content.as_deref()
+    } else {
+        style.pseudo_before_content.as_deref()
     }
 }
 
-/// If `node` has `::after` generated content, push its spans along with the node ID used to
-/// look up the computed style (`node` itself). `block_container` is whether `node` is the
-/// block container of the line (a table cell, an `inline-block`) rather than an inline
-/// element, whose generated content moves with it under its `vertical-align`.
-fn push_after_content(
+/// The box of a `::before`/`::after` (`node`) that is not an inline box: its text, laid out
+/// as the box's own content.
+fn build_pseudo_element_box(
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
     node: NodeId,
-    block_container: bool,
+) -> Option<LayoutBox> {
+    let text = pseudo_element_text(styles, node)?;
+    Some(LayoutBox::for_node(
+        node,
+        BoxContent::Inline(vec![InlineSpan::block_text(node, text.to_string())]),
+    ))
+}
+
+/// Push the spans of a `::before`/`::after` (`node`) inside a line: one atomic box for an
+/// `inline-block`, otherwise its text, as an inline element's.
+fn collect_pseudo_element_spans(
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    node: NodeId,
+    context: &InlineContext,
     out: &mut Vec<InlineSpan>,
 ) {
-    if let Some(text) = styles
-        .get(&node)
-        .and_then(|s| s.pseudo_after_content.as_ref())
-    {
-        out.push(if block_container {
-            InlineSpan::block_text(node, text.clone())
-        } else {
-            InlineSpan::text(node, text.clone())
-        });
+    let (Some(style), Some(text)) = (styles.get(&node), pseudo_element_text(styles, node)) else {
+        return;
+    };
+    match style.display {
+        Display::None => {}
+        Display::InlineBlock | Display::InlineFlex => {
+            if let Some(atomic) = build_pseudo_element_box(styles, node) {
+                out.push(InlineSpan::atomic(node, atomic, context));
+            }
+        }
+        _ => out.push(InlineSpan::text_in_inline_context(
+            node,
+            text.to_string(),
+            &inline_element_context(styles, node, context),
+        )),
     }
 }
 
@@ -1845,7 +1927,7 @@ mod tests {
                 alpha: 1.0
             }
         );
-        assert_eq!(loud_style.font_weight, crate::style::FontWeight::Bold);
+        assert_eq!(loud_style.font_weight, crate::style::FontWeight::BOLD);
     }
 
     #[test]
@@ -1868,10 +1950,51 @@ mod tests {
         assert_eq!(spans[0].text, "[");
         assert_eq!(spans[1].text, "Text");
         assert_eq!(spans[2].text, "]");
-        // A generated-content span carries the host element's own node ID
-        // (that is, it reuses the host's computed style).
-        assert_eq!(spans[0].node, span);
-        assert_eq!(spans[2].node, span);
+        // A generated-content span carries the pseudo-element's own ID, under which its
+        // computed style is stored.
+        assert_eq!(spans[0].node, span.before());
+        assert_eq!(spans[2].node, span.after());
+    }
+
+    #[test]
+    fn a_block_level_before_is_a_box_of_its_own_ahead_of_the_text() {
+        let dom = html::parse(br#"<p>Text</p>"#);
+        let author =
+            crate::style::parse_stylesheet(r#"p::before { content: "X"; position: absolute; }"#);
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let tree = build_box_tree(&dom, &styles);
+
+        let p = find(&dom, dom.document(), "p").expect("p not found");
+        let BoxContent::Blocks(children) = &find_box(&tree, p).expect("p box").content else {
+            panic!("expected the ::before box and an anonymous block");
+        };
+        assert_eq!(children.len(), 2);
+        assert_eq!(children[0].node, Some(p.before()));
+        let BoxContent::Inline(spans) = &children[0].content else {
+            panic!("expected the generated text");
+        };
+        assert_eq!((spans[0].node, spans[0].text.as_str()), (p.before(), "X"));
+        assert_eq!(children[1].node, None);
+        let text = find_inline_spans(&children[1]).expect("expected inline content");
+        assert_eq!(text[0].text, "Text");
+    }
+
+    #[test]
+    fn the_before_and_after_of_a_flex_container_are_items_of_their_own() {
+        let dom = html::parse(br#"<div class="row"><span>B</span></div>"#);
+        let author = crate::style::parse_stylesheet(
+            r#".row { display: flex; } .row::before { content: "A"; } .row::after { content: "C"; }"#,
+        );
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let tree = build_box_tree(&dom, &styles);
+
+        let div = find(&dom, dom.document(), "div").expect("div not found");
+        let span = find(&dom, dom.document(), "span").expect("span not found");
+        let BoxContent::Flex(flex) = &find_box(&tree, div).expect("div box").content else {
+            panic!("expected a flex container");
+        };
+        let items: Vec<_> = flex.items.iter().map(|item| item.node).collect();
+        assert_eq!(items, [Some(div.before()), Some(span), Some(div.after())]);
     }
 
     #[test]

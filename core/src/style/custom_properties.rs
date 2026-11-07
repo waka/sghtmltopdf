@@ -374,7 +374,7 @@ fn consume_and_find_var(input: &mut Parser<'_, '_>) -> bool {
 
 /// Remove a trailing `!important` from `raw`, returning the remaining text and whether it
 /// was present.
-fn split_important(raw: &str) -> (&str, bool) {
+pub(super) fn split_important(raw: &str) -> (&str, bool) {
     let raw = raw.trim_end();
     if raw.len() >= "important".len() {
         let (head, tail) = raw.split_at(raw.len() - "important".len());
@@ -706,6 +706,12 @@ fn parse_value_text(name: &str, value: &str) -> Option<Vec<PropertyDeclaration>>
     parser.is_exhausted().then_some(declarations)
 }
 
+/// Whether `name` is an ordinary property we know, whatever its value (a property that
+/// takes a CSS-wide keyword is exactly one that has a longhand probe).
+pub(super) fn is_known_property(name: &str) -> bool {
+    !longhand_probe(name).is_empty()
+}
+
 /// Declarations covering every longhand `name` expands to, used to reset an ordinary
 /// property whose `var()` is invalid at computed-value time and to name the longhands of a
 /// CSS-wide keyword declaration. Found by parsing values that
@@ -740,6 +746,8 @@ fn longhand_probe(name: &str) -> Vec<PropertyDeclaration> {
         "over",
         "clip",
         "2",
+        "\"\"",
+        "closed",
     ];
     PROBES
         .iter()
@@ -882,6 +890,9 @@ mod tests {
             ("text-overflow", 1),
             ("orphans", 1),
             ("widows", 1),
+            ("bookmark-level", 1),
+            ("bookmark-label", 1),
+            ("bookmark-state", 1),
         ] {
             assert_eq!(longhand_probe(name).len(), longhands, "{name}");
         }

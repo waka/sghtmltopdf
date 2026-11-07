@@ -20,12 +20,11 @@ gem "sghtmltopdf"
 
 | | 対応 |
 |---|---|
-| プラットフォーム | `x86_64-linux` / `aarch64-linux` / `x86_64-linux-musl` / `aarch64-linux-musl` / `arm64-darwin` / `x86_64-darwin` |
-| Ruby | 3.2以上 |
+| プラットフォーム | `x86_64-linux` / `aarch64-linux` / `x86_64-linux-musl` / `aarch64-linux-musl` / `arm64-darwin` / `x86_64-darwin` / `x64-mingw-ucrt` |
+| Ruby | 3.2以上（ビルド済みgemは3.2・3.3・3.4・4.0） |
 
 Linuxはglibc(Debian/Ubuntu系)とmusl(Alpine)の両方があり、`gem install`が環境に合うほうを選びます。
-Windowsは対象外で、この環境ではインストールできません。
-[サーバへ委譲する](#サーバへ委譲する)という手があります。
+Windowsでは64-bitのRubyInstaller UCRTで`x64-mingw-ucrt`のprecompiled gemを利用できます。
 
 ## 基本
 
@@ -57,6 +56,7 @@ Sghtmltopdf.render(html, page_size: "A4", margin_top: "20mm", toc: true)
 | `grayscale: true` | 値を取らないフラグ |
 | `grayscale: false` / `nil` | 指定なしと同じ |
 | `allow_path: ["/a", "/b"]` | 同じオプションの繰り返し |
+| `creation_date: Time.now` | `Time`・`DateTime`はUTCのISO 8601にして`--creation-date`へ渡す。`Date`と文字列はそのまま |
 | `font: {path: "a.ttc", index: 1}` | `--font a.ttc --font-index 1`(順序も保つ) |
 
 キー名の妥当性はRuby側では検査しません。
@@ -227,7 +227,7 @@ PDFのレンダリングはHTTPサーバを介さないので、どちらもそ�
 
 `server_url`を指定すると、変換を[HTTPサーバモード](../server/index.md)で動く
 別プロセスへ投げます。
-アプリのCPUを使いたくない場合や、gemの対応プラットフォーム外(Windowsなど)で動かす場合に使います。
+アプリのCPUを使いたくない場合や、gemの対応プラットフォーム外で動かす場合に使います。
 
 ```ruby
 Sghtmltopdf.configure do |c|

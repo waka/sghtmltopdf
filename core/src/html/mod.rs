@@ -7,8 +7,8 @@ mod encoding;
 
 pub(crate) use dom::collect_anchor_targets_in_subtree;
 pub use dom::{
-    collect_anchor_targets, find_base_href, find_document_title, is_stylesheet_link, Children, Dom,
-    Node, NodeData, NodeId,
+    collect_anchor_targets, find_base_href, find_document_language, find_document_title,
+    is_stylesheet_link, Children, Dom, Node, NodeData, NodeId,
 };
 
 /// Maximum DOM depth accepted. Deeper input is rejected with an error.

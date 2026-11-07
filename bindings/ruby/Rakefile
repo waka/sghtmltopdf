@@ -20,13 +20,13 @@ end
 
 ExtensionTask.new("sghtmltopdf", GEMSPEC) do |ext|
   ext.lib_dir = "lib/sghtmltopdf"
-  # oxidize-rb/cross-gem-action
-  ext.cross_compile = true
-  ext.cross_platform = %w[
-    x86_64-linux aarch64-linux
-    x86_64-linux-musl aarch64-linux-musl
-    arm64-darwin x86_64-darwin
-  ]
+end
+
+# Cross-built extensions are already staged for each Ruby ABI. The packaging
+# task must not also compile an extension for the container's host Ruby.
+if ENV["RUBY_TARGET"]
+  host_binary = File.join("lib", "sghtmltopdf", "sghtmltopdf.#{RbConfig::CONFIG["DLEXT"]}")
+  Rake::Task[host_binary].clear if Rake::Task.task_defined?(host_binary)
 end
 
 begin
@@ -41,7 +41,7 @@ end
 # The `release` task from `bundler/gem_tasks` does:
 #   build one source gem -> create a git tag -> push
 # but cross-building in CI needs:
-#   build one source gem -> create a git tag -> push -> build six precompiled gems -> push
+#   build one source gem -> create a git tag -> push -> build precompiled gems -> push
 # so we replace the `release` task.
 Rake::Task["release"].clear
 

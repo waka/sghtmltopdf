@@ -10,6 +10,19 @@ module Sghtmltopdf
   #
   # It is a pure Ruby class with no dependency on Rails, so it can be unit tested without Rails.
   class Renderer
+    module RenderToString
+      def render_to_string(*args, &block)
+        options = args.first.is_a?(Hash) ? args.first : args[1]
+        return super unless options.is_a?(Hash) && options.key?(:pdf)
+
+        normalized_args = args.map { |arg| arg.is_a?(Hash) ? arg.dup : arg }
+        options = _normalize_args(*normalized_args, &block)
+        renderer = Renderer.new(options.delete(:pdf), options, default_name: action_name)
+        html = super(**renderer.render_options, &block)
+        renderer.body_for(html)
+      end
+    end
+
     # The keys passed straight to `render_to_string`.
     RAILS_RENDER_KEYS = %i[
       action assigns body collection file formats handlers html inline layout
@@ -39,6 +52,7 @@ module Sghtmltopdf
     # Register the renderer with `ActionController::Renderers.add(:pdf)`.
     # Called from the Railtie's Action Controller load hook (`on_load`).
     def self.register!
+      ::ActionController::Rendering.prepend(RenderToString)
       ::ActionController::Renderers.add(:pdf) do |name, options|
         renderer = ::Sghtmltopdf::Renderer.new(name, options, default_name: action_name)
         html = render_to_string(**renderer.render_options)

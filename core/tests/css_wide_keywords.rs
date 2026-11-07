@@ -151,7 +151,7 @@ fn inherit_on_an_inherited_property_overrides_the_elements_own_rules() {
         ["a", "th"],
     );
     assert_eq!(a.color, RED);
-    assert_eq!(th.font_weight, FontWeight::Normal);
+    assert_eq!(th.font_weight, FontWeight::NORMAL);
     assert_eq!(th.text_align, TextAlign::Right);
 }
 

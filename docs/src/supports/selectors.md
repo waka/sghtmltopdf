@@ -47,7 +47,7 @@
 
 | 擬似要素 | 対応 | 備考 |
 | - | - | - |
-| `::before` / `::after` | ⚠️ | `content`による生成テキストのみ。ホスト要素の計算スタイルをそのまま流用して描画し、擬似要素専用のボックススタイル(margin/padding/display等)は持たない。ブロック子を持つ要素では生成されない |
+| `::before` / `::after` | ⚠️ | 要素の最初と最後の子として、それ自身のボックスを生成する。擬似要素に書いた宣言(`font-size`・`color`・`display`・`margin`・`position`・`transform`等)が適用され、書かれていないプロパティは要素から継承する。ブロック子を持つ要素でも生成され、`display: none`なら生成しない。擬似要素自身の`counter-reset`/`counter-increment`は適用されない。表(`display: table`)の要素には生成されない |
 | `::first-letter` | ⚠️ | `font-family`/`font-size`/`font-weight`/`font-style`/`color`/`text-decoration-line`/`text-transform`のみ上書きできる(`float`・box model系は非対応) |
 | `::first-line` | ❌ | パースエラー |
 | `::backdrop` / `::file-selector-button` / `::placeholder` / `::selection` / `::marker` | ⚠️ | パースは通るが常に非マッチ。静的なPDFには最上位レイヤー・ファイル入力・空のフォーム欄・選択範囲がなく、`::marker`も専用のスタイルを持たない(リストマーカーは`list-style-*`で決まる)ため。Tailwind v4のpreflightにある`*, ::after, ::before, ::backdrop, ::file-selector-button { ... }`のようなセレクタリストの他の項が捨てられないようにするためのもの |
@@ -137,7 +137,8 @@
 | `@charset` | ❌ | 入力はUTF-8前提 |
 | `@layer` | ⚠️ | ブロックの中のルールを書かれた順にトップレベルへ展開する(`@layer a { .x {} }`は`.x {}`と同じ)。レイヤーの優先順位は実装せず、通常のカスケード(詳細度・後勝ち)で決まる。`@layer a, b;`の順序宣言は無視する。Tailwind v4のように出力全体を`@layer`で包むCSSをそのまま渡せる |
 | `@property` | ⚠️ | `syntax`・`inherits`・`initial-value`を読む(`syntax: "*"`では`initial-value`を省略可)。不正なルールは全体を無視し、同名では文書順で最後の有効な登録が勝つ。適用される`@media`と`@layer`の中でも使える。`syntax`は受理するが現在はすべて`"*"`として扱うため、型検査と宣言元要素での`em`等の計算は行わない |
-| `@supports` / `@keyframes` / `@namespace` / `@counter-style` / `@container` | ❌ | ブロックごと無視される |
+| `@supports` | ⚠️ | 条件を評価し、真ならブロックの中のルールを`@media`と同じようにトップレベルへ展開する。`(property: value)`は宣言パーサーが受理すれば真(値に`var()`を含む場合は既知のプロパティなら真、`!important`は付けてもよい)、`selector(...)`はセレクターが解釈できれば真。`not`・`and`・`or`・括弧で組み合わせられる(`and`と`or`は括弧なしでは混ぜられない)。`font-tech()`・`font-format()`など未知の関数は偽。`@media`・`@layer`とは入れ子にできる |
+| `@keyframes` / `@namespace` / `@counter-style` / `@container` | ❌ | ブロックごと無視される |
 
 ## ストリーミングモード固有の制約
 

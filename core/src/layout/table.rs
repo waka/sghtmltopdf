@@ -21,16 +21,16 @@ use std::rc::Rc;
 use crate::fonts::FontCollection;
 use crate::html::NodeId;
 use crate::style::{
-    BoxSizing, CaptionSide, ComputedStyle, FlexDirection, LengthPercentage, LengthPercentageOrAuto,
-    MaxSize, RepeatCount, TableLayout, TrackComponent, TrackList, VerticalAlign,
+    CaptionSide, ComputedStyle, FlexDirection, LengthPercentage, LengthPercentageOrAuto, MaxSize,
+    RepeatCount, TableLayout, TrackComponent, TrackList, VerticalAlign,
 };
 
 use super::block::resolve_lpa_or_zero;
 use super::block::{
     apply_replaced_element_auto_size, box_style, clamp_used_width, layout_box,
     layout_box_with_forced_width, resolve_border, resolve_lp, resolve_padding, shift_box_y,
-    shift_box_y_in_place, shift_content_vertical, LaidOutBox, LaidOutContent, LaidOutTable,
-    LaidOutTableRow, PosCtx,
+    shift_box_y_in_place, shift_content_vertical, to_content_box_width, CollapsedBoundary,
+    LaidOutBox, LaidOutContent, LaidOutTable, LaidOutTableRow, PosCtx,
 };
 use super::box_tree::{BoxContent, ImageBoxContent, LayoutBox, TableBox, TableCell, TableRow};
 use super::float_ctx::FloatContext;
@@ -43,7 +43,9 @@ const UNCONSTRAINED_WIDTH: f32 = f32::MAX / 4.0;
 /// overall height. `table_layout` is the computed `table-layout` of the `display: table`
 /// element itself (a non-inherited property, read from that element's own style by the
 /// caller). `h_spacing`/`v_spacing` are the resolved `border-spacing` values (the caller
-/// collapses them to 0 under `border-collapse: collapse`).
+/// collapses them to 0 under `border-collapse: collapse`). `collapse` is whether the table
+/// uses `border-collapse: collapse`, under which row and row-group borders take space between
+/// the rows (see [`collapsed_boundaries`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn layout_table(
     table: &TableBox,
@@ -53,6 +55,7 @@ pub(super) fn layout_table(
     table_layout: TableLayout,
     h_spacing: f32,
     v_spacing: f32,
+    collapse: bool,
     x: f32,
     y: f32,
     pos: &mut PosCtx,
@@ -106,6 +109,7 @@ pub(super) fn layout_table(
                 caption,
                 caption_side: table.caption_side,
                 rows: Vec::new(),
+                trailing_gap: 0.0,
             },
             total_height,
             containing_width,
@@ -246,10 +250,21 @@ pub(super) fn layout_table(
     }
 
     // Pass 4: find each row's absolute Y position (cumulative from the start of the row group, `v_spacing` before and after included).
+    // `row_y[r]` is where row `r - 1` ends (after its `v_spacing`) and `row_top[r]` where row
+    // `r` starts; they differ by the space a collapsed row or row-group border takes there.
+    let boundaries = if collapse {
+        collapsed_boundaries(table, &grid, styles)
+    } else {
+        vec![CollapsedBoundary::default(); row_count + 1]
+    };
+    let row_gaps: Vec<f32> = boundaries.iter().map(CollapsedBoundary::gap).collect();
     let mut row_y = vec![0.0f32; row_count + 1];
+    let mut row_top = vec![0.0f32; row_count + 1];
     row_y[0] = rows_start_y;
+    row_top[0] = rows_start_y + row_gaps[0];
     for r in 0..row_count {
-        row_y[r + 1] = row_y[r] + row_natural[r] + v_spacing;
+        row_y[r + 1] = row_top[r] + row_natural[r] + v_spacing;
+        row_top[r + 1] = row_y[r + 1] + row_gaps[r + 1];
     }
 
     // Pass 5: translate each cell from its provisional position (y=0) to its real row
@@ -257,12 +272,17 @@ pub(super) fn layout_table(
     // distributed is decided by the computed `vertical-align` (four cases,
     // top/middle/bottom/baseline, CSS2.1 17.5.3).
     let mut laid_rows = Vec::with_capacity(table.rows.len());
-    for (row, (row_cells, laid_row)) in table.rows.iter().zip(grid.iter().zip(laid_grid)) {
+    for (r, (row, (row_cells, laid_row))) in table
+        .rows
+        .iter()
+        .zip(grid.iter().zip(laid_grid))
+        .enumerate()
+    {
         let mut laid_cells: Vec<LaidOutBox> = row_cells
             .iter()
             .zip(laid_row)
             .map(|(gc, mut laid_cell)| {
-                shift_box_y_in_place(&mut laid_cell, -row_y[gc.row_index]);
+                shift_box_y_in_place(&mut laid_cell, -row_top[gc.row_index]);
                 laid_cell
             })
             .collect();
@@ -280,7 +300,7 @@ pub(super) fn layout_table(
         for (cell, gc) in laid_cells.iter_mut().zip(row_cells.iter()) {
             let span_end = (gc.row_index + gc.cell.rowspan).min(row_count);
             let final_height = if span_end > gc.row_index {
-                row_y[span_end] - row_y[gc.row_index] - v_spacing
+                row_y[span_end] - row_top[gc.row_index] - v_spacing
             } else {
                 0.0
             };
@@ -319,10 +339,18 @@ pub(super) fn layout_table(
             cells: laid_cells,
             section: row.section,
             group: row.group,
+            first_in_group: r == 0 || table.rows[r - 1].group != row.group,
+            last_in_group: table
+                .rows
+                .get(r + 1)
+                .is_none_or(|next| next.group != row.group),
+            boundary_above: boundaries[r],
+            break_above: None,
+            break_below: None,
         });
     }
 
-    let rows_height = row_y[row_count] - rows_block_start;
+    let rows_height = row_top[row_count] - rows_block_start;
     let total_height = caption_height + rows_height;
 
     let final_caption = match (laid_caption, caption_is_top) {
@@ -340,12 +368,55 @@ pub(super) fn layout_table(
             caption: final_caption,
             caption_side: table.caption_side,
             rows: laid_rows,
+            trailing_gap: boundaries[row_count].gap(),
         },
         total_height,
         // The columns can add up to more than the width offered (min-content floors), in which
         // case the table is wider than its box.
         containing_width.max(col_x[column_count]),
     )
+}
+
+/// Under `border-collapse: collapse`, the borders meeting at each row boundary: `[b]` is the
+/// boundary above row `b` (`[row_count]` the one below the last row).
+fn collapsed_boundaries(
+    table: &TableBox,
+    grid: &[Vec<GridCell<'_>>],
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+) -> Vec<CollapsedBoundary> {
+    let rows = &table.rows;
+    let row_count = rows.len();
+    let style_of = |node: Option<NodeId>| node.and_then(|n| styles.get(&n));
+    let mut boundaries = vec![CollapsedBoundary::default(); row_count + 1];
+    for (b, boundary) in boundaries.iter_mut().enumerate() {
+        if let Some(upper) = b.checked_sub(1).map(|r| &rows[r]) {
+            let last_in_group = rows.get(b).is_none_or(|next| next.group != upper.group);
+            let groups = style_of(upper.group).filter(|_| last_in_group);
+            for s in style_of(upper.node).into_iter().chain(groups) {
+                boundary.upper = boundary.upper.max(resolve_border(s).bottom);
+            }
+        }
+        if let Some(lower) = rows.get(b) {
+            let first_in_group = b == 0 || rows[b - 1].group != lower.group;
+            let groups = style_of(lower.group).filter(|_| first_in_group);
+            for s in style_of(lower.node).into_iter().chain(groups) {
+                boundary.lower = boundary.lower.max(resolve_border(s).top);
+            }
+        }
+    }
+    if boundaries.iter().all(|b| b.upper <= 0.0 && b.lower <= 0.0) {
+        return boundaries;
+    }
+    // Collected in one pass over the cells rather than per boundary, which on a long table
+    // with a border on every row was quadratic.
+    for gc in grid.iter().flatten() {
+        let border = resolve_border(&box_style(&gc.cell.content, styles));
+        let end = (gc.row_index + gc.cell.rowspan).min(row_count);
+        boundaries[end].upper_cells = boundaries[end].upper_cells.max(border.bottom);
+        let start = &mut boundaries[gc.row_index];
+        start.lower_cells = start.lower_cells.max(border.top);
+    }
+    boundaries
 }
 
 /// The computed `vertical-align` of the cell (`display: table-cell`) itself.
@@ -750,9 +821,11 @@ fn cell_content_width(
 
 /// One child box's natural or min-content outer width (per `basis`): its content width plus its
 /// own padding, border and margins. A definite `width` in px replaces the measured content width
-/// (an empty icon box with `width: 10px` still takes 10px), and `box-sizing: border-box` is
-/// honoured. A percentage resolves against 0, the basis width being unknown at this point
-/// (the same simplification as `natural_cell_width`).
+/// (an empty icon box with `width: 10px` still takes 10px), the result is clamped by a px
+/// `min-width`/`max-width` (a pure-length `calc()` counts as px), and `box-sizing: border-box`
+/// is honoured. A `width`, `min-width` or `max-width` with a percentage in it is ignored, the
+/// basis width being unknown at this point, and a
+/// percentage padding resolves against 0 (the same simplification as `natural_cell_width`).
 fn outer_content_width(
     child: &LayoutBox,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
@@ -763,19 +836,48 @@ fn outer_content_width(
     let padding = resolve_padding(&style, 0.0);
     let border = resolve_border(&style);
     let pb_x = padding.left + padding.right + border.left + border.right;
-    let content = match style.width {
-        LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(px)) => {
-            if style.box_sizing == BoxSizing::BorderBox {
-                (px - pb_x).max(0.0)
-            } else {
-                px
-            }
-        }
-        _ => measure_content_width(child, styles, fonts, basis),
+    let content = match definite_lpa_px(style.width) {
+        Some(px) => to_content_box_width(&style, pb_x, px),
+        None => measure_content_width(child, styles, fonts, basis),
     };
+    let content = clamp_by_definite_px(content, &style, pb_x);
     let margin_x =
         resolve_lpa_or_zero(style.margin_left, 0.0) + resolve_lpa_or_zero(style.margin_right, 0.0);
     content + pb_x + margin_x
+}
+
+/// Clamp a content width by `max-width` then `min-width` (so `min-width` wins, as in
+/// `clamp_used_width`) while measuring. Only [`definite_px`] values count: a percentage has no
+/// basis yet.
+fn clamp_by_definite_px(content: f32, style: &ComputedStyle, pb_x: f32) -> f32 {
+    let mut content = content;
+    if let MaxSize::LengthPercentage(lp) = style.max_width {
+        if let Some(px) = definite_px(lp) {
+            content = content.min(to_content_box_width(style, pb_x, px));
+        }
+    }
+    if let Some(px) = definite_px(style.min_width) {
+        content = content.max(to_content_box_width(style, pb_x, px));
+    }
+    content
+}
+
+/// The px value of a length that needs no percentage basis: a plain length, or a `calc()` with
+/// no percentage in it (`calc(100px - 1em)` resolves to `Calc` all the same).
+fn definite_px(lp: LengthPercentage) -> Option<f32> {
+    match lp {
+        LengthPercentage::Length(px) => Some(px),
+        LengthPercentage::Calc { px, percent: 0.0 } => Some(px),
+        _ => None,
+    }
+}
+
+/// [`definite_px`] for a value that may be `auto`.
+fn definite_lpa_px(lpa: LengthPercentageOrAuto) -> Option<f32> {
+    match lpa {
+        LengthPercentageOrAuto::LengthPercentage(lp) => definite_px(lp),
+        LengthPercentageOrAuto::Auto => None,
+    }
 }
 
 /// The number of tracks `grid-template-columns` declares.
@@ -971,37 +1073,27 @@ fn compute_content_width(
 /// with the callers does not distinguish min-content from max-content (see `layout::flex`).
 fn replaced_natural_content_width(style: &ComputedStyle, image: &ImageBoxContent) -> f32 {
     let mut style = style.clone();
-    let is_definite = |lp: LengthPercentage| matches!(lp, LengthPercentage::Length(_));
-    if let LengthPercentageOrAuto::LengthPercentage(lp) = style.width {
-        if !is_definite(lp) {
-            style.width = LengthPercentageOrAuto::Auto;
-        }
-    }
+    // Definite values (a pure-length `calc()` too) become plain lengths, the rest their initial value.
+    let px = |px: f32| LengthPercentage::Length(px);
+    style.width = definite_lpa_px(style.width).map_or(LengthPercentageOrAuto::Auto, |w| {
+        LengthPercentageOrAuto::LengthPercentage(px(w))
+    });
     if let MaxSize::LengthPercentage(lp) = style.max_width {
-        if !is_definite(lp) {
-            style.max_width = MaxSize::None;
-        }
+        style.max_width =
+            definite_px(lp).map_or(MaxSize::None, |w| MaxSize::LengthPercentage(px(w)));
     }
-    if !is_definite(style.min_width) {
-        style.min_width = LengthPercentage::Length(0.0);
-    }
+    style.min_width = px(definite_px(style.min_width).unwrap_or(0.0));
     apply_replaced_element_auto_size(&mut style, image, 0.0);
     let padding = resolve_padding(&style, 0.0);
     let border = resolve_border(&style);
-    let padding_lr = padding.left + padding.right;
-    let border_lr = border.left + border.right;
+    let pb_x = padding.left + padding.right + border.left + border.right;
     let LengthPercentageOrAuto::LengthPercentage(LengthPercentage::Length(width)) = style.width
     else {
         // A settled `height` with no intrinsic ratio (the decode failed) leaves the width
         // `auto`. The final layout then shrinks to this same measure, so keep the natural width.
         return image.image.as_ref().map_or(0.0, |img| img.width);
     };
-    let width = if style.box_sizing == BoxSizing::BorderBox {
-        (width - padding_lr - border_lr).max(0.0)
-    } else {
-        width
-    };
-    clamp_used_width(&style, 0.0, padding_lr, border_lr, width)
+    clamp_by_definite_px(to_content_box_width(&style, pb_x, width), &style, pb_x)
 }
 
 #[cfg(test)]
@@ -1365,6 +1457,68 @@ mod tests {
             "table height should include leading/trailing spacing: {}",
             table.layout.content.height
         );
+    }
+
+    #[test]
+    fn collapsed_row_and_row_group_borders_take_space_between_the_rows() {
+        // A browser gives a collapsed row or row-group border its width between the rows.
+        let html_src = r#"<table>
+            <tbody><tr class="b"><td>a</td></tr><tr><td>b</td></tr></tbody>
+            <tbody class="g"><tr><td>c</td></tr></tbody>
+        </table>"#;
+        let base = "body { margin: 0; } table { border-collapse: collapse; } td { height: 20px; }";
+        let plain = row_tops(&layout_table_html(html_src, base, 700.0));
+        let bordered = row_tops(&layout_table_html(
+            html_src,
+            &format!(
+                "{base} tr.b {{ border-bottom: 4px solid }} tbody.g {{ border-top: 3px solid }}"
+            ),
+            700.0,
+        ));
+        assert!(
+            (bordered[0] - plain[0]).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+        assert!(
+            (bordered[1] - plain[1] - 4.0).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+        assert!(
+            (bordered[2] - plain[2] - 7.0).abs() < 0.01,
+            "{plain:?} {bordered:?}"
+        );
+    }
+
+    #[test]
+    fn collapsed_row_border_takes_no_more_space_than_the_cells_borders_already_do() {
+        let html_src = r#"<table><tr class="b"><td>a</td></tr><tr><td>b</td></tr></table>"#;
+        let base = "body { margin: 0; } table { border-collapse: collapse; } td { height: 20px; }";
+        let cells = row_tops(&layout_table_html(
+            html_src,
+            &format!("{base} td {{ border-bottom: 4px solid }}"),
+            700.0,
+        ));
+        let both = row_tops(&layout_table_html(
+            html_src,
+            &format!(
+                "{base} td {{ border-bottom: 4px solid }} tr.b {{ border-bottom: 3px solid }}"
+            ),
+            700.0,
+        ));
+        assert_eq!(cells, both);
+    }
+
+    #[test]
+    fn separate_model_rows_ignore_row_borders_in_layout() {
+        let html_src = r#"<table><tr class="b"><td>a</td></tr><tr><td>b</td></tr></table>"#;
+        let base = "body { margin: 0; } table { border-spacing: 0; } td { height: 20px; }";
+        let plain = row_tops(&layout_table_html(html_src, base, 700.0));
+        let bordered = row_tops(&layout_table_html(
+            html_src,
+            &format!("{base} tr.b {{ border-bottom: 4px solid }}"),
+            700.0,
+        ));
+        assert_eq!(plain, bordered);
     }
 
     #[test]

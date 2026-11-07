@@ -1588,7 +1588,7 @@ pub(super) fn shape_run(
     // (`fonts::FontCollection::select_for_char` prefers a real Bold/Italic face, so where one
     // exists among `--font`/`@font-face`/the system fonts, the synthesis is skipped here).
     // the synthesis is skipped here).
-    let needs_synthetic_bold = style.font_weight == FontWeight::Bold && !fonts.is_bold(font_index);
+    let needs_synthetic_bold = style.font_weight.is_bold() && !fonts.is_bold(font_index);
     let needs_synthetic_italic =
         style.font_style == FontStyle::Italic && !fonts.is_italic(font_index);
     let mut line_height = resolve_line_height(style, Some(font));
@@ -1796,12 +1796,16 @@ pub(super) fn finish_line(
     // Only shifted runs are considered, and only for how far they stick out of the line box.
     // A run with a `baseline_shift` of 0 does not affect the line's height, so in a document
     // that does not use `vertical-align` the line heights and baselines are exactly as before.
+    // What sticks out is the run's inline box, which is its `line-height` tall (CSS 2.1
+    // §10.8.1), not its glyph extent: under a `line-height` smaller than the font's ascent
+    // plus descent, measuring the glyph extent would grow the line by the negative leading.
     for run in runs.iter().filter(|r| {
         r.baseline_shift != 0.0
             && !matches!(r.vertical_align, VerticalAlign::Top | VerticalAlign::Bottom)
     }) {
-        above = above.max(run.ascent + run.baseline_shift);
-        below = below.max(run.descent - run.baseline_shift);
+        let half_leading = (run.line_height - (run.ascent + run.descent)) / 2.0;
+        above = above.max(run.ascent + half_leading + run.baseline_shift);
+        below = below.max(run.descent + half_leading - run.baseline_shift);
     }
 
     // A `top`/`bottom` box only has to fit in the line; counting it as ascent would push the
@@ -3326,5 +3330,33 @@ mod tests {
             "run center {center_of_run} should sit at half the x-height {}",
             x_height / 2.0
         );
+    }
+
+    #[test]
+    fn a_shifted_run_grows_the_line_by_its_line_height_box_not_its_glyph_extent() {
+        // With one font, the line is the `line-height` box of its text, and a run shifted
+        // with `vertical-align` adds only its shift on one side, whether the leading is
+        // negative (Bootstrap's 16px on 14px text) or positive.
+        let fonts = dejavu_only();
+        for line_height in [10.0_f32, 40.0] {
+            let (_, spans, styles) = spans_for(
+                "a<span>b</span>",
+                &format!(
+                    "p {{ font-size: 14px; line-height: {line_height}px; }} \
+                     span {{ vertical-align: middle; }}"
+                ),
+            );
+            let lines = layout_inline_content(&spans, &styles, &fonts, 500.0, 0.0, 0.0, None);
+            let line = &lines[0];
+            let run = line.runs.iter().find(|r| r.text == "b").unwrap();
+
+            assert!(run.baseline_shift != 0.0);
+            assert!(
+                (line.rect.height - (line_height + run.baseline_shift.abs())).abs() < 0.01,
+                "line-height {line_height}px: line {} should be {}",
+                line.rect.height,
+                line_height + run.baseline_shift.abs()
+            );
+        }
     }
 }

@@ -13,13 +13,22 @@ The engine runs inside your process through a native extension (magnus + rb-sys)
 gem "sghtmltopdf"
 ```
 
-Precompiled native gems are published for `x86_64-linux`, `aarch64-linux`, `x86_64-linux-musl`, `aarch64-linux-musl`, `arm64-darwin`, and `x86_64-darwin`.
+Precompiled native gems are published for `x86_64-linux`, `aarch64-linux`, `x86_64-linux-musl`, `aarch64-linux-musl`, `arm64-darwin`, `x86_64-darwin`, and Windows `x64-mingw-ucrt`.
 There is no build step on those platforms.
 
-Elsewhere (Windows) the gem cannot run in-process — the source gem does not carry the Rust core and will refuse to build with an explanatory message.
+Elsewhere the source gem does not carry the Rust core and will refuse to build with an explanatory message.
 Point those environments at a separate `sghtmltopdf server` process instead; see [Delegating to a server](#delegating-to-a-server).
 
-Requires Ruby >= 3.2.
+Requires Ruby >= 3.2. The precompiled gems bundle extensions for Ruby 3.2, 3.3,
+3.4, and 4.0. On Windows, use 64-bit RubyInstaller UCRT (`x64-mingw-ucrt`).
+
+For contributors building from a repository checkout on Windows, use RubyInstaller
+with its Devkit, the Rust GNU toolchain (`stable-x86_64-pc-windows-gnu`), and LLVM
+with `libclang.dll`. Set `RUSTUP_TOOLCHAIN=stable-x86_64-pc-windows-gnu`, set
+`LIBCLANG_PATH` to the LLVM `bin` directory, add it to `PATH`, and set
+`BINDGEN_EXTRA_CLANG_ARGS=--target=x86_64-w64-windows-gnu`.
+Run the build through `ridk exec bundle exec rake compile`. The precompiled gem
+does not need these tools.
 
 ## Usage
 
@@ -89,6 +98,8 @@ end
 ```
 
 View-rendering keys (`template`, `layout`, `locals`, …) go to `render_to_string`, response keys (`filename`, `disposition`, `status`) go to `send_data`, `show_as_html: true` returns the HTML instead of a PDF, and everything else is passed to the converter.
+
+`render_to_string(pdf: "invoice", template: "invoices/show")` returns PDF bytes without setting the controller response. You can then pass those bytes to `send_data` or save them elsewhere; response options such as `filename`, `disposition`, and `status` only apply to `render pdf:`.
 Converter keys are flat CLI flag names, so wicked_pdf's nested `margin: {top: 10}` becomes `margin_top: "10mm"` (with the unit spelled out); the [migration guide](https://waka.github.io/sghtmltopdf/en/migration/wicked-pdf.html) maps every key one by one.
 
 ### Assets

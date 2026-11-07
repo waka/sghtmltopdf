@@ -12,7 +12,8 @@ use selectors::parser::{
 };
 
 use super::custom_properties::{
-    parse_declaration_or_defer, parse_property_rule_block, PropertyRegistration,
+    is_known_property, parse_declaration_or_defer, parse_property_rule_block, split_important,
+    PropertyRegistration,
 };
 use super::font_face::{parse_font_face_block, FontFaceRule};
 use super::page_rule::{parse_page_rule_block, parse_page_selector, PageRule};
@@ -321,6 +322,10 @@ enum TopLevelAtRulePrelude {
     /// are simply hoisted to the top level in source order, so the layer name is
     /// not kept (#20).
     Layer,
+    /// `applies` is what [`supports_condition`] decided (#89).
+    Supports {
+        applies: bool,
+    },
     Page(super::page_rule::PageSelector),
     Property(Rc<str>),
 }
@@ -345,6 +350,11 @@ impl<'i> AtRuleParser<'i> for TopLevelRuleParser {
         if name.eq_ignore_ascii_case("layer") {
             skip_layer_name_list(input)?;
             return Ok(TopLevelAtRulePrelude::Layer);
+        }
+        if name.eq_ignore_ascii_case("supports") {
+            let applies = supports_condition(input)?;
+            input.expect_exhausted()?;
+            return Ok(TopLevelAtRulePrelude::Supports { applies });
         }
         if name.eq_ignore_ascii_case("page") {
             let selector = parse_page_selector(input)?;
@@ -394,16 +404,116 @@ impl<'i> AtRuleParser<'i> for TopLevelRuleParser {
             // The contents of an `@media` block that did not match need only be skipped
             // (`input` is already scoped to this block, so returning without consuming
             // anything still lets the caller advance correctly to the end of the block).
-            TopLevelAtRulePrelude::Media { applies: false } => Ok(TopLevelRule::Nested(Vec::new())),
-            TopLevelAtRulePrelude::Media { applies: true } | TopLevelAtRulePrelude::Layer => {
-                Ok(TopLevelRule::Nested(parse_nested_rules(input)))
+            TopLevelAtRulePrelude::Media { applies: false }
+            | TopLevelAtRulePrelude::Supports { applies: false } => {
+                Ok(TopLevelRule::Nested(Vec::new()))
             }
+            TopLevelAtRulePrelude::Media { applies: true }
+            | TopLevelAtRulePrelude::Supports { applies: true }
+            | TopLevelAtRulePrelude::Layer => Ok(TopLevelRule::Nested(parse_nested_rules(input))),
         }
     }
 }
 
-/// Parses the contents of a `@media`/`@layer` block with the same grammar as
-/// the top level. Further `@media`/`@layer` may be nested inside.
+/// Evaluates an `@supports` condition: `not <in-parens>`, or `<in-parens>` joined by
+/// `and` or by `or` (the two cannot be mixed without parentheses).
+fn supports_condition<'i, 't>(input: &mut Parser<'i, 't>) -> Result<bool, ParseError<'i, ()>> {
+    if input
+        .try_parse(|input| input.expect_ident_matching("not"))
+        .is_ok()
+    {
+        return Ok(!supports_in_parens(input)?);
+    }
+    let mut result = supports_in_parens(input)?;
+    let mut joiner: Option<bool> = None; // Some(true) for `and`, Some(false) for `or`
+    while !input.is_exhausted() {
+        let is_and = if input
+            .try_parse(|input| input.expect_ident_matching("and"))
+            .is_ok()
+        {
+            true
+        } else {
+            input.expect_ident_matching("or")?;
+            false
+        };
+        if *joiner.get_or_insert(is_and) != is_and {
+            return Err(input.new_custom_error(()));
+        }
+        let next = supports_in_parens(input)?;
+        result = if is_and {
+            result && next
+        } else {
+            result || next
+        };
+    }
+    Ok(result)
+}
+
+/// One `<supports-in-parens>`: `( <condition> )`, `( <declaration> )` or `selector( )`.
+/// Any other function, and anything in parentheses that is neither a condition nor a
+/// declaration (`font-tech()`, `font-format()`, ...), is not supported.
+fn supports_in_parens<'i, 't>(input: &mut Parser<'i, 't>) -> Result<bool, ParseError<'i, ()>> {
+    let token = input.next()?.clone();
+    match token {
+        Token::ParenthesisBlock => input.parse_nested_block(|input| {
+            let supported = if let Ok(supported) = input.try_parse(supports_declaration) {
+                supported
+            } else {
+                input
+                    .try_parse(|input| {
+                        let supported = supports_condition(input)?;
+                        input.expect_exhausted()?;
+                        Ok::<_, ParseError<'i, ()>>(supported)
+                    })
+                    .unwrap_or(false)
+            };
+            drain(input);
+            Ok(supported)
+        }),
+        Token::Function(name) if name.eq_ignore_ascii_case("selector") => {
+            input.parse_nested_block(|input| {
+                let supported =
+                    SelectorList::parse(&SelectorParser, input, ParseRelative::No).is_ok();
+                drain(input);
+                Ok(supported)
+            })
+        }
+        Token::Function(_) => input.parse_nested_block(|input| {
+            drain(input);
+            Ok(false)
+        }),
+        _ => Err(input.new_custom_error(())),
+    }
+}
+
+/// `property: value`, true when the declaration parser accepts it. Fails (without
+/// consuming a decision) when the block does not start with `ident :`.
+fn supports_declaration<'i, 't>(input: &mut Parser<'i, 't>) -> Result<bool, ParseError<'i, ()>> {
+    let name = input.expect_ident_cloned()?;
+    input.expect_colon()?;
+    // A `var()` value is deferred without being parsed, so an unknown property would be
+    // accepted with it; the name is checked separately.
+    if !name.starts_with("--") && !is_known_property(&name) {
+        drain(input);
+        return Ok(false);
+    }
+    // `!important` is allowed in the condition, but the declaration parser does not
+    // take it on ordinary properties, so the value is parsed without it.
+    let start = input.position();
+    drain(input);
+    let (value, _) = split_important(input.slice_from(start));
+    let mut value_input = ParserInput::new(value);
+    let mut value_parser = Parser::new(&mut value_input);
+    let name = CowRcStr::from(name.to_string());
+    Ok(parse_declaration_or_defer(&name, &mut value_parser).is_ok())
+}
+
+fn drain(input: &mut Parser<'_, '_>) {
+    while input.next_including_whitespace_and_comments().is_ok() {}
+}
+
+/// Parses the contents of a `@media`/`@layer`/`@supports` block with the same grammar
+/// as the top level. Further `@media`/`@layer`/`@supports` may be nested inside.
 fn parse_nested_rules<'i, 't>(input: &mut Parser<'i, 't>) -> Vec<TopLevelRule> {
     let mut rule_parser = TopLevelRuleParser;
     StyleSheetParser::new(input, &mut rule_parser)
@@ -1145,11 +1255,54 @@ mod layer_tests {
         assert!(colors[2].contains("red: 3,"), "{colors:?}");
     }
 
-    /// Unsupported at-rules other than `@layer` are still ignored block and all.
+    /// #89: `@supports` is evaluated; the issue's conditions are true for supported
+    /// declarations, and `not`/`and`/`or`/parentheses/`selector()` follow CSS Conditional.
+    #[test]
+    fn supports_conditions_are_evaluated() {
+        let body = "{ div { color: rgb(1, 2, 3); } }";
+        for (cond, expected) in [
+            ("(display: grid)", true),
+            ("(gap: 1px)", true),
+            ("(color: var(--x))", true),
+            ("(no-such-property: var(--x))", false),
+            ("(color: red !important)", true),
+            ("(--custom: 1)", true),
+            ("(display: nonsense-value)", false),
+            ("(no-such-property: 1)", false),
+            ("not (display: nonsense-value)", true),
+            ("not (display: grid)", false),
+            ("(display: grid) and (color: red)", true),
+            ("(display: grid) and (display: nonsense-value)", false),
+            ("(display: nonsense-value) or (color: red)", true),
+            ("(display: grid) and (color: red) or (width: 1px)", false), // mixed: invalid
+            ("((display: grid) and (not (color: nonsense-value)))", true),
+            ("selector(div > p)", true),
+            ("selector(:::)", false),
+            ("font-tech(color-COLRv1)", false),
+            ("font-format(woff2)", false),
+            ("unknown-fn(x)", false),
+        ] {
+            let sheet = parse_stylesheet(&format!("@supports {cond} {body}"));
+            assert_eq!(sheet.rules.len(), usize::from(expected), "{cond}");
+        }
+    }
+
+    #[test]
+    fn supports_nests_with_media_and_layer_either_way() {
+        for css in [
+            "@supports (display: grid) { @media print { div { color: rgb(1, 2, 3); } } }",
+            "@media print { @supports (display: grid) { div { color: rgb(1, 2, 3); } } }",
+            "@supports (display: grid) { @layer a { div { color: rgb(1, 2, 3); } } }",
+            "@layer a { @supports (display: grid) { div { color: rgb(1, 2, 3); } } }",
+        ] {
+            assert_eq!(parse_stylesheet(css).rules.len(), 1, "{css}");
+        }
+    }
+
+    /// Unsupported at-rules other than `@layer` and `@supports` are still ignored block and all.
     #[test]
     fn other_unsupported_at_rule_blocks_are_still_dropped() {
         for css in [
-            "@supports (display: grid) { div { color: rgb(1, 2, 3); } }",
             "@container (min-width: 1px) { div { color: rgb(1, 2, 3); } }",
             "@keyframes spin { from { color: rgb(1, 2, 3); } }",
         ] {

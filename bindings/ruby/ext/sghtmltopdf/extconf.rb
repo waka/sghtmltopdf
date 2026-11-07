@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require "mkmf"
-require "rb_sys/mkmf"
-
 core = File.expand_path("../../../../core", __dir__)
 unless File.exist?(File.join(core, "Cargo.toml"))
   abort <<~MESSAGE
@@ -13,9 +10,13 @@ unless File.exist?(File.join(core, "Cargo.toml"))
     so a build from source was attempted, but the source gem does not include the
     Rust core and cannot be built.
 
-    Supported platforms: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin / x86_64-darwin
+    Supported platforms: x86_64-linux / aarch64-linux / x86_64-linux-musl / aarch64-linux-musl / arm64-darwin / x86_64-darwin / x64-mingw-ucrt
+    Supported Ruby ABIs: 3.2 / 3.3 / 3.4 / 4.0
   MESSAGE
 end
+
+require "mkmf"
+require "rb_sys/mkmf"
 
 # Built as `lib/sghtmltopdf/sghtmltopdf.so`.
 create_rust_makefile("sghtmltopdf/sghtmltopdf")

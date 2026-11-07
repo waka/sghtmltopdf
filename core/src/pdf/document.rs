@@ -43,15 +43,17 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use pdf_writer::types::{ActionType, AnnotationType, LineCapStyle, TextRenderingMode};
+use pdf_writer::types::{ActionType, AnnotationType, LineCapStyle, StructRole, TextRenderingMode};
 use pdf_writer::{Content, Finish, Name, Pdf, Rect as PdfRect, Ref, TextStr};
 
+use super::outline::{collect_bookmark_positions, write_outline, Bookmark, OutlineEntry};
 use crate::fonts::{Font, FontCollection};
 use crate::html::NodeId;
 use crate::img::resolve_against_base_href;
 use crate::layout::{
     resolve_border, shape_standalone_line, EdgeSizes, EmphasisMark, FragmentPosition, LaidOutBox,
-    LaidOutContent, LaidOutTableRow, Layout, LineBox, Page, PageSettings, Rect, TextRun,
+    LaidOutContent, LaidOutTable, LaidOutTableRow, Layout, LineBox, Page, PageSettings, Rect,
+    TableSection, TextRun,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -63,9 +65,12 @@ use crate::style::{
 };
 
 use super::color_font::{write_color_fonts, FontPlan};
+use super::file_id::{id_entry, FileIdHasher};
 use super::font::{deflate, embed_font, FontUsage};
 use super::img::{embed_image, ids_for_image, image_resource_name, ImageIds, PreparedImage};
-use super::options::{current_datetime, producer_string, DocumentMetadata, PdfOutputOptions};
+use super::options::{producer_string, DocumentMetadata, PdfOutputOptions};
+use super::tagging::{strip_empty_artifacts, Bounds, RowTag, Tagger, CONTENT_TAG};
+use super::xmp::xmp_packet;
 
 /// A wrapper interposing colour conversion on `Content`.
 ///
@@ -76,16 +81,163 @@ use super::options::{current_datetime, producer_string, DocumentMetadata, PdfOut
 pub(super) struct RenderTarget<'a> {
     content: &'a mut Content,
     grayscale: bool,
+    /// Present when writing a tagged PDF. Every `tag_*` method is a no-op without it.
+    tagger: Option<&'a mut Tagger>,
 }
 
 impl<'a> RenderTarget<'a> {
     pub(super) fn new(content: &'a mut Content, grayscale: bool) -> Self {
-        Self { content, grayscale }
+        Self {
+            content,
+            grayscale,
+            tagger: None,
+        }
     }
 
-    /// Wrap another `Content` (a form XObject's contents, say) with the same settings.
-    pub(super) fn wrap<'b>(&self, content: &'b mut Content) -> RenderTarget<'b> {
-        RenderTarget::new(content, self.grayscale)
+    /// Tag what is drawn through this target.
+    pub(super) fn with_tagger(mut self, tagger: Option<&'a mut Tagger>) -> Self {
+        self.tagger = tagger;
+        self
+    }
+
+    /// Wrap another `Content` (a form XObject's contents, say) with the same settings. Call
+    /// [`Self::tag_enter_form`] first to have what is drawn into it tagged as the form's content.
+    pub(super) fn wrap<'b>(&'b mut self, content: &'b mut Content) -> RenderTarget<'b> {
+        RenderTarget::new(content, self.grayscale).with_tagger(self.tagger.as_deref_mut())
+    }
+
+    /// Whether this target writes a tagged PDF.
+    pub(super) fn is_tagging(&self) -> bool {
+        self.tagger.is_some()
+    }
+
+    /// Tag what is drawn from now on as the content of the Form XObject `form`. Pass the
+    /// result to [`Self::tag_leave_form`] once the form is done.
+    fn tag_enter_form(&mut self, form: Ref) -> Option<usize> {
+        self.tagger.as_mut().map(|t| t.enter_form(form))
+    }
+
+    fn tag_leave_form(&mut self, previous: Option<usize>) {
+        if let (Some(t), Some(previous)) = (self.tagger.as_mut(), previous) {
+            t.leave_form(previous);
+        }
+    }
+
+    /// Open a table row, or note that it is a repeated header. Pass the result to
+    /// [`Self::tag_end_row`].
+    fn tag_begin_row(&mut self, node: Option<NodeId>, header: bool) -> Option<(RowTag, bool)> {
+        let row = self.tagger.as_mut().map(|t| t.begin_row(node, header))?;
+        // A repeated header is page furniture: an artifact with nothing inside tagged.
+        let artifact = row.repeated && self.mark_artifact_begin();
+        if artifact {
+            if let Some(t) = self.tagger.as_mut() {
+                t.suspend();
+            }
+        }
+        Some((row, artifact))
+    }
+
+    fn tag_end_row(&mut self, row: Option<(RowTag, bool)>) {
+        let Some((row, artifact)) = row else {
+            return;
+        };
+        if artifact {
+            if let Some(t) = self.tagger.as_mut() {
+                t.resume();
+            }
+            self.mark_end(true);
+        }
+        self.tag_end(row.pushed);
+    }
+
+    /// Open the `Link` element of a run group linking to `href`.
+    fn tag_begin_link(&mut self, href: &str, bounds: Bounds) -> bool {
+        self.tagger
+            .as_mut()
+            .is_some_and(|t| t.begin_link(href, bounds))
+    }
+
+    /// Open the structure element of `node`, if it has one. Pass the result to [`Self::tag_end`].
+    fn tag_begin(&mut self, node: Option<NodeId>) -> bool {
+        self.tagger.as_mut().is_some_and(|t| t.begin_node(node))
+    }
+
+    /// Open an element with no HTML element of its own (`Lbl`, `LBody`, `Link`).
+    fn tag_begin_synthetic(&mut self, role: StructRole) -> bool {
+        self.tagger
+            .as_mut()
+            .is_some_and(|t| t.begin_synthetic(role))
+    }
+
+    fn tag_end(&mut self, pushed: bool) {
+        if let Some(t) = self.tagger.as_mut() {
+            t.end(pushed);
+        }
+    }
+
+    /// Begin a `<li>`'s body, after its marker. Pass the result to [`Self::tag_end`].
+    fn tag_begin_list_body(&mut self, node: Option<NodeId>) -> bool {
+        let is_item = self.tagger.as_ref().is_some_and(|t| t.is_list_item(node));
+        is_item && self.tag_begin_synthetic(StructRole::LBody)
+    }
+
+    /// Start a marked-content sequence for the innermost element's content. Pass the result to
+    /// [`Self::mark_end`].
+    fn mark_content_begin(&mut self) -> bool {
+        let Some(mcid) = self.tagger.as_mut().and_then(|t| t.content_mcid()) else {
+            return false;
+        };
+        self.begin_marked_with_mcid(CONTENT_TAG, mcid);
+        true
+    }
+
+    /// Start the `Figure` of an `<img>`, or an artifact if it is decoration.
+    fn mark_figure_begin(&mut self, node: Option<NodeId>) -> bool {
+        match self.tagger.as_mut().and_then(|t| t.figure_mcid(node)) {
+            Some(mcid) => {
+                self.begin_marked_with_mcid(Name(b"Figure"), mcid);
+                true
+            }
+            None => self.mark_artifact_begin(),
+        }
+    }
+
+    /// Start an `Artifact` sequence (decoration that is not part of the document's content).
+    fn mark_artifact_begin(&mut self) -> bool {
+        let Some(tagger) = self.tagger.as_ref() else {
+            return false;
+        };
+        if !tagger.is_active() {
+            return false;
+        }
+        self.content.begin_marked_content(Name(b"Artifact"));
+        true
+    }
+
+    fn mark_end(&mut self, begun: bool) {
+        if begun {
+            self.content.end_marked_content();
+        }
+    }
+
+    fn begin_marked_with_mcid(&mut self, tag: Name<'_>, mcid: i32) {
+        let mut marked = self.content.begin_marked_content_with_properties(tag);
+        marked.properties().identify(mcid);
+        marked.finish();
+    }
+
+    /// Run `draw` as an artifact: marked as such, and with nothing inside tagged. For the
+    /// header, footer and other furniture drawn through the ordinary box painting.
+    pub(super) fn as_artifact(&mut self, draw: impl FnOnce(&mut Self)) {
+        let begun = self.mark_artifact_begin();
+        if let Some(t) = self.tagger.as_mut() {
+            t.suspend();
+        }
+        draw(self);
+        if let Some(t) = self.tagger.as_mut() {
+            t.resume();
+        }
+        self.mark_end(begun);
     }
 
     fn map(&self, r: f32, g: f32, b: f32) -> (f32, f32, f32) {
@@ -238,6 +390,10 @@ pub fn encode_pdf_with_options(
     // Named destinations (`/Dests`) are resolved once every page has been written.
     let mut destinations: Vec<(String, Ref, f32, f32)> = Vec::new();
     let mut link_annotations: Vec<(Ref, LinkArea)> = Vec::new();
+    let mut outline_entries: Vec<OutlineEntry> = Vec::new();
+    // The bookmarked elements not yet placed: an element split across pages is listed at the
+    // page it starts on.
+    let mut pending_bookmarks = links.bookmarks.clone();
     for page in pages {
         let page_id = alloc.next();
         let content_id = alloc.next();
@@ -306,6 +462,22 @@ pub fn encode_pdf_with_options(
         for (name, x, y) in page_anchors {
             if !destinations.iter().any(|(existing, ..)| *existing == name) {
                 destinations.push((name, page_id, x, y));
+            }
+        }
+        if !pending_bookmarks.is_empty() {
+            let mut page_bookmarks = Vec::new();
+            for b in &page.boxes {
+                collect_bookmark_positions(b, &pending_bookmarks, settings, &mut page_bookmarks);
+            }
+            for (node, x, y) in page_bookmarks {
+                if let Some(bookmark) = pending_bookmarks.remove(&node) {
+                    outline_entries.push(OutlineEntry {
+                        bookmark,
+                        page: page_id,
+                        x: output.to_pt(x),
+                        y: output.to_pt(y),
+                    });
+                }
             }
         }
         let page_annotation_ids: Vec<Ref> = page_links
@@ -383,6 +555,7 @@ pub fn encode_pdf_with_options(
             area,
             links.annotation_base_href(),
             output.scale,
+            None,
         );
     }
 
@@ -398,23 +571,55 @@ pub fn encode_pdf_with_options(
         }
     }
 
+    let outline_id = write_outline(outline_entries, &mut alloc).map(|(root, chunks)| {
+        for (_, chunk) in &chunks {
+            pdf.extend(chunk);
+        }
+        root
+    });
+
     pdf.pages(pages_tree_id)
         .kids(page_ids.iter().copied())
         .count(page_ids.len() as i32);
+    let datetime = output.metadata.datetime();
+    let metadata_id = alloc.next();
     let mut catalog = pdf.catalog(catalog_id);
     catalog.pages(pages_tree_id);
     if let Some(dests_id) = dests_id {
         catalog.destinations(dests_id);
     }
+    catalog.metadata(metadata_id);
+    if let Some(outline_id) = outline_id {
+        catalog.outlines(outline_id);
+    }
+    if let Some(language) = output.metadata.language.as_deref() {
+        catalog.lang(TextStr(language));
+    }
     catalog.finish();
 
+    pdf.metadata(metadata_id, &xmp_packet(&output.metadata, datetime));
+
     let info_id = alloc.next();
-    write_document_info(pdf.document_info(info_id), &output.metadata);
+    write_document_info(pdf.document_info(info_id), &output.metadata, datetime);
 
-    let id = file_identifier(&output.metadata, pages.len());
-    pdf.set_file_id((id.clone(), id));
+    with_file_identifier(pdf.finish())
+}
 
-    pdf.finish()
+/// Add the `/ID` to the trailer of a finished PDF.
+///
+/// The identifier hashes everything before the trailer, which is only known once the file is
+/// finished, so it is spliced into the trailer dictionary afterwards. The xref offsets all
+/// point before the trailer and are unaffected.
+fn with_file_identifier(mut bytes: Vec<u8>) -> Vec<u8> {
+    let find_last = |needle: &[u8]| bytes.windows(needle.len()).rposition(|w| w == needle);
+    let trailer = find_last(b"trailer\n").expect("pdf_writer writes a trailer");
+    let dict_end = find_last(b">>\nstartxref").expect("pdf_writer closes the trailer dictionary");
+
+    let mut hasher = FileIdHasher::new();
+    hasher.update(&bytes[..trailer]);
+    let entry = format!("  {}\n", id_entry(&hasher.digest()));
+    bytes.splice(dict_end..dict_end, entry.into_bytes());
+    bytes
 }
 
 /// Write one `/Link` annotation. An internal anchor (`#id`) writes a named destination
@@ -424,8 +629,12 @@ pub(super) fn write_link_annotation(
     area: &LinkArea,
     base_href: Option<&str>,
     scale: f32,
+    struct_parent: Option<i32>,
 ) {
     annotation.subtype(AnnotationType::Link);
+    if let Some(key) = struct_parent {
+        annotation.struct_parent(key);
+    }
     // An annotation's `/Rect` is in page coordinates (unaffected by the content stream's CTM),
     // so the CSS px to pt conversion happens here.
     annotation.rect(PdfRect::new(
@@ -522,43 +731,13 @@ pub fn write_document_with_options<S: Sink>(
     sink.finish()
 }
 
-/// The `/ID` (file identifier) written in the trailer.
-///
-/// The PDF spec makes it an array of two strings: the first a permanent identifier fixed
-/// when the document is created, the second one that changes on every update. This crate
-/// performs no incremental updates, so the same value is written for both.
-///
-/// The spec says nothing about the contents beyond being unique per document. Sixteen bytes
-/// are built from a hash mixing the same metadata, creation date and page count written to
-/// the Info dictionary. PDF/A requires a file identifier, so without one it does not conform.
-pub(super) fn file_identifier(metadata: &DocumentMetadata, page_count: usize) -> Vec<u8> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let datetime = current_datetime();
-    let mut id = Vec::with_capacity(16);
-    // Two 64-bit hashes joined to make 16 bytes (a different salt gives a different value).
-    for salt in [0u64, 0x9e37_79b9_7f4a_7c15] {
-        let mut hasher = DefaultHasher::new();
-        salt.hash(&mut hasher);
-        producer_string().hash(&mut hasher);
-        metadata.title.hash(&mut hasher);
-        metadata.author.hash(&mut hasher);
-        metadata.subject.hash(&mut hasher);
-        metadata.keywords.hash(&mut hasher);
-        datetime.hash(&mut hasher);
-        page_count.hash(&mut hasher);
-        // `pdf_writer::Finish` is also in scope, so which `finish` is meant is made explicit.
-        id.extend_from_slice(&Hasher::finish(&hasher).to_be_bytes());
-    }
-    id
-}
-
-/// Write the PDF Info dictionary. `/Producer` and `/CreationDate` are always written; the
+/// Write the PDF Info dictionary. `/Producer`, `/CreationDate` and `/ModDate` are always
+/// written (`/ModDate` is the creation date: the file is written once and never updated); the
 /// rest only when given.
 pub(super) fn write_document_info(
     mut info: pdf_writer::writers::DocumentInfo<'_>,
     metadata: &DocumentMetadata,
+    datetime: (i64, u32, u32, u32, u32, u32),
 ) {
     if let Some(title) = metadata.title.as_deref() {
         info.title(TextStr(title));
@@ -572,9 +751,12 @@ pub(super) fn write_document_info(
     if let Some(keywords) = metadata.keywords.as_deref() {
         info.keywords(TextStr(keywords));
     }
+    if let Some(creator) = metadata.creator.as_deref() {
+        info.creator(TextStr(creator));
+    }
     info.producer(TextStr(&producer_string()));
 
-    let (year, month, day, hour, minute, second) = current_datetime();
+    let (year, month, day, hour, minute, second) = datetime;
     let date = pdf_writer::Date::new(year as u16)
         .month(month as u8)
         .day(day as u8)
@@ -584,6 +766,7 @@ pub(super) fn write_document_info(
         .utc_offset_hour(0)
         .utc_offset_minute(0);
     info.creation_date(date);
+    info.modified_date(date);
     info.finish();
 }
 
@@ -890,6 +1073,10 @@ pub struct LinkSettings {
     /// Whether to write a relative URL as-is rather than making it absolute with `<base href>`
     /// (`--keep-relative-links`).
     pub keep_relative: bool,
+    /// The outline entry of each element with a `bookmark-level`, keyed by its `NodeId`.
+    /// When empty, no `/Outlines` is written. It lives here because, like `anchor_names`, it
+    /// is the document-wide table the writers consult as pages come in.
+    pub bookmarks: HashMap<NodeId, Bookmark>,
 }
 
 impl Default for LinkSettings {
@@ -900,6 +1087,7 @@ impl Default for LinkSettings {
             external: true,
             internal: true,
             keep_relative: false,
+            bookmarks: HashMap::new(),
         }
     }
 }
@@ -1240,6 +1428,7 @@ fn render_box_with_style(
     opacity_form_ids: &HashMap<NodeId, Ref>,
     pending_forms: &mut Vec<(Ref, Vec<u8>)>,
 ) {
+    let tagged = content.tag_begin(b.node);
     if style.transform.is_empty() {
         render_box_opacity_wrapped(
             content,
@@ -1255,6 +1444,7 @@ fn render_box_with_style(
             opacity_form_ids,
             pending_forms,
         );
+        content.tag_end(tagged);
         return;
     }
 
@@ -1276,6 +1466,7 @@ fn render_box_with_style(
         pending_forms,
     );
     content.restore_state();
+    content.tag_end(tagged);
 }
 
 /// Where `opacity < 1`, the actual drawing ([`render_box_with_style_inner`]) is written to a
@@ -1324,22 +1515,30 @@ fn render_box_opacity_wrapped(
         .expect("an element with opacity < 1 should have had a Ref allocated in advance");
 
     let mut sub_content = Content::new();
-    let mut sub_target = content.wrap(&mut sub_content);
-    render_box_with_style_inner(
-        &mut sub_target,
-        b,
-        style,
-        styles,
-        fonts,
-        settings,
-        text_fonts,
-        image_ids,
-        background_images,
-        alpha_gs_names,
-        opacity_form_ids,
-        pending_forms,
-    );
-    pending_forms.push((form_ref, sub_content.finish().to_vec()));
+    let form_state = content.tag_enter_form(form_ref);
+    {
+        let mut sub_target = content.wrap(&mut sub_content);
+        render_box_with_style_inner(
+            &mut sub_target,
+            b,
+            style,
+            styles,
+            fonts,
+            settings,
+            text_fonts,
+            image_ids,
+            background_images,
+            alpha_gs_names,
+            opacity_form_ids,
+            pending_forms,
+        );
+    }
+    content.tag_leave_form(form_state);
+    let mut form_bytes = sub_content.finish();
+    if content.is_tagging() {
+        form_bytes = strip_empty_artifacts(form_bytes);
+    }
+    pending_forms.push((form_ref, form_bytes));
 
     content.save_state();
     apply_fill_alpha(content, style.opacity, alpha_gs_names);
@@ -1515,6 +1714,7 @@ fn render_box_with_style_inner(
                 })
         });
 
+    let decoration = content.mark_artifact_begin();
     render_box_decoration(
         content,
         &b.layout,
@@ -1524,25 +1724,29 @@ fn render_box_with_style_inner(
         alpha_gs_names,
     );
     render_outline(content, &b.layout, style, settings);
+    content.mark_end(decoration);
 
     // The marker of a `display: list-item`. It reuses the same `render_line` as an ordinary
     // text line.
     if let Some(marker) = &b.marker {
+        let label = content.tag_begin_synthetic(StructRole::Lbl);
         render_line(content, marker, fonts, settings, text_fonts, alpha_gs_names);
+        content.tag_end(label);
     }
+    let list_body = content.tag_begin_list_body(b.node);
 
     // `overflow: hidden`/`scroll`/`auto` (not distinguished; all clip the same way).
     // The decoration (background, borders, outline, marker) is drawn above and is unaffected
-    // by the clip. The clip boundary is always the straight padding box
-    // (it never follows `border-radius`).
+    // by the clip. The clip boundary is the padding box, rounded by the padding edge curve
+    // when a `border-radius` is set (CSS Backgrounds 3, 5.3).
     if style.overflow.clips() {
-        let padding_box = b.layout.padding_box();
-        let x = settings.margin.left + padding_box.x;
-        let y = to_pdf_y(settings, padding_box.y + padding_box.height);
+        let radii = inner_radii(
+            effective_radii(&b.layout, style),
+            b.layout.border_box(),
+            b.layout.border,
+        );
         content.save_state();
-        content.rect(x, y, padding_box.width, padding_box.height);
-        content.clip_nonzero();
-        content.end_path();
+        clip_to_box(content, b.layout.padding_box(), radii, settings);
     }
 
     match &b.content {
@@ -1605,14 +1809,9 @@ fn render_box_with_style_inner(
         LaidOutContent::Image(image) => {
             if let Some(image) = image {
                 if let Some(ids) = image_ids.get(&(Rc::as_ptr(image) as usize)) {
-                    render_replaced_image(
-                        content,
-                        b.layout.content,
-                        style,
-                        settings,
-                        image,
-                        ids.root,
-                    );
+                    let figure = content.mark_figure_begin(b.node);
+                    render_replaced_image(content, &b.layout, style, settings, image, ids.root);
+                    content.mark_end(figure);
                 }
             }
         }
@@ -1648,11 +1847,31 @@ fn render_box_with_style_inner(
             } else {
                 Vec::new()
             };
+            // Row and row-group borders are drawn only in the collapsing model (CSS2.1
+            // 17.6.1: in the separate model rows and row groups cannot have borders).
+            let collapse_rows = if collapse {
+                CollapsedRows::new(table, &all_cells, styles)
+            } else {
+                CollapsedRows::default()
+            };
             // Row groups are the layer below rows and cells (CSS2.1 17.5.1), so every group is
             // painted before the first row.
+            let backgrounds = content.mark_artifact_begin();
             render_row_group_backgrounds(content, &table.rows, styles, settings, alpha_gs_names);
+            content.mark_end(backgrounds);
+            let mut row_group = None;
+            let mut group_tag = false;
             for row in &table.rows {
+                let background = content.mark_artifact_begin();
                 render_row_background(content, row, styles, settings, alpha_gs_names);
+                content.mark_end(background);
+                // A `<thead>`, `<tbody>` or `<tfoot>` encloses the consecutive rows it holds.
+                if row.group != row_group {
+                    content.tag_end(group_tag);
+                    group_tag = content.tag_begin(row.group);
+                    row_group = row.group;
+                }
+                let row_tag = content.tag_begin_row(row.node, row.section == TableSection::Head);
                 for cell in &row.cells {
                     let cell_style = cell
                         .node
@@ -1666,8 +1885,13 @@ fn render_box_with_style_inner(
                         continue;
                     }
                     if collapse {
-                        let (resolved_style, resolved_border) =
-                            resolve_collapsed_cell_style(cell, &cell_style, &all_cells, styles);
+                        let (resolved_style, resolved_border) = resolve_collapsed_cell_style(
+                            cell,
+                            &cell_style,
+                            &all_cells,
+                            &collapse_rows,
+                            styles,
+                        );
                         // The drawn border thickness comes from `layout.border` (computed
                         // when layout settled) rather than `ComputedStyle`
                         // (see [`render_border`]), so a clone reflecting the merged
@@ -1704,10 +1928,16 @@ fn render_box_with_style_inner(
                         );
                     }
                 }
+                content.tag_end_row(row_tag);
+            }
+            content.tag_end(group_tag);
+            if collapse {
+                render_collapsed_row_gaps(content, &collapse_rows, &all_cells, styles, settings);
             }
         }
     }
 
+    content.tag_end(list_body);
     if style.overflow.clips() {
         content.restore_state();
     }
@@ -1791,17 +2021,16 @@ fn resolve_collapsed_cell_style(
     cell: &LaidOutBox,
     cell_style: &ComputedStyle,
     all_cells: &[&LaidOutBox],
+    rows: &CollapsedRows<'_>,
     styles: &HashMap<NodeId, Rc<ComputedStyle>>,
 ) -> (ComputedStyle, EdgeSizes) {
-    // The tolerance allowed when deciding whether rectangles touch (guarding against floating-point rounding).
-    const EPSILON: f32 = 0.5;
-
-    fn ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
-        a_start < b_end - EPSILON && b_start < a_end - EPSILON
-    }
+    const EPSILON: f32 = COLLAPSE_EPSILON;
+    let ranges_overlap = collapse_ranges_overlap;
 
     let rect = cell.layout.border_box();
     let mut resolved = cell_style.clone();
+    let start_row = rows.row_starting_at(rect.y);
+    let end_row = rows.row_ending_at(rect.y + rect.height);
 
     let has_left_neighbor = all_cells.iter().any(|other| {
         let o = other.layout.border_box();
@@ -1811,6 +2040,14 @@ fn resolve_collapsed_cell_style(
     if has_left_neighbor {
         resolved.border_left_style = BorderStyle::None;
         resolved.border_left_width = Length(0.0);
+    } else if let Some(i) = start_row.filter(|_| (rect.x - rows.left).abs() < EPSILON) {
+        let own = border_edge(
+            cell_style.border_left_width.0,
+            cell_style.border_left_style,
+            cell_style.border_left_color,
+        );
+        let edges = std::iter::once(own).chain(rows.side_edges(i, Side::Left));
+        set_left_edge(&mut resolved, merge_border_edges(edges));
     }
 
     let has_top_neighbor = all_cells.iter().any(|other| {
@@ -1818,9 +2055,22 @@ fn resolve_collapsed_cell_style(
         (o.y + o.height - rect.y).abs() < EPSILON
             && ranges_overlap(rect.x, rect.x + rect.width, o.x, o.x + o.width)
     });
-    if has_top_neighbor {
+    // With a row above, the boundary belongs to the side above: either the cell there (which
+    // merges in this cell's top) or, where the row above has no cell, that row's own segment
+    // (see [`render_collapsed_row_gaps`]).
+    if has_top_neighbor || start_row.is_some_and(|i| i > 0) {
         resolved.border_top_style = BorderStyle::None;
         resolved.border_top_width = Length(0.0);
+    } else if start_row.is_some() {
+        let own = border_edge(
+            cell_style.border_top_width.0,
+            cell_style.border_top_style,
+            cell_style.border_top_color,
+        );
+        set_top_edge(
+            &mut resolved,
+            merge_border_edges([own, rows.first_top_edge()]),
+        );
     }
 
     if let Some(right_neighbor) = all_cells.iter().find(|other| {
@@ -1847,33 +2097,63 @@ fn resolve_collapsed_cell_style(
         resolved.border_right_width = Length(width);
         resolved.border_right_style = style;
         resolved.border_right_color = color;
+    } else if let Some(i) = start_row.filter(|_| (rect.x + rect.width - rows.right).abs() < EPSILON)
+    {
+        let own = border_edge(
+            cell_style.border_right_width.0,
+            cell_style.border_right_style,
+            cell_style.border_right_color,
+        );
+        let edges = std::iter::once(own).chain(rows.side_edges(i, Side::Right));
+        let (width, style, color) = merge_border_edges(edges);
+        resolved.border_right_width = Length(width);
+        resolved.border_right_style = style;
+        resolved.border_right_color = color;
     }
 
-    if let Some(bottom_neighbor) = all_cells.iter().find(|other| {
+    let own_bottom = border_edge(
+        cell_style.border_bottom_width.0,
+        cell_style.border_bottom_style,
+        cell_style.border_bottom_color,
+    );
+    let upper: Vec<BorderEdge> = match end_row {
+        Some(i) if i + 1 == rows.rows.len() => vec![own_bottom, rows.last_bottom_edge()],
+        Some(i) => std::iter::once(own_bottom)
+            .chain(rows.bottom_edges(i))
+            .collect(),
+        None => vec![own_bottom],
+    };
+    let bottom_neighbor = all_cells.iter().find(|other| {
         let o = other.layout.border_box();
         (o.y - (rect.y + rect.height)).abs() < EPSILON
             && ranges_overlap(rect.x, rect.x + rect.width, o.x, o.x + o.width)
-    }) {
+    });
+    let lower: Vec<BorderEdge> = if let Some(bottom_neighbor) = bottom_neighbor {
         let neighbor_style = bottom_neighbor
             .node
             .and_then(|n| styles.get(&n))
             .cloned()
             .unwrap_or_default();
-        let own = border_edge(
-            cell_style.border_bottom_width.0,
-            cell_style.border_bottom_style,
-            cell_style.border_bottom_color,
-        );
         let theirs = border_edge(
             neighbor_style.border_top_width.0,
             neighbor_style.border_top_style,
             neighbor_style.border_top_color,
         );
-        let (width, style, color) = resolve_border_conflict(own, theirs);
-        resolved.border_bottom_width = Length(width);
-        resolved.border_bottom_style = style;
-        resolved.border_bottom_color = color;
-    }
+        let below = rows.row_starting_at(bottom_neighbor.layout.border_box().y);
+        std::iter::once(theirs)
+            .chain(below.into_iter().flat_map(|i| rows.top_edges(i)))
+            .collect()
+    } else {
+        end_row
+            .map(|i| i + 1)
+            .filter(|&i| i < rows.rows.len())
+            .map(|i| rows.top_edges(i).collect())
+            .unwrap_or_default()
+    };
+    let (width, style, color) = merge_border_edges(upper.into_iter().chain(lower));
+    resolved.border_bottom_width = Length(width);
+    resolved.border_bottom_style = style;
+    resolved.border_bottom_color = color;
 
     let border = resolve_border(&resolved);
     (resolved, border)
@@ -1888,6 +2168,412 @@ fn border_edge(width: f32, style: BorderStyle, color: RgbaColor) -> (f32, Border
     } else {
         (width, style, color)
     }
+}
+
+/// The tolerance allowed when deciding whether collapsed table rectangles touch (guarding
+/// against floating-point rounding).
+const COLLAPSE_EPSILON: f32 = 0.5;
+
+fn collapse_ranges_overlap(a_start: f32, a_end: f32, b_start: f32, b_end: f32) -> bool {
+    a_start < b_end - COLLAPSE_EPSILON && b_start < a_end - COLLAPSE_EPSILON
+}
+
+/// One border edge as `(effective width, style, colour)` (see [`border_edge`]).
+type BorderEdge = (f32, BorderStyle, RgbaColor);
+
+#[derive(Debug, Clone, Copy)]
+enum Side {
+    Left,
+    Right,
+}
+
+/// Merge every edge meeting at one boundary with [`resolve_border_conflict`]. On a full tie
+/// the earlier edge wins, so callers list the cell's own edge before its row's and the row's
+/// before its row group's (CSS2.1 17.6.2.1, rule 4).
+fn merge_border_edges(edges: impl IntoIterator<Item = BorderEdge>) -> BorderEdge {
+    edges
+        .into_iter()
+        .reduce(resolve_border_conflict)
+        .unwrap_or((
+            0.0,
+            BorderStyle::None,
+            RgbaColor {
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 0.0,
+            },
+        ))
+}
+
+fn set_left_edge(style: &mut ComputedStyle, (width, border_style, color): BorderEdge) {
+    style.border_left_width = Length(width);
+    style.border_left_style = border_style;
+    style.border_left_color = color;
+}
+
+fn set_top_edge(style: &mut ComputedStyle, (width, border_style, color): BorderEdge) {
+    style.border_top_width = Length(width);
+    style.border_top_style = border_style;
+    style.border_top_color = color;
+}
+
+/// One table row's band, with the styles of the row and of its row group, for merging row
+/// and row-group borders into the collapsed cell borders.
+///
+/// `LaidOutTableRow` carries no geometry, so a row's band runs from the top of its cells to
+/// the top of the next row (the bottom of its tallest cell for the last row); `cells_bottom`
+/// is where its cells end, above the space the layout keeps for the borders below the row. A
+/// row that holds no cell of its own (every column taken by a `rowspan` from above) has no
+/// band and takes no part.
+#[derive(Debug)]
+struct CollapsedRow<'a> {
+    top: f32,
+    bottom: f32,
+    cells_bottom: f32,
+    row: Option<&'a ComputedStyle>,
+    group: Option<&'a ComputedStyle>,
+    first_in_group: bool,
+    last_in_group: bool,
+}
+
+/// One row's top or bottom edges and, where its group starts or ends there, the group's.
+fn row_edges<'a>(
+    row: &LaidOutTableRow,
+    styles: &'a HashMap<NodeId, Rc<ComputedStyle>>,
+    top: bool,
+) -> impl Iterator<Item = BorderEdge> + 'a {
+    let style_of = |node: Option<NodeId>| node.and_then(|n| styles.get(&n)).map(Rc::as_ref);
+    let group_ends = if top {
+        row.first_in_group
+    } else {
+        row.last_in_group
+    };
+    let edge = move |s: &ComputedStyle| {
+        if top {
+            border_edge(s.border_top_width.0, s.border_top_style, s.border_top_color)
+        } else {
+            border_edge(
+                s.border_bottom_width.0,
+                s.border_bottom_style,
+                s.border_bottom_color,
+            )
+        }
+    };
+    style_of(row.node)
+        .map(edge)
+        .into_iter()
+        .chain(style_of(row.group).filter(|_| group_ends).map(edge))
+}
+
+/// `edge` with its width scaled by `share`, for a collapsed border split by a page break.
+fn scale_edge((width, style, color): BorderEdge, share: f32) -> BorderEdge {
+    (width * share, style, color)
+}
+
+/// The rows of one table (or of the part of it placed on a page) under
+/// `border-collapse: collapse`, spanning `left..right` (the outer edges of the cells).
+#[derive(Debug, Default)]
+struct CollapsedRows<'a> {
+    rows: Vec<CollapsedRow<'a>>,
+    left: f32,
+    right: f32,
+    /// At a page break above the first row or below the last, the edges of the row across it
+    /// and the part of the border there that this fragment draws (see [`crate::layout::TableBreak`]).
+    across_above: Option<(Vec<BorderEdge>, f32)>,
+    across_below: Option<(Vec<BorderEdge>, f32)>,
+}
+
+impl<'a> CollapsedRows<'a> {
+    fn new(
+        table: &LaidOutTable,
+        all_cells: &[&LaidOutBox],
+        styles: &'a HashMap<NodeId, Rc<ComputedStyle>>,
+    ) -> Self {
+        let rows = &table.rows;
+        let style_of = |node: Option<NodeId>| node.and_then(|n| styles.get(&n)).map(Rc::as_ref);
+        let mut bands: Vec<CollapsedRow<'a>> = Vec::new();
+        for row in rows {
+            let Some(top) = row
+                .cells
+                .iter()
+                .map(|c| c.layout.border_box().y)
+                .reduce(f32::min)
+            else {
+                continue;
+            };
+            let cell_bottoms = row
+                .cells
+                .iter()
+                .map(|c| c.layout.border_box().y + c.layout.border_box().height);
+            // A cell spanning rows below ends lower than the row; the others end with it.
+            let cells_bottom = cell_bottoms.clone().fold(f32::MAX, f32::min);
+            let bottom = cell_bottoms.fold(top, f32::max);
+            bands.push(CollapsedRow {
+                top,
+                bottom,
+                cells_bottom,
+                row: style_of(row.node),
+                group: style_of(row.group),
+                first_in_group: row.first_in_group,
+                last_in_group: row.last_in_group,
+            });
+        }
+        for i in 1..bands.len() {
+            let next_top = bands[i].top;
+            bands[i - 1].bottom = next_top;
+        }
+        let left = all_cells
+            .iter()
+            .map(|c| c.layout.border_box().x)
+            .fold(f32::MAX, f32::min);
+        let right = all_cells
+            .iter()
+            .map(|c| c.layout.border_box().x + c.layout.border_box().width)
+            .fold(f32::MIN, f32::max);
+        Self {
+            rows: bands,
+            left,
+            right,
+            across_above: rows
+                .first()
+                .and_then(|r| r.break_above.as_ref())
+                .map(|b| (row_edges(&b.row, styles, false).collect(), b.share)),
+            across_below: rows
+                .last()
+                .and_then(|r| r.break_below.as_ref())
+                .map(|b| (row_edges(&b.row, styles, true).collect(), b.share)),
+        }
+    }
+
+    /// The row and group edges along the top of the first row. Below a page break, Chrome
+    /// draws the border of the boundary there split between the two pages, so the edges of
+    /// the row above the break are merged in and this page's share of the width is drawn.
+    fn first_top_edge(&self) -> BorderEdge {
+        let own = self.top_edges(0);
+        match &self.across_above {
+            Some((across, share)) => scale_edge(
+                merge_border_edges(across.iter().copied().chain(own)),
+                *share,
+            ),
+            None => merge_border_edges(own),
+        }
+    }
+
+    /// The row and group edges along the bottom of the last row, split above a page break
+    /// (see [`Self::first_top_edge`]).
+    fn last_bottom_edge(&self) -> BorderEdge {
+        let own = self.bottom_edges(self.rows.len() - 1);
+        match &self.across_below {
+            Some((across, share)) => scale_edge(
+                merge_border_edges(own.chain(across.iter().copied())),
+                *share,
+            ),
+            None => merge_border_edges(own),
+        }
+    }
+
+    fn row_starting_at(&self, y: f32) -> Option<usize> {
+        self.rows
+            .iter()
+            .position(|r| (r.top - y).abs() < COLLAPSE_EPSILON)
+    }
+
+    fn row_ending_at(&self, y: f32) -> Option<usize> {
+        self.rows
+            .iter()
+            .position(|r| (r.cells_bottom - y).abs() < COLLAPSE_EPSILON)
+    }
+
+    /// The top edges of row `i` and, for the first row of a group, of the group.
+    fn top_edges(&self, i: usize) -> impl Iterator<Item = BorderEdge> + '_ {
+        let r = &self.rows[i];
+        let edge = |s: &ComputedStyle| {
+            border_edge(s.border_top_width.0, s.border_top_style, s.border_top_color)
+        };
+        r.row
+            .map(edge)
+            .into_iter()
+            .chain(r.group.filter(|_| r.first_in_group).map(edge))
+    }
+
+    /// The bottom edges of row `i` and, for the last row of a group, of the group.
+    fn bottom_edges(&self, i: usize) -> impl Iterator<Item = BorderEdge> + '_ {
+        let r = &self.rows[i];
+        let edge = |s: &ComputedStyle| {
+            border_edge(
+                s.border_bottom_width.0,
+                s.border_bottom_style,
+                s.border_bottom_color,
+            )
+        };
+        r.row
+            .map(edge)
+            .into_iter()
+            .chain(r.group.filter(|_| r.last_in_group).map(edge))
+    }
+
+    /// The left or right edges of row `i` and of its group.
+    fn side_edges(&self, i: usize, side: Side) -> impl Iterator<Item = BorderEdge> + '_ {
+        let r = &self.rows[i];
+        let edge = move |s: &ComputedStyle| match side {
+            Side::Left => border_edge(
+                s.border_left_width.0,
+                s.border_left_style,
+                s.border_left_color,
+            ),
+            Side::Right => border_edge(
+                s.border_right_width.0,
+                s.border_right_style,
+                s.border_right_color,
+            ),
+        };
+        r.row.map(edge).into_iter().chain(r.group.map(edge))
+    }
+}
+
+/// The parts of `left..right` that no rectangle in `covers` (given as x ranges) reaches.
+fn uncovered_ranges(left: f32, right: f32, mut covers: Vec<(f32, f32)>) -> Vec<(f32, f32)> {
+    covers.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut gaps = Vec::new();
+    let mut x = left;
+    for (start, end) in covers {
+        if start > x + COLLAPSE_EPSILON {
+            gaps.push((x, start.min(right)));
+        }
+        x = x.max(end);
+    }
+    if right > x + COLLAPSE_EPSILON {
+        gaps.push((x, right));
+    }
+    gaps
+}
+
+/// Draw the row and row-group borders across the parts of a row that hold no cell, under
+/// `border-collapse: collapse`. A row with fewer cells than the table has columns still
+/// spans the whole table width, so its (and its group's) top and bottom borders run past the
+/// last cell, as in browsers. Where a cell does sit, its own merged border carries the row's
+/// and group's edges instead (see [`resolve_collapsed_cell_style`]).
+///
+/// The same direction rule as the cells keeps each boundary drawn once: a segment draws the
+/// bottom boundary merged with what lies below (a cell's top, the next row's and group's top),
+/// and draws its top boundary only for the first row.
+fn render_collapsed_row_gaps(
+    content: &mut RenderTarget<'_>,
+    rows: &CollapsedRows<'_>,
+    all_cells: &[&LaidOutBox],
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    settings: &PageSettings,
+) {
+    let cells_in_band = |top: f32, bottom: f32| -> Vec<(f32, f32)> {
+        all_cells
+            .iter()
+            .map(|c| c.layout.border_box())
+            .filter(|b| collapse_ranges_overlap(top, bottom, b.y, b.y + b.height))
+            .map(|b| (b.x, b.x + b.width))
+            .collect()
+    };
+    for (i, row) in rows.rows.iter().enumerate() {
+        for (x0, x1) in uncovered_ranges(rows.left, rows.right, cells_in_band(row.top, row.bottom))
+        {
+            if i == 0 {
+                let edge = rows.first_top_edge();
+                draw_horizontal_edge(
+                    content,
+                    settings,
+                    x0,
+                    x1,
+                    row.top,
+                    edge,
+                    BorderSideKind::Top,
+                );
+            }
+            let upper: Vec<BorderEdge> = rows.bottom_edges(i).collect();
+            let Some(next) = rows.rows.get(i + 1) else {
+                let edge = rows.last_bottom_edge();
+                draw_horizontal_edge(
+                    content,
+                    settings,
+                    x0,
+                    x1,
+                    row.cells_bottom,
+                    edge,
+                    BorderSideKind::Bottom,
+                );
+                continue;
+            };
+            // Split the segment where cells of the next row begin, so each piece merges with
+            // the cell below it.
+            let lower_row: Vec<BorderEdge> = rows.top_edges(i + 1).collect();
+            let below: Vec<(f32, f32, BorderEdge)> = all_cells
+                .iter()
+                .filter(|c| (c.layout.border_box().y - next.top).abs() < COLLAPSE_EPSILON)
+                .filter_map(|c| {
+                    let b = c.layout.border_box();
+                    let (a, e) = (b.x.max(x0), (b.x + b.width).min(x1));
+                    let s = c.node.and_then(|n| styles.get(&n))?;
+                    let top =
+                        border_edge(s.border_top_width.0, s.border_top_style, s.border_top_color);
+                    (e - a > COLLAPSE_EPSILON).then_some((a, e, top))
+                })
+                .collect();
+            let mut pieces: Vec<(f32, f32, Option<BorderEdge>)> =
+                below.iter().map(|&(a, e, top)| (a, e, Some(top))).collect();
+            let covered = below.iter().map(|&(a, e, _)| (a, e)).collect();
+            pieces.extend(
+                uncovered_ranges(x0, x1, covered)
+                    .into_iter()
+                    .map(|(a, e)| (a, e, None)),
+            );
+            for (a, e, cell_top) in pieces {
+                // The edges above come first and so win a full tie, as at a boundary between
+                // two cells.
+                let edges = upper
+                    .iter()
+                    .copied()
+                    .chain(cell_top)
+                    .chain(lower_row.iter().copied());
+                let edge = merge_border_edges(edges);
+                draw_horizontal_edge(
+                    content,
+                    settings,
+                    a,
+                    e,
+                    row.cells_bottom,
+                    edge,
+                    BorderSideKind::Bottom,
+                );
+            }
+        }
+    }
+}
+
+/// Draw one horizontal border band between `x0` and `x1` on the outer side of the edge at
+/// `y`: above it for the top edge of a row ([`BorderSideKind::Top`]), below it for the bottom
+/// edge ([`BorderSideKind::Bottom`]).
+///
+/// That is where a collapsed cell with no border of its own draws a border it takes over from
+/// a neighbour, row or group (its border box grows outwards by the merged width), so a
+/// segment lines up with the cells beside it.
+fn draw_horizontal_edge(
+    content: &mut RenderTarget<'_>,
+    settings: &PageSettings,
+    x0: f32,
+    x1: f32,
+    y: f32,
+    (width, border_style, color): BorderEdge,
+    side: BorderSideKind,
+) {
+    let x0 = settings.margin.left + x0;
+    let x1 = settings.margin.left + x1;
+    let y = to_pdf_y(settings, y);
+    let corners = match side {
+        BorderSideKind::Top => {
+            BorderSideCorners::new((x0, y + width), (x1, y + width), (x1, y), (x0, y))
+        }
+        _ => BorderSideCorners::new((x1, y - width), (x0, y - width), (x0, y), (x1, y)),
+    };
+    render_border_side(content, side, border_style, color, width, corners);
 }
 
 /// A simplified version of CSS2.1 section 17.6.2's border conflict resolution: the thicker
@@ -1926,8 +2612,8 @@ fn resolve_border_conflict(
 
 /// Draw the background and borders. With no `border-radius` set, it draws straight
 /// rectangles and four independently stroked edges as before; with one set, it delegates to
-/// [`render_rounded_decoration`]. `background_image_ref` is the XObject Ref of a background
-/// image stretched to fill the border box (clipping by `border-radius` is not supported).
+/// [`render_rounded_decoration`]. `background_image_paint` is the background image, tiled
+/// over the border box and clipped to it (to its curve with a `border-radius`).
 /// The order is background colour, then background image, then borders.
 #[allow(clippy::too_many_arguments)]
 fn render_box_decoration(
@@ -1939,13 +2625,10 @@ fn render_box_decoration(
     alpha_gs_names: &[String],
 ) {
     let radii = effective_radii(layout, style);
-    let has_radius = [radii.0, radii.1, radii.2, radii.3]
-        .into_iter()
-        .any(|(rx, ry)| rx > 0.0 || ry > 0.0);
 
     render_box_shadows(content, layout, style, settings, radii, alpha_gs_names);
 
-    if has_radius {
+    if has_radius(radii) {
         render_rounded_decoration(
             content,
             layout,
@@ -1968,7 +2651,7 @@ fn render_box_decoration(
         );
     }
     if let Some(paint) = background_image_paint {
-        render_background_image(content, layout.border_box(), style, settings, &paint);
+        render_background_image(content, layout.border_box(), radii, style, settings, &paint);
     }
     render_border(content, layout, style, settings);
 }
@@ -2299,23 +2982,29 @@ fn render_image(
 }
 
 /// Draw an `<img>` (a replaced element) according to `object-fit`/`object-position`.
-/// It always clips to the content box, whatever the `object-fit` value.
+/// It always clips to the content box, whatever the `object-fit` value. With a
+/// `border-radius`, the image is trimmed to the content edge curve (CSS Backgrounds 3, 5.3):
+/// the radii less the border and padding on each side.
 fn render_replaced_image(
     content: &mut RenderTarget<'_>,
-    content_box: Rect,
+    layout: &Layout,
     style: &ComputedStyle,
     settings: &PageSettings,
     image: &PreparedImage,
     resource_ref: Ref,
 ) {
+    let content_box = layout.content;
     let rect = object_fit_rect(content_box, style, (image.width, image.height));
+    let inset = EdgeSizes {
+        top: layout.border.top + layout.padding.top,
+        right: layout.border.right + layout.padding.right,
+        bottom: layout.border.bottom + layout.padding.bottom,
+        left: layout.border.left + layout.padding.left,
+    };
+    let radii = inner_radii(effective_radii(layout, style), layout.border_box(), inset);
 
-    let x = settings.margin.left + content_box.x;
-    let y = to_pdf_y(settings, content_box.y + content_box.height);
     content.save_state();
-    content.rect(x, y, content_box.width, content_box.height);
-    content.clip_nonzero();
-    content.end_path();
+    clip_to_box(content, content_box, radii, settings);
     render_image(content, rect, settings, resource_ref);
     content.restore_state();
 }
@@ -2510,12 +3199,19 @@ fn tile_starts(origin: f32, tile: f32, min: f32, max: f32, repeat: bool) -> Vec<
 }
 
 /// Draw the rectangles computed by [`background_tile_rects`]. Unless there is exactly one
-/// tile and it coincides with the border box (as with `background-repeat: no-repeat` plus no
-/// `background-size`, where it fits anyway), a clip to the border box is interposed (the
-/// same pattern as the `overflow` clip) so the tiles cannot spill out of the box.
+/// tile and it fits inside a border box without rounded corners (as with
+/// `background-repeat: no-repeat` plus no `background-size`), a clip to the border box is
+/// interposed (the same pattern as the `overflow` clip) so the tiles cannot spill out of the
+/// box. With a `border-radius`, the clip follows the border edge curve (CSS Backgrounds 3, 5.3).
 fn render_background_image(
     content: &mut RenderTarget<'_>,
     border_box: Rect,
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
     style: &ComputedStyle,
     settings: &PageSettings,
     paint: &BackgroundImagePaint,
@@ -2530,18 +3226,15 @@ fn render_background_image(
     }
 
     let fits_without_clip = rects.len() == 1
+        && !has_radius(radii)
         && rects[0].x >= border_box.x
         && rects[0].y >= border_box.y
         && rects[0].x + rects[0].width <= border_box.x + border_box.width
         && rects[0].y + rects[0].height <= border_box.y + border_box.height;
 
     if !fits_without_clip {
-        let x = settings.margin.left + border_box.x;
-        let y = to_pdf_y(settings, border_box.y + border_box.height);
         content.save_state();
-        content.rect(x, y, border_box.width, border_box.height);
-        content.clip_nonzero();
-        content.end_path();
+        clip_to_box(content, border_box, radii, settings);
     }
 
     for rect in rects {
@@ -2665,7 +3358,8 @@ fn render_row_group_backgrounds(
 
 /// Background and border drawing when a `border-radius` is set.
 ///
-/// The background is filled as a rounded rectangle following each corner's radius. The
+/// The background colour is filled as a rounded rectangle following each corner's radius,
+/// and the background image is clipped to the same shape. The
 /// borders are stroked as a rounded path only when all four edges share a width, style and
 /// colour (combining rounding with per-edge widths, colours and styles would need complex
 /// blending at the corners and is not supported; in that case the rounding is given up and
@@ -2708,10 +3402,8 @@ fn render_rounded_decoration(
             content.restore_state();
         }
     }
-    // No clip to the rounded path: it is always drawn as a straight rectangle
-    // (combining it with border-radius is not supported).
     if let Some(paint) = background_image_paint {
-        render_background_image(content, border_box, style, settings, &paint);
+        render_background_image(content, border_box, radii, style, settings, &paint);
     }
 
     // groove/ridge/inset/outset need per-edge shading, which a plain stroke of a rounded path
@@ -3005,6 +3697,81 @@ fn shrink_radii(
         shrink(radii.2),
         shrink(radii.3),
     )
+}
+
+/// Whether any corner is rounded.
+fn has_radius(
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+) -> bool {
+    [radii.0, radii.1, radii.2, radii.3]
+        .into_iter()
+        .any(|(rx, ry)| rx > 0.0 || ry > 0.0)
+}
+
+/// The corner radii of a curve `inset` inside the border edge (CSS Backgrounds 3, 5.2): the
+/// padding edge (inset by the border widths) or the content edge (by border plus padding).
+/// Each radius shrinks by the width on its own side, down to 0. The outer radii are first
+/// clamped to the border box the way [`rounded_rect_path`] clamps them, so the inner curve
+/// follows the outer one actually drawn.
+fn inner_radii(
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+    border_box: Rect,
+    inset: EdgeSizes,
+) -> (
+    CornerRadiusPx,
+    CornerRadiusPx,
+    CornerRadiusPx,
+    CornerRadiusPx,
+) {
+    let max_rx = (border_box.width / 2.0).max(0.0);
+    let max_ry = (border_box.height / 2.0).max(0.0);
+    let corner = |(rx, ry): CornerRadiusPx, dx: f32, dy: f32| {
+        (
+            (rx.clamp(0.0, max_rx) - dx).max(0.0),
+            (ry.clamp(0.0, max_ry) - dy).max(0.0),
+        )
+    };
+    (
+        corner(radii.0, inset.left, inset.top),
+        corner(radii.1, inset.right, inset.top),
+        corner(radii.2, inset.right, inset.bottom),
+        corner(radii.3, inset.left, inset.bottom),
+    )
+}
+
+/// Narrow the clip to `rect` (layout space): a rounded rectangle when any corner has a
+/// radius, a plain one otherwise. The caller encloses it in `save_state`/`restore_state`.
+fn clip_to_box(
+    content: &mut RenderTarget<'_>,
+    rect: Rect,
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+    settings: &PageSettings,
+) {
+    let x0 = settings.margin.left + rect.x;
+    let y_bottom = to_pdf_y(settings, rect.y + rect.height);
+    if has_radius(radii) {
+        let y_top = to_pdf_y(settings, rect.y);
+        rounded_rect_path(content, x0, y_top, x0 + rect.width, y_bottom, radii);
+    } else {
+        content.rect(x0, y_bottom, rect.width, rect.height);
+    }
+    content.clip_nonzero();
+    content.end_path();
 }
 
 /// Draw the `outline`. Unlike `border` it has no effect on layout at all, so `layout` is only
@@ -3653,6 +4420,7 @@ fn render_line(
     // An inline element's background (`<mark>` and so on) is painted before the text, as the
     // rectangle from the run's ascent to its descent. Unlike a block's background
     // ([`render_decoration`]) it has no border box, so the font metrics stand in.
+    let backdrop = content.mark_artifact_begin();
     for run in &line.runs {
         if run.background_color.alpha <= 0.0 || run.width <= 0.0 {
             continue;
@@ -3690,8 +4458,14 @@ fn render_line(
         alpha_gs_names,
         baseline_y,
     );
+    content.mark_end(backdrop);
 
     content.begin_text();
+    // The marked-content sequence of the run group being written: consecutive runs of the same
+    // link (or of none) share one, and each link is a `Link` element of its own.
+    let mut group: Option<Option<&Rc<str>>> = None;
+    let mut group_mark = false;
+    let mut group_link = false;
 
     // Resolved glyph codes for the run being written. Held across runs so the
     // whole line reuses one buffer.
@@ -3703,7 +4477,7 @@ fn render_line(
     const WORD_GAP_EPSILON: f32 = 0.01;
     let mut previous_run_end: Option<f32> = None;
 
-    for run in &line.runs {
+    for (run_index, run) in line.runs.iter().enumerate() {
         if run.glyphs.is_empty() {
             continue;
         }
@@ -3727,6 +4501,37 @@ fn render_line(
         let Some(font) = fonts.get(run.font_index) else {
             continue;
         };
+
+        if group != Some(run.link.as_ref()) {
+            content.mark_end(group_mark);
+            content.tag_end(group_link);
+            group = Some(run.link.as_ref());
+            group_link = match &run.link {
+                Some(href) => {
+                    // Where the consecutive runs of this link are, to find its annotation.
+                    let mut bounds = Bounds {
+                        x0: f32::MAX,
+                        y0: f32::MAX,
+                        x1: f32::MIN,
+                        y1: f32::MIN,
+                    };
+                    for linked in line.runs[run_index..]
+                        .iter()
+                        .take_while(|r| r.link.as_ref() == Some(href))
+                    {
+                        let x0 = settings.margin.left + line.rect.x + linked.x_offset;
+                        let base = baseline_y + linked.baseline_shift;
+                        bounds.x0 = bounds.x0.min(x0);
+                        bounds.x1 = bounds.x1.max(x0 + linked.width);
+                        bounds.y0 = bounds.y0.min(base - linked.descent);
+                        bounds.y1 = bounds.y1.max(base + linked.ascent);
+                    }
+                    content.tag_begin_link(href, bounds)
+                }
+                None => false,
+            };
+            group_mark = content.mark_content_begin();
+        }
 
         content.set_fill_rgb(
             run.color.red as f32 / 255.0,
@@ -3776,8 +4581,11 @@ fn render_line(
         }
     }
 
+    content.mark_end(group_mark);
+    content.tag_end(group_link);
     content.end_text();
 
+    let decorations = content.mark_artifact_begin();
     for run in &line.runs {
         if !run.underline && !run.line_through {
             continue;
@@ -3815,6 +4623,7 @@ fn render_line(
 
     // Like the decoration lines, `text-emphasis` marks are drawn after the text itself.
     render_emphasis_marks(content, line, fonts, settings, text_fonts, baseline_y);
+    content.mark_end(decorations);
 }
 
 /// Draw the `text-emphasis` marks.
@@ -4147,7 +4956,7 @@ fn decoration_metrics(
 
 /// Convert a distance from the top of the page's content area (CSS Y, positive downwards)
 /// into a PDF user-space Y coordinate (a distance from the physical bottom of the page, positive upwards).
-fn to_pdf_y(settings: &PageSettings, y_from_content_top: f32) -> f32 {
+pub(super) fn to_pdf_y(settings: &PageSettings, y_from_content_top: f32) -> f32 {
     settings.size.height - settings.margin.top - y_from_content_top
 }
 
@@ -4873,6 +5682,145 @@ mod tests {
         assert_eq!(count_occurrences(&decompressed, b" Do\n"), 6);
     }
 
+    /// The path of every clip (the operators before each `W n`) in a content stream, as
+    /// `(operator, operands)` pairs.
+    fn clip_paths(text: &str) -> Vec<Vec<(String, Vec<f32>)>> {
+        let mut clips = Vec::new();
+        let mut path = Vec::new();
+        for line in text.lines() {
+            let mut parts: Vec<&str> = line.split(' ').collect();
+            let op = parts.pop().unwrap_or_default();
+            match op {
+                "m" | "l" | "c" | "re" | "h" => {
+                    let operands = parts.iter().map(|n| n.parse().unwrap()).collect();
+                    path.push((op.to_string(), operands));
+                }
+                "W" => clips.push(std::mem::take(&mut path)),
+                _ => path.clear(),
+            }
+        }
+        clips
+    }
+
+    /// The width, height and top-left horizontal radius of a clip path: a `re`, or a rounded
+    /// rectangle from [`rounded_rect_path`], which starts at the end of the top-left curve.
+    fn clip_geometry(path: &[(String, Vec<f32>)]) -> (f32, f32, f32) {
+        if let [(op, v)] = path {
+            assert_eq!(op, "re");
+            return (v[2], v[3], 0.0);
+        }
+        let points: Vec<(f32, f32)> = path
+            .iter()
+            .filter(|(_, v)| v.len() >= 2)
+            .map(|(_, v)| (v[v.len() - 2], v[v.len() - 1]))
+            .collect();
+        let xs = points.iter().map(|p| p.0);
+        let ys = points.iter().map(|p| p.1);
+        let min_x = xs.clone().fold(f32::MAX, f32::min);
+        let width = xs.fold(f32::MIN, f32::max) - min_x;
+        let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+        assert_eq!(path[0].0, "m");
+        (width, height, path[0].1[0] - min_x)
+    }
+
+    #[test]
+    fn background_image_is_clipped_to_the_border_edge_curve() {
+        let ua = user_agent_stylesheet();
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+
+        // One tile exactly the size of the box, which needs no clip without a radius.
+        let dom = html::parse(br#"<div class="box"></div>"#);
+        let author = parse_stylesheet(
+            r#".box {
+                width: 120px; height: 120px; border-radius: 60px;
+                background-image: url("bg.png");
+                background-repeat: no-repeat;
+                background-size: 120px 120px;
+            }"#,
+        );
+        let styles = compute_styles(&dom, &ua, &author);
+        let div = find_tag(&dom, dom.document(), "div").expect("div not found");
+        let mut background_images = HashMap::new();
+        background_images.insert(div, fake_prepared_image(40.0, 30.0));
+
+        let pages = paginate_document(&dom, &styles, &fonts, &settings);
+        let bytes = encode_pdf(&pages, &styles, &background_images, &fonts, &settings);
+        let text = String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned();
+
+        let clips = clip_paths(&text);
+        assert_eq!(clips.len(), 1, "{text}");
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 60.0));
+        assert_eq!(count_occurrences(text.as_bytes(), b" Do\n"), 1);
+    }
+
+    #[test]
+    fn overflow_clips_to_the_padding_edge_curve() {
+        // The 8px border takes 8px off each radius: 60px at the border edge, 52px at the
+        // padding edge.
+        let streams = page_streams(
+            r#"<div class="box"><p>hello</p></div>"#,
+            ".box { overflow: hidden; width: 120px; height: 120px; \
+             border: 8px solid rgb(0, 0, 0); border-radius: 60px; }",
+        );
+        let clips = clip_paths(&streams[0]);
+        assert_eq!(clips.len(), 1, "{}", streams[0]);
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 52.0));
+
+        // A radius smaller than the border leaves the padding edge square.
+        let streams = page_streams(
+            r#"<div class="box"><p>hello</p></div>"#,
+            ".box { overflow: hidden; width: 120px; height: 120px; \
+             border: 8px solid rgb(0, 0, 0); border-radius: 6px; }",
+        );
+        let clips = clip_paths(&streams[0]);
+        assert_eq!(clips.len(), 1, "{}", streams[0]);
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 0.0));
+    }
+
+    #[test]
+    fn img_is_trimmed_to_the_content_edge_curve() {
+        // A 1x1 PNG.
+        const PIXEL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let ua = user_agent_stylesheet();
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+        let image_cache = crate::pdf::ImageAssetCache::new(std::path::PathBuf::from("."), false);
+
+        for (css, expected) in [
+            // Border and padding take 6 + 10 = 16px off the 40px radius.
+            (
+                "padding: 10px; border: 6px solid rgb(0, 0, 0); border-radius: 40px",
+                (120.0, 120.0, 24.0),
+            ),
+            // Tailwind's `rounded-full border-2`: a circle inside the 2px ring.
+            (
+                "border: 2px solid rgb(0, 0, 0); border-radius: 9999px",
+                (120.0, 120.0, 60.0),
+            ),
+            // Without a radius the content box is still a plain rectangle.
+            ("border: 2px solid rgb(0, 0, 0)", (120.0, 120.0, 0.0)),
+        ] {
+            let mut dom = html::parse(format!(r#"<img src="{PIXEL}">"#).as_bytes());
+            let author = parse_stylesheet(&format!("img {{ width: 120px; height: 120px; {css} }}"));
+            let styles = compute_styles(&dom, &ua, &author);
+            let pages = crate::layout::paginate_document_with_absolutes(
+                &mut dom,
+                &styles,
+                &fonts,
+                &settings,
+                &image_cache,
+            );
+            let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
+            let text = String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned();
+
+            assert_eq!(count_occurrences(text.as_bytes(), b" Do\n"), 1, "{css}");
+            let clips = clip_paths(&text);
+            assert_eq!(clips.len(), 1, "{css}\n{text}");
+            assert_eq!(clip_geometry(&clips[0]), expected, "{css}");
+        }
+    }
+
     fn find_tag(dom: &crate::html::Dom, id: NodeId, tag: &str) -> Option<NodeId> {
         if let crate::html::NodeData::Element { name, .. } = &dom.node(id).data {
             if &*name.local == tag {
@@ -5358,8 +6306,9 @@ mod tests {
             assert_eq!(count_occurrences(page.as_bytes(), b" c\n"), 2);
         }
         // The sides run to the fragment's edge at the break (the stroke's centre line is 2px
-        // inside the 4px border; the first fragment ends 154px down the 200px page).
-        assert!(first.contains("2 46 m\n2 192 l\n"), "{first}");
+        // inside the 4px border). The first fragment continues on the next page, so it runs
+        // to the bottom of the 200px page rather than stopping under its last row at 154px.
+        assert!(first.contains("2 0 m\n2 192 l\n"), "{first}");
         assert!(last.contains("398 200 m\n398 154 l\n"), "{last}");
 
         // The middle fragment has no rounded corner left, so it paints its two sides as
@@ -5602,6 +6551,220 @@ mod tests {
             out.push((i, rects));
         }
         out
+    }
+
+    /// The vertices of every filled polygon (border sides are `m`/`l` paths) whose colour is
+    /// set by `rg_line`, one `Vec` per polygon, in stream order.
+    fn polygon_fills_of(text: &str, rg_line: &str) -> Vec<Vec<(f32, f32)>> {
+        let lines: Vec<&str> = text.lines().collect();
+        let mut out = Vec::new();
+        for (i, _) in lines.iter().enumerate().filter(|(_, l)| **l == rg_line) {
+            let mut points = Vec::new();
+            for line in &lines[i + 1..] {
+                if let Some(args) = line.strip_suffix(" m").or_else(|| line.strip_suffix(" l")) {
+                    let v: Vec<f32> = args.split(' ').map(|n| n.parse().unwrap()).collect();
+                    points.push((v[0], v[1]));
+                } else if *line == "f" {
+                    break;
+                }
+            }
+            if !points.is_empty() {
+                out.push(points);
+            }
+        }
+        out
+    }
+
+    /// The horizontal extent (`min x`, `max x`) and the height of the union of polygons.
+    fn polygons_extent(polygons: &[Vec<(f32, f32)>]) -> (f32, f32, f32) {
+        let points = polygons.iter().flatten();
+        let xs = points.clone().map(|p| p.0);
+        let ys = points.map(|p| p.1);
+        let min_x = xs.clone().fold(f32::MAX, f32::min);
+        let max_x = xs.fold(f32::MIN, f32::max);
+        let min_y = ys.clone().fold(f32::MAX, f32::min);
+        let max_y = ys.fold(f32::MIN, f32::max);
+        (min_x, max_x, max_y - min_y)
+    }
+
+    /// The `(bottom, top)` of every red polygon on each page, in PDF coordinates.
+    fn red_bands_per_page(html_src: &str, css: &str) -> Vec<Vec<(f32, f32)>> {
+        page_streams(html_src, css)
+            .iter()
+            .map(|stream| {
+                polygon_fills_of(stream, "1 0 0 rg")
+                    .iter()
+                    .map(|points| {
+                        let ys = points.iter().map(|p| p.1);
+                        (
+                            ys.clone().fold(f32::MAX, f32::min),
+                            ys.fold(f32::MIN, f32::max),
+                        )
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn one_column_rows(row_count: usize) -> String {
+        (0..row_count)
+            .map(|i| format!("<tr><td>{i}</td></tr>"))
+            .collect()
+    }
+
+    const SPLIT_CSS: &str = "body { margin: 0 } table { border-collapse: collapse } \
+                             td, th { height: 20px; padding: 0 }";
+
+    #[test]
+    fn a_collapsed_row_border_at_a_page_break_is_drawn_half_on_each_page() {
+        let html_src = format!("<table>{}</table>", one_column_rows(80));
+        let css = format!("{SPLIT_CSS} tr {{ border-bottom: 8px solid rgb(255, 0, 0) }}");
+        let pages = red_bands_per_page(&html_src, &css);
+        let settings = PageSettings::default();
+        let content_top = settings.size.height - settings.margin.top;
+        let last_on_first = pages[0].iter().min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
+        assert!(
+            (last_on_first.1 - last_on_first.0 - 4.0).abs() < 0.01,
+            "{last_on_first:?}"
+        );
+        let first_on_second = pages[1].iter().max_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+        assert!(
+            (first_on_second.1 - content_top).abs() < 0.01
+                && (first_on_second.1 - first_on_second.0 - 4.0).abs() < 0.01,
+            "{first_on_second:?}"
+        );
+    }
+
+    #[test]
+    fn no_collapsed_border_at_a_page_break_reaches_below_the_content_area() {
+        let settings = PageSettings::default();
+        let (bottom, top) = (
+            settings.margin.bottom,
+            settings.size.height - settings.margin.top,
+        );
+        let rows = one_column_rows(80);
+        let cases = (1..=12).flat_map(|w| {
+            [
+                (
+                    format!("<table>{rows}</table>"),
+                    format!("tr {{ border-bottom: {w}px solid rgb(255, 0, 0) }}"),
+                ),
+                (
+                    format!("<table>{rows}</table>"),
+                    format!("tr {{ border-top: {w}px solid rgb(255, 0, 0) }}"),
+                ),
+                (
+                    format!(
+                        "<table><thead><tr><th>No</th></tr></thead><tbody>{rows}</tbody></table>"
+                    ),
+                    format!("tbody {{ border-bottom: {w}px solid rgb(255, 0, 0) }}"),
+                ),
+            ]
+        });
+        for (html_src, border) in cases {
+            let pages = red_bands_per_page(&html_src, &format!("{SPLIT_CSS} {border}"));
+            assert!(pages.len() >= 2, "{border}");
+            for (i, bands) in pages.iter().enumerate() {
+                for &(b, t) in bands {
+                    assert!(
+                        b >= bottom - 0.01 && t <= top + 0.01,
+                        "{border}: page {i} draws {b}..{t} outside {bottom}..{top}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_row_group_border_is_drawn_only_where_the_group_ends() {
+        let html_src = format!(
+            "<table><thead><tr><th>No</th></tr></thead><tbody>{}</tbody></table>",
+            one_column_rows(80)
+        );
+        let css = format!("{SPLIT_CSS} tbody {{ border-bottom: 6px solid rgb(255, 0, 0) }}");
+        let pages = red_bands_per_page(&html_src, &css);
+        let (last, before) = pages.split_last().unwrap();
+        assert!(before.iter().all(Vec::is_empty), "{pages:?}");
+        assert_eq!(last.len(), 1, "{pages:?}");
+        assert!((last[0].1 - last[0].0 - 6.0).abs() < 0.01, "{pages:?}");
+    }
+
+    #[test]
+    fn below_a_repeated_head_the_row_border_is_drawn_whole() {
+        let html_src = format!(
+            "<table><thead><tr><th>No</th></tr></thead><tbody>{}</tbody></table>",
+            one_column_rows(80)
+        );
+        let css = format!("{SPLIT_CSS} tr {{ border-bottom: 8px solid rgb(255, 0, 0) }}");
+        let pages = red_bands_per_page(&html_src, &css);
+        let below_head = pages[1].iter().max_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
+        assert!(
+            (below_head.1 - below_head.0 - 8.0).abs() < 0.01,
+            "{below_head:?}"
+        );
+    }
+
+    #[test]
+    fn collapsed_row_border_runs_across_the_row() {
+        let html_src = r#"<table>
+            <tr class="b"><td>a</td><td>b</td></tr>
+            <tr><td>c</td><td>d</td></tr>
+        </table>"#;
+        let css = "table { border-collapse: collapse; width: 200px } \
+                   tr.b { border-bottom: 4px solid rgb(255, 0, 0) }";
+        let streams = page_streams(html_src, css);
+        let red = polygon_fills_of(&streams[0], "1 0 0 rg");
+        let (left, right, height) = polygons_extent(&red);
+        assert!((right - left - 200.0).abs() < 0.5, "{red:?}");
+        assert!((height - 4.0).abs() < 0.01, "{red:?}");
+    }
+
+    #[test]
+    fn row_border_is_ignored_in_the_separate_model() {
+        // CSS2.1 17.6.1: in the separated borders model rows and row groups cannot have borders.
+        let html_src = r#"<table><tbody><tr><td>a</td><td>b</td></tr></tbody></table>"#;
+        let css = "tr, tbody { border-bottom: 4px solid rgb(255, 0, 0) }";
+        let streams = page_streams(html_src, css);
+        assert!(polygon_fills_of(&streams[0], "1 0 0 rg").is_empty());
+    }
+
+    #[test]
+    fn collapsed_row_group_border_spans_the_table_past_a_row_with_fewer_cells() {
+        // The last row of the group holds one cell spanning 2 of 4 columns. The group's
+        // bottom border still runs to the table's right edge, as in browsers.
+        let html_src = r#"<table>
+            <tbody><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></tbody>
+            <tbody class="sub">
+                <tr><td colspan="2">sub</td><td>9</td></tr>
+                <tr><td colspan="2">disc</td></tr>
+            </tbody>
+            <tbody><tr><td colspan="2">total</td><td>0</td><td>x</td></tr></tbody>
+        </table>"#;
+        let css = "table { border-collapse: collapse; width: 300px } \
+                   tbody.sub { border-bottom: 2px solid rgb(255, 0, 0) }";
+        let streams = page_streams(html_src, css);
+        let red = polygon_fills_of(&streams[0], "1 0 0 rg");
+        let (left, right, height) = polygons_extent(&red);
+        assert!((right - left - 300.0).abs() < 0.5, "{red:?}");
+        assert!(
+            (height - 2.0).abs() < 0.01,
+            "one band, not one per row: {red:?}"
+        );
+    }
+
+    #[test]
+    fn collapsed_cell_border_wider_than_its_row_border_wins() {
+        let html_src = r#"<table><tr><td>a</td><td class="w">b</td></tr><tr><td>c</td><td>d</td></tr></table>"#;
+        let css = "table { border-collapse: collapse; width: 200px } \
+                   tr { border-bottom: 1px solid rgb(255, 0, 0) } \
+                   td.w { border-bottom: 3px solid rgb(0, 0, 255) }";
+        let streams = page_streams(html_src, css);
+        let blue = polygon_fills_of(&streams[0], "0 0 1 rg");
+        let (left, right, height) = polygons_extent(&blue);
+        assert!((height - 3.0).abs() < 0.01, "{blue:?}");
+        assert!(right - left < 150.0, "only under the wide cell: {blue:?}");
+        let red = polygon_fills_of(&streams[0], "1 0 0 rg");
+        assert!(!red.is_empty(), "the other cell keeps the row's border");
     }
 
     #[test]

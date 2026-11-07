@@ -10,6 +10,57 @@ RSpec.describe "a Rails controller", type: :rails do
   # each example copies it into `public/` and removes it afterwards.
   FONT_FIXTURE = File.expand_path("../../../core/tests/fonts/DejaVuSansMono.ttf", __dir__)
 
+  describe "render_to_string pdf:" do
+    let(:controller) do
+      InvoicesController.new.tap do |instance|
+        instance.set_request!(ActionDispatch::TestRequest.create)
+        instance.set_response!(ActionDispatch::TestResponse.new)
+      end
+    end
+
+    it "returns PDF bytes without changing the response and allows send_data afterwards" do
+      options = {pdf: "invoice", template: "invoices/show", layout: "pdf",
+                 page_size: "A5", filename: "unused.pdf", status: 201}
+      headers = controller.response.headers.to_h.dup
+      pdf = controller.render_to_string(**options)
+      html = controller.render_to_string(template: "invoices/show", layout: "pdf")
+
+      expect(normalize(pdf)).to eq(normalize(Sghtmltopdf.render(html, page_size: "A5")))
+      expect(controller.response_body).to be_nil
+      expect(controller.performed?).to be_falsey
+      expect(controller.response.status).to eq(200)
+      expect(controller.response.headers.to_h).to eq(headers)
+      expect(options[:pdf]).to eq("invoice")
+
+      controller.send(:send_data, pdf, filename: "invoice.pdf", type: "application/pdf")
+      expect(controller.response_body.join).to eq(pdf)
+    end
+
+    it "accepts a positional template name without changing the options or response" do
+      options = {pdf: "invoice", layout: "pdf", page_size: "A5",
+                 filename: "unused.pdf", status: 201}.freeze
+      headers = controller.response.headers.to_h.dup
+      pdf = controller.render_to_string("invoices/show", options)
+      html = controller.render_to_string(template: "invoices/show", layout: "pdf")
+
+      expect(normalize(pdf)).to eq(normalize(Sghtmltopdf.render(html, page_size: "A5")))
+      expect(controller.response_body).to be_nil
+      expect(controller.performed?).to be_falsey
+      expect(controller.response.status).to eq(200)
+      expect(controller.response.headers.to_h).to eq(headers)
+
+      controller.send(:send_data, pdf, filename: "invoice.pdf", type: "application/pdf")
+      expect(controller.response_body.join).to eq(pdf)
+    end
+
+    it "returns HTML with show_as_html without setting a response body" do
+      html = controller.render_to_string(pdf: "invoice", template: "invoices/show", show_as_html: true)
+
+      expect(html).to include("<h1>Invoice #1234</h1>")
+      expect(controller.response_body).to be_nil
+    end
+  end
+
   describe "render pdf:" do
     it "returns a PDF" do
       get "/invoices/show"
@@ -464,9 +515,9 @@ RSpec.describe "a Rails controller", type: :rails do
         expect(html).to include(%(@import url("https://example.com/x.css");))
       end
 
-      # Every embedded font is named `/EmbeddedFont` in the PDF, so names cannot
-      # tell them apart. This checks the #45 symptom itself: a failed fetch falls
-      # back to the engine default rather than the next `font-family` candidate.
+      # This checks the #45 symptom itself: a failed fetch falls back to the engine default
+      # rather than the next `font-family` candidate. The fixture is embedded under its own
+      # PostScript name (DejaVuSansMono), not under the "Gyre" family the CSS gives it.
       it "actually applies the font of the redirected @font-face" do
         css = <<~CSS
           @font-face {
@@ -483,6 +534,8 @@ RSpec.describe "a Rails controller", type: :rails do
         without = Sghtmltopdf.render(body)
 
         expect(rewritten).to include("/FontFile2")
+        expect(rewritten).to include("+DejaVuSansMono")
+        expect(verbatim).not_to include("+DejaVuSansMono")
         expect(normalize(verbatim)).to eq(normalize(without))
         expect(normalize(rewritten)).not_to eq(normalize(without))
       end

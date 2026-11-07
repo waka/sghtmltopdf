@@ -7,13 +7,15 @@
 use std::collections::HashMap;
 
 use sghtmltopdf::fonts::{Font, FontCollection};
-use sghtmltopdf::html;
+use sghtmltopdf::html::{self, Dom, NodeData, NodeId};
 use sghtmltopdf::layout::{
     build_box_tree, layout_document, paginate_document, LaidOutBox, LaidOutContent, LineBox,
-    PageSettings,
+    PageSettings, TextRun,
 };
 use sghtmltopdf::pdf::encode_pdf;
-use sghtmltopdf::style::{compute_styles, parse_stylesheet, user_agent_stylesheet};
+use sghtmltopdf::style::{
+    compute_styles, parse_stylesheet, user_agent_stylesheet, ComputedStyle, RgbaColor,
+};
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
 
@@ -166,11 +168,9 @@ fn nested_counters_are_scoped_per_ancestor_and_joined_with_the_separator() {
          ol.custom li ol { counter-reset: item; }",
     );
     let text = extract_text(&laid);
-    // The first li has a nested <ol> (a block element) as a child, so ::before itself is
-    // unsupported (box_tree.rs's simplification that ::before/::after are unsupported on an
-    // element with block children). So it stays "First" with no prefix.
-    assert!(text.contains("First"), "text was: {text:?}");
-    assert!(!text.contains("1. First"), "text was: {text:?}");
+    // The first li has a nested <ol> (a block element) as a child. Its ::before still goes
+    // in front of its text, in the anonymous block wrapping "First".
+    assert!(text.contains("1 First"), "text was: {text:?}");
     assert!(text.contains("1.1 Nested A"), "text was: {text:?}");
     assert!(text.contains("1.2 Nested B"), "text was: {text:?}");
     // The nested scope is popped when the li containing "First" is left, so Second sees only
@@ -180,8 +180,6 @@ fn nested_counters_are_scoped_per_ancestor_and_joined_with_the_separator() {
 
 #[test]
 fn after_content_is_resolved_after_descendants_so_it_reflects_their_counter_changes() {
-    // Mixing block descendants into the p would make ::after itself unsupported, so the
-    // descendants are inline elements (span).
     let laid = layout(
         r#"<p class="section">Heading <span class="mark">note</span></p>"#,
         "p.section { counter-reset: n; } \
@@ -276,4 +274,165 @@ fn all_generated_content_features_combined_render_a_valid_pdf_end_to_end() {
         count_occurrences(&bytes, b"/Subtype /CIDFontType2") > 0,
         "the font should be embedded to render the text"
     );
+}
+
+// ---- ::before / ::after as boxes of their own (#152) ----
+
+/// The text runs of every line, in order.
+fn runs(b: &LaidOutBox) -> Vec<&TextRun> {
+    fn walk<'a>(b: &'a LaidOutBox, out: &mut Vec<&'a TextRun>) {
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                children.iter().for_each(|c| walk(c, out))
+            }
+            LaidOutContent::Inline(lines) => {
+                for line in lines {
+                    out.extend(&line.runs);
+                    line.atomics.iter().for_each(|a| walk(&a.content, out));
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    walk(b, &mut out);
+    out
+}
+
+fn run<'a>(b: &'a LaidOutBox, text: &str) -> &'a TextRun {
+    runs(b)
+        .into_iter()
+        .find(|r| r.text.contains(text))
+        .unwrap_or_else(|| panic!("no run {text:?}"))
+}
+
+/// The first line with a run holding `text`, as (top of the line, left of the run).
+fn line_of(b: &LaidOutBox, text: &str) -> (f32, f32) {
+    fn walk(b: &LaidOutBox, text: &str) -> Option<(f32, f32)> {
+        match &b.content {
+            LaidOutContent::Blocks(children) => children.iter().find_map(|c| walk(c, text)),
+            LaidOutContent::Inline(lines) => lines.iter().find_map(|line| {
+                let r = line.runs.iter().find(|r| r.text.contains(text))?;
+                Some((line.rect.y, line.rect.x + r.x_offset))
+            }),
+            _ => None,
+        }
+    }
+    walk(b, text).unwrap_or_else(|| panic!("no line with {text:?}"))
+}
+
+fn first_element(dom: &Dom, id: NodeId, tag: &str) -> Option<NodeId> {
+    if let NodeData::Element { name, .. } = &dom.node(id).data {
+        if &*name.local == tag {
+            return Some(id);
+        }
+    }
+    dom.children(id).find_map(|c| first_element(dom, c, tag))
+}
+
+fn find_laid_box(b: &LaidOutBox, node: NodeId) -> Option<&LaidOutBox> {
+    if b.node == Some(node) {
+        return Some(b);
+    }
+    match &b.content {
+        LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+            children.iter().find_map(|c| find_laid_box(c, node))
+        }
+        _ => None,
+    }
+}
+
+#[test]
+fn declarations_on_before_and_after_apply_to_their_own_text() {
+    let laid = layout(
+        "<p>Quoted text</p>",
+        "p { font-size: 10px; color: #00f } \
+         p::before { content: \"X\"; font-size: 48px; color: #f00 } \
+         p::after { content: \"Y\"; font-weight: bold }",
+    );
+    let color = |red, blue| RgbaColor {
+        red,
+        green: 0,
+        blue,
+        alpha: 1.0,
+    };
+    let x = run(&laid, "X");
+    assert_eq!((x.font_size, x.color), (48.0, color(255, 0)));
+    let quoted = run(&laid, "Quoted");
+    assert_eq!(
+        (quoted.font_size, quoted.color, quoted.bold),
+        (10.0, color(0, 255), false)
+    );
+    // What `::after` does not set, it inherits from the paragraph.
+    let y = run(&laid, "Y");
+    assert_eq!((y.font_size, y.color, y.bold), (10.0, color(0, 255), true));
+}
+
+#[test]
+fn a_display_block_before_is_a_line_of_its_own_above_the_text() {
+    let laid = layout(
+        "<p>Quoted text</p>",
+        "p::before { content: \"X\"; display: block }",
+    );
+    let (x_top, x_left) = line_of(&laid, "X");
+    let (quoted_top, quoted_left) = line_of(&laid, "Quoted");
+    assert!(quoted_top > x_top, "{quoted_top} should be below {x_top}");
+    assert_eq!(quoted_left, x_left);
+}
+
+#[test]
+fn an_inline_block_before_keeps_its_margin() {
+    let laid = layout(
+        "<p>Quoted text</p>",
+        "body { margin: 0 } \
+         p::before { content: \"X\"; display: inline-block; margin-right: 100px }",
+    );
+    let (_, quoted_left) = line_of(&laid, "Quoted");
+    assert_eq!(quoted_left, run(&laid, "X").width + 100.0);
+}
+
+#[test]
+fn an_absolutely_positioned_before_is_placed_against_its_element_out_of_the_flow() {
+    let dom = html::parse(b"<p>Quoted text</p>");
+    let author = parse_stylesheet(
+        "p { position: relative; margin: 50px 0 0 20px } \
+         p::before { content: \"X\"; position: absolute; top: 5px; left: 300px }",
+    );
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+    let pages = paginate_document(&dom, &styles, &test_fonts(), &PageSettings::default());
+    let p = first_element(&dom, dom.document(), "p").expect("p not found");
+    let find = |node: NodeId| {
+        pages[0]
+            .boxes
+            .iter()
+            .find_map(|b| find_laid_box(b, node))
+            .expect("box not found")
+    };
+    let p_box = find(p).layout.border_box();
+    let x_box = find(p.before()).layout.border_box();
+    assert_eq!((x_box.x, x_box.y), (p_box.x + 300.0, p_box.y + 5.0));
+    // It takes no room in the paragraph's line.
+    let (_, quoted_left) = line_of(find(p), "Quoted");
+    assert_eq!(quoted_left, p_box.x);
+}
+
+#[test]
+fn before_and_after_are_generated_on_an_element_with_block_children() {
+    let laid = layout(
+        "<blockquote><p>Text</p></blockquote>",
+        "p { margin: 0 } \
+         blockquote::before { content: \"[\" } blockquote::after { content: \"]\" }",
+    );
+    assert_eq!(extract_text(&laid), "[Text]");
+}
+
+#[test]
+fn a_display_none_pseudo_element_generates_nothing() {
+    let laid = layout(
+        "<p>Quoted text</p>",
+        "p::before { content: \"X\"; display: none } p::after { content: \"Y\" }",
+    );
+    assert_eq!(extract_text(&laid), "Quoted textY");
+    let base = ComputedStyle::default().font_size.0;
+    assert_eq!(run(&laid, "Y").font_size, base);
 }

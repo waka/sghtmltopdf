@@ -157,6 +157,6 @@ wkhtmltopdfの組み込みプレースホルダのうち、使えるのは`[page
 | `--allow-remote-assets` | http(s)絶対URLのフェッチ許可 |
 | `--streaming` | [ストリーミングモード](../usage/cli/streaming.md)で処理する |
 | `--base-url <url\|dir>` | stdin入力時などの相対解決の基準 |
-| `--author` / `--subject` / `--keywords` | PDF Info辞書(wkhtmltopdfは`--title`のみ) |
+| `--author` / `--subject` / `--keywords` / `--creator` / `--creation-date` | PDF Info辞書(wkhtmltopdfは`--title`のみ) |
 | `--cover <path>` / `--toc` | 表紙・目次(wkhtmltopdfは位置引数) |
 | `server` サブコマンド | HTTPサーバモード |

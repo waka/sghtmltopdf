@@ -201,7 +201,7 @@ end
 
 # Connect to a real `sghtmltopdf server` and confirm it gives the same PDF as a local conversion.
 RSpec.describe "integration with a real server" do
-  CLI_BINARY = File.expand_path("../../../target/release/sghtmltopdf", __dir__)
+  CLI_BINARY = File.expand_path("../../../target/release/sghtmltopdf#{Gem.win_platform? ? ".exe" : ""}", __dir__)
 
   before(:all) do
     skip "no CLI binary (build it with cargo build --release)" unless File.executable?(CLI_BINARY)

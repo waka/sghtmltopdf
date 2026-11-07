@@ -21,7 +21,7 @@
 | - | - | - |
 | `display` | ⚠️ | `block`/`inline`/`inline-block`/`list-item`/`table`/`table-row`/`table-cell`/`table-caption`/`flex`/`inline-flex`/`none`のみ。`grid`は対応([Grid](#grid)節)。`inline-flex`は[Flexbox](#flexbox)節。`inline-grid`・`table-row-group`等のテーブル内部値・`flow-root`は非対応。`<thead>`/`<tbody>`/`<tfoot>`はUAスタイルで`block`のままだが、行収集が透過するのでテーブルとして機能する |
 | `visibility` | ⚠️ | `visible`/`hidden`/`collapse`。`collapse`は`hidden`と同一視(テーブル行/列の高さ再計算はしない)。継承プロパティ |
-| `overflow` | ⚠️ | `visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は非対応 |
+| `overflow` | ⚠️ | `visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。クリップ領域はpadding boxで、`border-radius`があればborderの太さだけ半径を小さくした角丸(padding edge)に沿う。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は非対応 |
 | `opacity` | ⚠️ | `<number>`/`<percentage>`を0〜1にクランプ。PDFの透明グループ+ExtGStateで実装。要素単位の合成で、`mix-blend-mode`等のブレンドは非対応 |
 | `z-index` | ⚠️ | `auto`/`<integer>`。`position: relative`の要素にのみ効く(仕様では他のpositioned要素にも効く)。同じ親を持つ兄弟間の描画順のみを制御し、スタッキングコンテキストの分離は非対応。絶対配置要素は常に通常フローの上に描かれる |
 | `box-sizing` | ⚠️ | `content-box`/`border-box`。標準外の`padding-box`は非対応 |
@@ -52,7 +52,7 @@
 | `border-*-width` | ⚠️ | `<length>`のみ。`thin`/`medium`/`thick`キーワードは非対応 |
 | `border-*-style` | ⚠️ | `none`/`hidden`/`solid`/`dashed`/`dotted`/`double`/`groove`/`ridge`/`inset`/`outset`。`hidden`は`none`と同一視(テーブルの枠線競合解決でも区別しない)。`groove`/`ridge`/`inset`/`outset`は`border-color`から2階調の陰影を算出して描画 |
 | `border-*-color` | ✅ | 初期値は`currentcolor` |
-| `border-radius` | ⚠️ | 1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`のみ)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォールバックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック |
+| `border-radius` | ⚠️ | 1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`のみ)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォールバックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック。背景画像、`overflow`のクリップ、`<img>`の画像も角丸に沿ってクリップする(CSS Backgrounds 3 § 5.3) |
 | `border-top-left-radius`ほか3隅 | ⚠️ | `<length>{1,2}`(水平/垂直半径)。制約は`border-radius`と同じ |
 | `border-start-start-radius`ほか3隅 | ⚠️ | 論理プロパティ。1つ目がblock方向、2つ目がinline方向を指す(`border-start-end-radius`=右上)。写像規則は[`margin-inline`](#ボックスモデル)と同じ |
 | `outline` | ✅ | `<width> \|\| <style> \|\| <color>`。border-boxの外側に描画し、レイアウトには影響しない |
@@ -87,7 +87,7 @@
 | - | - | - |
 | `font-family` | ⚠️ | カンマ区切りリスト。汎用family名は`serif`/`sans-serif`/`monospace`をシステムフォントから解決する(`cursive`/`fantasy`は解決しない)。`sans-serif`の解決先はCLIの`--gothic-font`で決定的に上書きできる |
 | `font-size` | ⚠️ | `<length>`(`px`/`em`/`rem`)のみ。`smaller`/`larger`/`medium`等のキーワード、パーセンテージ指定は非対応 |
-| `font-weight` | ⚠️ | `normal`/`bold`/`100`〜`900`。数値は600以上を`bold`とみなす2値化。太字フォントが無い場合は塗り+縁取りの疑似ボールドで描画 |
+| `font-weight` | ⚠️ | `normal`/`bold`/`1`〜`1000`の数値(`bolder`/`lighter`は非対応)。同じファミリーの`@font-face`が複数の太さを持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選ぶ(宣言順によらない)。システムフォントは600以上をBold、それ未満をRegularとして探す。600以上の指定に600以上のフェイスが無い場合は塗り+縁取りの疑似ボールドで描画 |
 | `font-style` | ⚠️ | `normal`/`italic`/`oblique`(`oblique`は`italic`と同一視、傾斜角の指定は不可)。イタリック字形が無い場合はテキスト行列のせん断による疑似イタリック |
 | `font`(ショートハンド) | ❌ | 個別のロングハンドを使う |
 | `color` | ✅ | 継承プロパティ。指定できる色の記法は[セレクタ・値・at-rule](selectors.md#色)を参照 |
@@ -121,14 +121,14 @@
 | `background-attachment` | ⚠️ | `scroll`/`fixed`(スクロールの概念が無いため`fixed`は`scroll`と同一視) |
 | `background-clip` / `background-origin` / `background-blend-mode` | ❌ | 未実装。背景はborder-box基準で描画する |
 
-`border-radius`と`background-image`を併用した場合、角丸によるクリップは行わない(角丸は背景色の塗りにのみ効く)。
+`border-radius`を指定した場合、`background-image`も背景色と同じ角丸(border edge)でクリップする。
 
 ## テーブル
 
 | プロパティ | 対応 | 備考 |
 | - | - | - |
 | `table-layout` | ✅ | `auto`/`fixed`。`auto`ではセル内容の自然幅を測って列幅を決める(ネストしたテーブル・flexの自然幅測定のみ非対応で0扱い) |
-| `border-collapse` | ⚠️ | `separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。継承プロパティ |
+| `border-collapse` | ⚠️ | `separate`/`collapse`。`collapse`は見た目の枠線統合のみを行う(CSS2.1 §17.6.2の競合解決を「太い方が勝ち、同幅ならスタイル優先順」で簡略化)。`collapse`では`<tr>`と`<thead>`/`<tbody>`/`<tfoot>`の枠線も統合して描き、セルの足りない行でも表の幅いっぱいに引く。行の間には、セル自身の枠線で足りない分だけ枠線の幅をとる。継承プロパティ |
 | `border-spacing` | ✅ | `<length>{1,2}`。`border-collapse: collapse`時は0として扱う。継承プロパティ |
 | `caption-side` | ⚠️ | `top`/`bottom`。縦書き向けの`left`/`right`は非対応 |
 | `empty-cells` | ✅ | `show`/`hide`。`border-collapse: separate`でのみ意味を持つ。継承プロパティ |
@@ -162,10 +162,13 @@
 
 | プロパティ | 対応 | 備考 |
 | - | - | - |
-| `content` | ⚠️ | `::before`/`::after`/`::first-letter`および`@page`のmargin box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応。ブロック子を持つ要素の`::before`/`::after`は生成されない(簡略化) |
+| `content` | ⚠️ | `::before`/`::after`/`::first-letter`および`@page`のmargin box用。文字列リテラル・`attr()`・`counter()`/`counters()`・`open-quote`/`close-quote`/`no-open-quote`/`no-close-quote`の連結に対応。`url()`による画像挿入は非対応 |
 | `counter-reset` | ✅ | `none`または`name [<integer>]`の繰り返し |
 | `counter-increment` | ✅ | `none`または`name [<integer>]`の繰り返し(値省略時は1) |
 | `counter-set` | ❌ | 未実装 |
+| `bookmark-level` | ⚠️ | `none`(初期値)または1以上の整数。値を持つ要素がPDFのしおり(アウトライン)の項目になる。ブロックレベルの要素のみ(インライン要素は項目にならない)。詳細は[ページ分割](pagination.md#pdfのしおりアウトライン)。継承しない |
+| `bookmark-label` | ⚠️ | 文字列リテラル・`attr()`・`content()`(`content(text)`と同義)の連結。初期値は`content(text)`(要素のテキスト)。ラベルは空白を畳んで使う。`content(before)`等と`counter()`は非対応。継承しない |
+| `bookmark-state` | ✅ | `open`(初期値)/`closed`。`closed`の項目は子を畳んだ状態で開く。継承しない |
 
 `counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える。ストリーミングモードでも、総ページ数が必要なmargin boxをPDF完成時に描画する。
 

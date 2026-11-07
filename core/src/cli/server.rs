@@ -36,11 +36,14 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "no-background",
     "no-images",
     "no-pdf-compression",
+    "tagged",
     // PDF metadata
     "title",
     "author",
     "subject",
     "keywords",
+    "creator",
+    "creation-date",
     // Header/footer (text, styling, and inline HTML; HTML files cannot be specified)
     "header-html-content",
     "footer-html-content",

@@ -6,17 +6,17 @@
 //! document's fonts over, the text **appears in HTML but vanishes inside the SVG**.
 //! [`SvgFontDb`] is that bridge, and both ends of it are checked here.
 //!
-//! How it is checked: the fonts svg2pdf embeds are named `/BaseFont /TAG+FamilyName`
-//! (a six-character subset tag, a `+`, then the family name). This engine's own font output
-//! is `/BaseFont /EmbeddedFont`, with no tag.
-//! So the presence of a `/BaseFont` containing a `+` tells us whether the fonts reached the
-//! SVG side and were embedded.
+//! How it is checked: the fonts svg2pdf embeds are named `/BaseFont /TAG+FamilyName`, and
+//! this engine names its own fonts the same way (`TAG+PostScriptName`), so the name cannot
+//! tell them apart. Instead the same document is converted once more with its images
+//! removed, and the fonts the SVG side embedded are the ones only the full document has.
 //!
 //! Without the `svg-text` feature, text inside an SVG is not drawn (and rustybuzz, resvg and
 //! the rest are not pulled in). That behaviour is checked here too.
 
 #![cfg(feature = "svg")]
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -61,19 +61,28 @@ fn base_font_names(pdf: &[u8]) -> Vec<String> {
     names
 }
 
-/// The names of the fonts svg2pdf embedded (the ones carrying a subset tag `TAG+`).
-/// This engine's own output is `EmbeddedFont` with no tag, so it does not get mixed in.
+/// The distinct font names in the PDF.
 ///
 /// `/BaseFont` is written in both the Type0 dictionary and the CIDFont dictionary, so one
 /// font appears twice. Duplicates are folded to return "how many distinct fonts were embedded".
-fn svg_embedded_fonts(pdf: &[u8]) -> Vec<String> {
-    let mut names: Vec<String> = base_font_names(pdf)
-        .into_iter()
-        .filter(|name| name.contains('+'))
-        .collect();
+fn distinct_font_names(pdf: &[u8]) -> Vec<String> {
+    let mut names = base_font_names(pdf);
     names.sort();
     names.dedup();
     names
+}
+
+/// `html` without its `<img>` elements, i.e. without the SVGs.
+fn without_images(html: &str) -> String {
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(start) = rest.find("<img") {
+        out.push_str(&rest[..start]);
+        let tag = &rest[start..];
+        rest = &tag[tag.find('>').map_or(tag.len(), |end| end + 1)..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The number of embedded font programs (`/FontFile2`). One per subset.
@@ -83,6 +92,8 @@ fn embedded_font_programs(pdf: &[u8]) -> usize {
 
 struct Fixture {
     dir: PathBuf,
+    /// The extra arguments of the last conversion, to repeat it without the images.
+    last_args: RefCell<Vec<String>>,
 }
 
 impl Fixture {
@@ -91,7 +102,10 @@ impl Fixture {
             std::env::temp_dir().join(format!("sghtmltopdf-svgfont-{}-{name}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
-        Self { dir }
+        Self {
+            dir,
+            last_args: RefCell::new(Vec::new()),
+        }
     }
 
     fn write(&self, relative: &str, contents: &str) {
@@ -113,16 +127,44 @@ impl Fixture {
         self.convert_capturing_stderr(extra).0
     }
 
-    /// The conversion result plus the stderr from it (for checking the warnings).
-    fn convert_capturing_stderr(&self, extra: &[&str]) -> (Vec<u8>, String) {
-        let output = self.dir.join("out.pdf");
+    fn run(
+        &self,
+        input: &str,
+        output: &str,
+        extra: &[impl AsRef<std::ffi::OsStr>],
+    ) -> (PathBuf, std::process::Output) {
+        let output = self.dir.join(output);
         let result = Command::new(BIN)
-            .arg(self.dir.join("in.html"))
+            .arg(self.dir.join(input))
             .args(extra)
             .arg("-o")
             .arg(&output)
             .output()
             .expect("failed to run the sghtmltopdf binary");
+        (output, result)
+    }
+
+    /// The names of the fonts in `pdf` that the SVG side embedded: those the same document
+    /// converted again with its images removed does not have.
+    fn svg_embedded_fonts(&self, pdf: &[u8]) -> Vec<String> {
+        let html = std::fs::read_to_string(self.dir.join("in.html")).unwrap();
+        std::fs::write(self.dir.join("plain.html"), without_images(&html)).unwrap();
+        let (output, result) = self.run("plain.html", "plain.pdf", &self.last_args.borrow());
+        assert!(
+            result.status.success(),
+            "the plain conversion should succeed"
+        );
+        let document = distinct_font_names(&std::fs::read(output).unwrap());
+        distinct_font_names(pdf)
+            .into_iter()
+            .filter(|name| !document.contains(name))
+            .collect()
+    }
+
+    /// The conversion result plus the stderr from it (for checking the warnings).
+    fn convert_capturing_stderr(&self, extra: &[&str]) -> (Vec<u8>, String) {
+        *self.last_args.borrow_mut() = extra.iter().map(|arg| arg.to_string()).collect();
+        let (output, result) = self.run("in.html", "out.pdf", extra);
         assert!(
             result.status.success(),
             "the conversion should succeed, stderr: {}",
@@ -210,7 +252,7 @@ fn a_font_given_to_the_document_is_usable_from_the_svg_by_its_internal_family_na
     );
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         embedded.iter().any(|name| name.contains("DejaVuSans")),
         "the document's font should be embedded for the SVG's text, got {embedded:?}"
@@ -231,7 +273,7 @@ fn text_without_a_font_family_falls_back_to_the_documents_font() {
     );
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         embedded.iter().any(|name| name.contains("DejaVuSans")),
         "text with no font-family should use the document's font, got {embedded:?}"
@@ -258,7 +300,7 @@ fn a_font_face_declared_family_name_is_usable_from_the_svg() {
     // `--font` is not passed. The only font reachable from the SVG is the `@font-face` one.
     let pdf = fx.convert(&[]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         !embedded.is_empty(),
         "the @font-face font should be embedded for the SVG's text, got {embedded:?}"
@@ -286,7 +328,7 @@ fn a_family_the_document_does_not_have_falls_back_to_the_documents_font() {
     );
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         embedded.iter().any(|name| name.contains("DejaVuSans")),
         "an unknown family should fall back to the document's font, got {embedded:?}"
@@ -314,7 +356,7 @@ fn generic_families_inside_an_svg_resolve_to_the_documents_generic_fonts() {
     // Pass different files for the default font and for `monospace`, and see which was used.
     let pdf = fx.convert(&["--font", FONT_PATH, "--mono-font", BOLD_FONT_PATH]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         embedded.iter().any(|name| name.contains("Bold")),
         "`monospace` in the SVG should use --mono-font, got {embedded:?}"
@@ -335,7 +377,7 @@ fn an_unset_generic_family_falls_back_to_the_documents_font() {
     // `--serif-font` is not passed.
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    let embedded = svg_embedded_fonts(&pdf);
+    let embedded = fx.svg_embedded_fonts(&pdf);
     assert!(
         embedded.iter().any(|name| name.contains("DejaVuSans")),
         "`serif` with no --serif-font should fall back to the document's font, got {embedded:?}"
@@ -356,14 +398,15 @@ fn the_svg_text_font_is_embedded_alongside_the_documents_own_font() {
     );
     let pdf = fx.convert(&["--font", FONT_PATH]);
 
-    // Both the document side (`/BaseFont /EmbeddedFont`) and the SVG side (tagged) are present.
-    let names = base_font_names(&pdf);
+    // Both the document side and the SVG side are present, as different subsets.
+    let names = distinct_font_names(&pdf);
+    let svg_side = fx.svg_embedded_fonts(&pdf);
     assert!(
-        names.iter().any(|n| n == "EmbeddedFont"),
+        names.len() > svg_side.len(),
         "the document's own text should still embed its font, got {names:?}"
     );
     assert!(
-        !svg_embedded_fonts(&pdf).is_empty(),
+        !svg_side.is_empty(),
         "the SVG's text should embed its own subset, got {names:?}"
     );
     assert!(
@@ -398,7 +441,7 @@ fn a_repeated_svg_does_not_embed_its_font_twice() {
     let repeated = three.convert(&["--font", FONT_PATH]);
 
     assert_eq!(
-        svg_embedded_fonts(&repeated).len(),
+        three.svg_embedded_fonts(&repeated).len(),
         1,
         "the shared SVG chunk should carry exactly one font subset"
     );
@@ -423,7 +466,7 @@ fn streaming_mode_also_embeds_the_documents_font_for_svg_text() {
     let pdf = fx.convert(&["--font", FONT_PATH, "--streaming"]);
 
     assert!(
-        !svg_embedded_fonts(&pdf).is_empty(),
+        !fx.svg_embedded_fonts(&pdf).is_empty(),
         "streaming mode should embed the SVG's font too"
     );
 }
@@ -446,7 +489,7 @@ fn without_the_svg_text_feature_the_text_is_dropped_but_the_svg_still_renders() 
     let (pdf, stderr) = fx.convert_capturing_stderr(&["--font", FONT_PATH]);
 
     assert!(
-        svg_embedded_fonts(&pdf).is_empty(),
+        fx.svg_embedded_fonts(&pdf).is_empty(),
         "without `svg-text` no font should be embedded for the SVG"
     );
     assert!(

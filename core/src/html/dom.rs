@@ -10,6 +10,32 @@ use html5ever::{Attribute, QualName};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(pub(crate) usize);
 
+/// The ids of `::before`/`::after` start here, above any index the arena reaches.
+const PSEUDO_ELEMENT_BASE: usize = 1 << (usize::BITS - 2);
+
+impl NodeId {
+    /// The id of the element's `::before` pseudo-element.
+    ///
+    /// A pseudo-element has no node in the arena, but layout and drawing look a box's style
+    /// up by `NodeId`, so it gets an id of its own, worked out from its element's.
+    /// [`Dom::node`] must not be called with it.
+    pub fn before(self) -> NodeId {
+        NodeId(PSEUDO_ELEMENT_BASE | self.0 << 1)
+    }
+
+    /// The id of the element's `::after` pseudo-element (see [`NodeId::before`]).
+    pub fn after(self) -> NodeId {
+        NodeId(PSEUDO_ELEMENT_BASE | self.0 << 1 | 1)
+    }
+
+    /// For the id of a `::before` or `::after`, the element it belongs to and whether it is
+    /// the `::after`. `None` for a node of the arena.
+    pub fn pseudo_element_of(self) -> Option<(NodeId, bool)> {
+        let element = NodeId((self.0 & !PSEUDO_ELEMENT_BASE) >> 1);
+        (self.0 & PSEUDO_ELEMENT_BASE != 0).then_some((element, self.0 & 1 == 1))
+    }
+}
+
 #[derive(Debug)]
 pub struct Node {
     pub(crate) parent: Option<NodeId>,
@@ -95,6 +121,23 @@ pub fn is_stylesheet_link(attrs: &[Attribute]) -> bool {
                 .split_ascii_whitespace()
                 .any(|token| token.eq_ignore_ascii_case("stylesheet"))
         })
+}
+
+/// The `lang` attribute of the root `<html>` element (for `/Lang` in the PDF catalog).
+/// Only the root counts: a `lang` further down does not set the document language.
+pub fn find_document_language(dom: &Dom) -> Option<String> {
+    dom.children(dom.document()).find_map(|node| {
+        let NodeData::Element { name, attrs, .. } = &dom.node(node).data else {
+            return None;
+        };
+        if &*name.local != "html" {
+            return None;
+        }
+        attrs
+            .iter()
+            .find(|attr| &*attr.name.local == "lang")
+            .map(|attr| attr.value.to_string())
+    })
 }
 
 /// Text of the first `<title>` in the document (for `/Title` in the PDF Info dictionary).

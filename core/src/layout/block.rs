@@ -62,6 +62,10 @@ pub struct FragmentationHints {
     pub break_inside: BreakInside,
     pub orphans: u32,
     pub widows: u32,
+    /// Whether the element has a `bookmark-level`. Pagination then keeps a fragment of the
+    /// box on the page it starts on, even when the box has nothing to paint, so the outline
+    /// can find where it is.
+    pub bookmarked: bool,
 }
 
 impl From<&ComputedStyle> for FragmentationHints {
@@ -72,6 +76,7 @@ impl From<&ComputedStyle> for FragmentationHints {
             break_inside: style.break_inside,
             orphans: style.orphans,
             widows: style.widows,
+            bookmarked: style.bookmark_level.is_some(),
         }
     }
 }
@@ -103,6 +108,66 @@ pub struct LaidOutTable {
     pub caption: Option<Box<LaidOutBox>>,
     pub caption_side: CaptionSide,
     pub rows: Vec<LaidOutTableRow>,
+    /// The space the layout keeps below the last row (see [`CollapsedBoundary::gap`]).
+    pub trailing_gap: f32,
+}
+
+/// A page break between two rows of a table, as seen from one of its fragments.
+#[derive(Debug, Clone)]
+pub struct TableBreak {
+    /// The row across the break (its cells left out), whose collapsed borders meet those of
+    /// this fragment's row there.
+    pub row: Box<LaidOutTableRow>,
+    /// The part of the collapsed border at the break that this fragment draws (see
+    /// [`CollapsedBoundary::split_gaps`]).
+    pub share: f32,
+}
+
+/// The widths of the collapsed borders meeting at one boundary between table rows (or at the
+/// top or bottom of the table), kept per side so that a page break can split them. All are 0
+/// in the separate model.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct CollapsedBoundary {
+    /// The widest bottom edge of the row above and, where its row group ends there, the group.
+    pub upper: f32,
+    /// The widest bottom border of the cells ending there.
+    pub upper_cells: f32,
+    /// The widest top edge of the row below and, where its row group starts there, the group.
+    pub lower: f32,
+    /// The widest top border of the cells starting there.
+    pub lower_cells: f32,
+}
+
+impl CollapsedBoundary {
+    /// The space the layout keeps between the rows. A browser gives a collapsed border its
+    /// width between the rows, but the cells' own borders already take theirs inside the
+    /// cells, so only what the row and group borders need beyond those is kept.
+    pub fn gap(&self) -> f32 {
+        (self.upper.max(self.lower) - self.upper_cells.max(self.lower_cells)).max(0.0)
+    }
+
+    /// The space kept at the end of the fragment above and at the start of the fragment below
+    /// when a page break falls here and the fragment above draws `share_above` of the border.
+    /// Chrome splits it in half, or, when the half above does not fit on its page, draws all
+    /// of it below.
+    pub fn split_gaps(&self, share_above: f32) -> (f32, f32) {
+        let width = self.upper.max(self.lower);
+        (
+            (width * share_above - self.upper_cells).max(0.0),
+            (width * (1.0 - share_above) - self.lower_cells).max(0.0),
+        )
+    }
+
+    /// The boundary with this one's upper side and `below`'s lower side, for rows that meet
+    /// only in a fragment (a repeated `<thead>` and the first row below it).
+    pub fn joined_with(&self, below: &CollapsedBoundary) -> CollapsedBoundary {
+        CollapsedBoundary {
+            upper: self.upper,
+            upper_cells: self.upper_cells,
+            lower: below.lower,
+            lower_cells: below.lower_cells,
+        }
+    }
 }
 
 /// One laid-out table row.
@@ -118,6 +183,19 @@ pub struct LaidOutTableRow {
     /// The row group element (`<thead>`/`<tbody>`/`<tfoot>`) the row sits in. `None` for a
     /// row placed directly in the table.
     pub group: Option<NodeId>,
+    /// Whether the row is the first or the last of its row group in the whole table (not just
+    /// in a fragment of it): a group's collapsed border is drawn only where the group really
+    /// starts or ends, never at a page break inside it.
+    pub first_in_group: bool,
+    pub last_in_group: bool,
+    /// The boundary above the row. The layout keeps [`CollapsedBoundary::gap`] there, and
+    /// `paginate` keeps the same, or splits it at a page break.
+    pub boundary_above: CollapsedBoundary,
+    /// On the first or the last row of a fragment of a table split across pages, the page
+    /// break above or below it. Kept on the rows rather than on [`LaidOutTable`], whose size
+    /// every [`LaidOutBox`] pays for through [`LaidOutContent`].
+    pub break_above: Option<TableBreak>,
+    pub break_below: Option<TableBreak>,
 }
 
 /// One absolutely positioned box.
@@ -248,6 +326,51 @@ pub fn layout_document_from(
         start_y,
         &mut pos,
     )
+}
+
+/// The absolute-positioning-aware version of [`layout_document_from`], for laying out one
+/// top-level element on its own (`Mode::Streaming`). Returns the normal-flow `LaidOutBox` plus
+/// the absolutely positioned boxes found inside it. `page_size` is `(content_width,
+/// content_height)` of the page, the containing block for `fixed` and for an `absolute` with no
+/// positioned ancestor, as in [`layout_document_positioned`].
+pub(crate) fn layout_document_from_with_absolutes(
+    root: &LayoutBox,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    fonts: &FontCollection,
+    containing_width: f32,
+    start_x: f32,
+    start_y: f32,
+    page_size: (f32, f32),
+) -> (LaidOutBox, Vec<PositionedBox>) {
+    let mut absolutes = Vec::new();
+    let mut pos = PosCtx::new(&mut absolutes, page_size);
+    let laid = layout_document_from_positioned(
+        root,
+        styles,
+        fonts,
+        containing_width,
+        start_x,
+        start_y,
+        &mut pos,
+    );
+    (laid, absolutes)
+}
+
+/// Lay out a top-level element that is itself `position: absolute`/`fixed` (`Mode::Streaming`).
+/// In batch it is a child of `<body>` that the block loop takes out of the flow, so it is laid
+/// out the same way here: against the page area, occupying no space. Returns it and the
+/// positioned boxes inside it, in the order batch collects them.
+pub(crate) fn layout_out_of_flow_root(
+    root: &LayoutBox,
+    styles: &HashMap<NodeId, Rc<ComputedStyle>>,
+    fonts: &FontCollection,
+    page_size: (f32, f32),
+) -> Vec<PositionedBox> {
+    let mut absolutes = Vec::new();
+    let mut pos = PosCtx::new(&mut absolutes, page_size);
+    let style = box_style(root, styles);
+    layout_out_of_flow_child(root, &style, styles, fonts, &mut pos);
+    absolutes
 }
 
 /// The absolute-positioning-aware version of [`layout_document_from`].
@@ -850,6 +973,7 @@ fn layout_box_impl(
                 style.table_layout,
                 h_spacing,
                 v_spacing,
+                style.border_collapse == BorderCollapse::Collapse,
                 content_x,
                 content_y,
                 pos,
@@ -1133,6 +1257,16 @@ pub(crate) fn resolve_lpa_or_zero(lpa: LengthPercentageOrAuto, basis: f32) -> f3
     }
 }
 
+/// A `width`, `min-width` or `max-width` value as a content-box width: under
+/// `box-sizing: border-box` it includes the horizontal padding and border (`pb_x`), taken off here.
+pub(super) fn to_content_box_width(style: &ComputedStyle, pb_x: f32, width: f32) -> f32 {
+    if style.box_sizing == BoxSizing::BorderBox {
+        (width - pb_x).max(0.0)
+    } else {
+        width
+    }
+}
+
 /// Clamping the used width by `min-width`/`max-width`.
 ///
 /// They are applied `max` then `min`, so `min-width` wins when `min-width > max-width`
@@ -1146,13 +1280,7 @@ pub(crate) fn clamp_used_width(
     border_lr: f32,
     width: f32,
 ) -> f32 {
-    let to_content_box = |v: f32| {
-        if style.box_sizing == BoxSizing::BorderBox {
-            (v - padding_lr - border_lr).max(0.0)
-        } else {
-            v
-        }
-    };
+    let to_content_box = |v: f32| to_content_box_width(style, padding_lr + border_lr, v);
 
     let mut used = width;
     if let MaxSize::LengthPercentage(lp) = style.max_width {
@@ -1833,7 +1961,7 @@ pub(super) fn shift_box_y(b: &LaidOutBox, delta: f32) -> LaidOutBox {
 /// Cloning the subtree at every level of the recursion would rebuild the same data once per
 /// level, inflating both the time and the peak memory for nothing. The move can be done on a
 /// borrow, so the caller clones once, only when it has to.
-pub(super) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
+pub(crate) fn shift_box_y_in_place(b: &mut LaidOutBox, delta: f32) {
     shift_rect_y(&mut b.layout.content, delta);
     if let Some(marker) = &mut b.marker {
         shift_rect_y(&mut marker.rect, delta);

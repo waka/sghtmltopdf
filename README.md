@@ -143,7 +143,7 @@ class InvoicesController < ApplicationController
 end
 ```
 
-If the gem cannot run where your app runs (Windows) or you would rather not spend the app's CPU on rendering, set `server_url` and the same calls are delegated to a separate `sghtmltopdf server` process.
+If the gem cannot run where your app runs or you would rather not spend the app's CPU on rendering, set `server_url` and the same calls are delegated to a separate `sghtmltopdf server` process.
 
 ```ruby
 Sghtmltopdf.configure { |c| c.server_url = "http://{REMOTE_SERVER_URL}:8080" }

@@ -647,6 +647,97 @@ fn the_title_option_wins_over_the_html_title() {
 }
 
 #[test]
+fn the_html_lang_becomes_the_catalog_language() {
+    // Both writers put `<html lang>` in the catalog as written, region included.
+    for (args, mode) in [(&[][..], "batch"), (&["--streaming"][..], "streaming")] {
+        for (lang, expected) in [
+            ("pl", Some("/Lang (pl)")),
+            ("en-GB", Some("/Lang (en-GB)")),
+            ("  de-AT \n", Some("/Lang (de-AT)")),
+            ("", None),
+            ("   ", None),
+            // Not a language tag: nothing is better than an invalid /Lang.
+            ("p(l", None),
+        ] {
+            let html = format!(
+                "<html lang=\"{lang}\"><head><title>t</title></head><body><p>x</p></body></html>"
+            );
+            let bytes = run_cli_with(&html, args, &format!("lang-{mode}"));
+            match expected {
+                Some(entry) => assert_eq!(
+                    count_occurrences(&bytes, entry.as_bytes()),
+                    1,
+                    "{mode}: lang {lang:?}"
+                ),
+                None => assert_eq!(
+                    count_occurrences(&bytes, b"/Lang"),
+                    0,
+                    "{mode}: lang {lang:?}"
+                ),
+            }
+        }
+
+        let none = run_cli_with(PLAIN_HTML, args, &format!("lang-none-{mode}"));
+        assert_eq!(count_occurrences(&none, b"/Lang"), 0, "{mode}: no lang");
+    }
+}
+
+#[test]
+fn an_html_lang_that_is_not_a_language_tag_is_warned_about() {
+    for args in [&[][..], &["--streaming"][..]] {
+        let html = r#"<html lang="en us"><body><p>x</p></body></html>"#;
+        let stderr = run_capturing_stderr(html, args, "lang-warn-invalid");
+        assert!(
+            stderr.contains("warning:") && stderr.contains("en us"),
+            "got: {stderr}"
+        );
+
+        // An empty `lang` is ordinary HTML, so it stays quiet.
+        let html = r#"<html lang=""><body><p>x</p></body></html>"#;
+        let mut args = args.to_vec();
+        args.push("--quiet");
+        let stderr = run_capturing_stderr(html, &args, "lang-warn-empty");
+        assert!(stderr.is_empty(), "got: {stderr}");
+    }
+}
+
+#[test]
+fn a_header_document_does_not_set_the_language() {
+    let dir = std::env::temp_dir().join(format!(
+        "sghtmltopdf-e2e-lang-header-{}",
+        std::process::id()
+    ));
+    let header = write_temp_html(
+        &dir,
+        "header.html",
+        r#"<html lang="fr"><body><p>HDR</p></body></html>"#,
+    );
+    let main = r#"<html lang="pl"><body><p>x</p></body></html>"#;
+    let no_lang = "<html><body><p>x</p></body></html>";
+    let header = header.to_str().unwrap();
+    for args in [&[][..], &["--streaming"][..]] {
+        let mut args = args.to_vec();
+        args.extend(["--header-html", header]);
+        let bytes = run_cli_with(main, &args, "lang-header-pl");
+        assert_eq!(count_occurrences(&bytes, b"/Lang (pl)"), 1);
+        assert_eq!(count_occurrences(&bytes, b"/Lang (fr)"), 0);
+        let bytes = run_cli_with(no_lang, &args, "lang-header-none");
+        assert_eq!(count_occurrences(&bytes, b"/Lang"), 0);
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn only_the_lang_of_the_html_element_counts() {
+    // A `lang` on another element, or in a header document, does not set the document's.
+    let html = r#"<html><body><p lang="fr">x</p></body></html>"#;
+    for args in [&[][..], &["--streaming"][..]] {
+        let bytes = run_cli_with(html, args, "lang-inner");
+        assert_eq!(count_occurrences(&bytes, b"/Lang"), 0);
+    }
+}
+
+#[test]
 fn author_subject_and_keywords_are_written_when_given() {
     let bytes = run_cli_with(
         PLAIN_HTML,
@@ -663,6 +754,212 @@ fn author_subject_and_keywords_are_written_when_given() {
     assert!(count_occurrences(&bytes, b"/Author (waka)") > 0);
     assert!(count_occurrences(&bytes, b"/Subject (invoice)") > 0);
     assert!(count_occurrences(&bytes, b"/Keywords (pdf,rust)") > 0);
+}
+
+#[test]
+fn creator_and_creation_date_are_written_when_given() {
+    // The offset is converted to UTC; `/ModDate` repeats the creation date.
+    let bytes = run_cli_with(
+        PLAIN_HTML,
+        &[
+            "--creator",
+            "Acme Reports",
+            "--creation-date",
+            "2026-10-22T10:30:00+02:00",
+        ],
+        "creator-date",
+    );
+    assert!(count_occurrences(&bytes, b"/Creator (Acme Reports)") > 0);
+    assert!(count_occurrences(&bytes, b"/CreationDate (D:20261022083000Z)") > 0);
+    assert!(count_occurrences(&bytes, b"/ModDate (D:20261022083000Z)") > 0);
+}
+
+#[test]
+fn without_a_creation_date_the_wall_clock_is_used_and_no_creator_is_written() {
+    let bytes = run_cli_with(PLAIN_HTML, &[], "no-creator");
+    assert_eq!(count_occurrences(&bytes, b"/Creator"), 0);
+    assert!(count_occurrences(&bytes, b"/CreationDate (D:") > 0);
+    assert!(count_occurrences(&bytes, b"/ModDate (D:") > 0);
+}
+
+#[test]
+fn a_creation_date_makes_the_output_reproducible_in_both_writers() {
+    let html = "<html><head><title>t</title></head><body><p>hello</p></body></html>";
+    for (streaming, name) in [(false, "repro-batch"), (true, "repro-streaming")] {
+        let mut args = vec![
+            "--author",
+            "waka",
+            "--creation-date",
+            "2026-01-02T03:04:05Z",
+        ];
+        if streaming {
+            args.push("--streaming");
+        }
+        let first = run_cli_with(html, &args, name);
+        // Cross a second boundary so a wall-clock leak would show.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let second = run_cli_with(html, &args, name);
+        assert_eq!(first, second, "{name}: same input, same bytes");
+    }
+}
+
+#[test]
+fn the_creation_date_changes_the_file_identifier() {
+    let id_of = |date: &str, name: &str| {
+        let bytes = run_cli_with(PLAIN_HTML, &["--creation-date", date], name);
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        text.split_once("/ID [<").unwrap().1[..32].to_string()
+    };
+    assert_ne!(
+        id_of("2026-01-02T03:04:05Z", "id-date-a"),
+        id_of("2026-01-02T03:04:06Z", "id-date-b")
+    );
+}
+
+#[test]
+fn the_file_identifier_covers_the_document_content() {
+    // Same metadata, same date, same page count: only the text differs.
+    for (args, name) in [
+        (&[][..], "id-content-batch"),
+        (&["--streaming"][..], "id-content-streaming"),
+    ] {
+        let mut all = vec!["--title", "t", "--creation-date", "2026-01-02T03:04:05Z"];
+        all.extend_from_slice(args);
+        let id_of = |html: &str| {
+            let bytes = run_cli_with(html, &all, name);
+            String::from_utf8_lossy(&bytes)
+                .split_once("/ID [<")
+                .unwrap()
+                .1[..32]
+                .to_string()
+        };
+        let a = id_of("<html><body><p>first</p></body></html>");
+        assert_eq!(a, id_of("<html><body><p>first</p></body></html>"));
+        assert_ne!(
+            a,
+            id_of("<html><body><p>second</p></body></html>"),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn a_creation_date_is_parsed_as_iso_8601() {
+    for (value, expected) in [
+        ("2026-10-22", "D:20261022000000Z"),
+        ("2026-10-22T08:30Z", "D:20261022083000Z"),
+        ("2026-10-22 08:30:15.75Z", "D:20261022083015Z"),
+        ("2026-10-22T08:30:15-05:30", "D:20261022140015Z"),
+        ("2026-10-22T08:30:15", "D:20261022083015Z"),
+    ] {
+        let bytes = run_cli_with(PLAIN_HTML, &["--creation-date", value], "date-forms");
+        let needle = format!("/CreationDate ({expected})");
+        assert!(
+            count_occurrences(&bytes, needle.as_bytes()) > 0,
+            "{value} should give {expected}"
+        );
+    }
+}
+
+#[test]
+fn a_bad_creation_date_is_a_usage_error() {
+    for value in [
+        "yesterday",
+        "2026-13-01",
+        "2026-02-30",
+        "2026-10-22T25:00:00Z",
+        "2026-10-22T08:30:15+24:00",
+        "2026-10-22T10:00:00:99",
+        "2026-10-22T10:00:00.abc",
+        "2026-10-22T10:00:00+",
+        "2026-10-22T10:00:00Z+02:00",
+    ] {
+        let out = Command::new(BIN)
+            .arg(SAMPLE_HTML)
+            .arg("--font")
+            .arg(FONT_PATH)
+            .args(["--creation-date", value])
+            .arg("-o")
+            .arg(temp_output_path("bad-date"))
+            .output()
+            .expect("failed to run sghtmltopdf binary");
+        assert_eq!(out.status.code(), Some(1), "{value} should be rejected");
+    }
+}
+
+/// The text of the XMP packet, found through the catalog's `/Metadata` entry.
+fn xmp_packet(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes).into_owned();
+    assert!(text.contains("/Type /Metadata"), "the XMP stream is typed");
+    assert!(text.contains("/Subtype /XML"));
+    let catalog = &text[text.find("/Type /Catalog").expect("a catalog")..];
+    assert!(
+        catalog[..catalog.find(">>").unwrap()].contains("/Metadata "),
+        "the catalog should point at the XMP stream"
+    );
+    let start = text.find("<?xpacket begin").expect("an XMP packet");
+    let end = text.find("<?xpacket end").expect("the packet end");
+    text[start..end + text[end..].find("?>").unwrap() + 2].to_string()
+}
+
+#[test]
+fn the_xmp_stream_mirrors_the_info_fields() {
+    for (args, name) in [
+        (&[][..], "xmp-batch"),
+        (&["--streaming"][..], "xmp-streaming"),
+    ] {
+        let mut all = vec![
+            "--title",
+            "Raport Zażółć",
+            "--author",
+            "Владимир Путин",
+            "--subject",
+            "A & B <c>",
+            "--keywords",
+            "pdf, \"rust\"",
+            "--creator",
+            "Acme Reports",
+            "--creation-date",
+            "2026-10-22T10:30:00+02:00",
+        ];
+        all.extend_from_slice(args);
+        let html = "<html lang=\"pl-PL\"><body><p>hello</p></body></html>";
+        let xmp = xmp_packet(&run_cli_with(html, &all, name));
+        for expected in [
+            "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Raport Zażółć</rdf:li></rdf:Alt></dc:title>",
+            "<dc:creator><rdf:Seq><rdf:li>Владимир Путин</rdf:li></rdf:Seq></dc:creator>",
+            "<rdf:li xml:lang=\"x-default\">A &amp; B &lt;c&gt;</rdf:li>",
+            "<dc:language><rdf:Bag><rdf:li>pl-PL</rdf:li></rdf:Bag></dc:language>",
+            "<pdf:Keywords>pdf, \"rust\"</pdf:Keywords>",
+            "<xmp:CreatorTool>Acme Reports</xmp:CreatorTool>",
+            "<pdf:Producer>sghtmltopdf ",
+            "<xmp:CreateDate>2026-10-22T08:30:00Z</xmp:CreateDate>",
+            "<xmp:ModifyDate>2026-10-22T08:30:00Z</xmp:ModifyDate>",
+        ] {
+            assert!(xmp.contains(expected), "{name}: missing {expected} in {xmp}");
+        }
+        assert!(
+            !xmp.contains("pdfaid"),
+            "PDF/A identification is not written yet"
+        );
+    }
+}
+
+#[test]
+fn the_xmp_stream_omits_fields_that_were_not_given() {
+    let xmp = xmp_packet(&run_cli_with(PLAIN_HTML, &[], "xmp-minimal"));
+    for absent in [
+        "dc:title",
+        "dc:creator",
+        "dc:description",
+        "dc:language",
+        "pdf:Keywords",
+        "xmp:CreatorTool",
+    ] {
+        assert!(!xmp.contains(absent), "{absent} should be absent: {xmp}");
+    }
+    assert!(xmp.contains("<pdf:Producer>"));
+    assert!(xmp.contains("<xmp:CreateDate>"));
 }
 
 #[test]
@@ -1181,14 +1478,17 @@ fn inline_header_footer_html_matches_file_input() {
         let file = render(file_option, path.to_str().unwrap());
         let inline = render(content_option, html);
         assert_eq!(count_occurrences(&inline, b"/MediaBox"), 2);
-        // Compare streams only: CreationDate and the trailer ID vary over time.
+        // Compare streams only: CreationDate and the trailer ID vary over time, and so do
+        // the dates in the XMP stream, which is left out.
         let streams = |pdf: &[u8]| -> Vec<Vec<u8>> {
             let mut rest = pdf;
             let mut result = Vec::new();
             while let Some(start) = rest.windows(7).position(|w| w == b"stream\n") {
                 rest = &rest[start + 7..];
                 let end = rest.windows(9).position(|w| w == b"endstream").unwrap();
-                result.push(rest[..end].to_vec());
+                if !rest.starts_with(b"<?xpacket") {
+                    result.push(rest[..end].to_vec());
+                }
                 rest = &rest[end + 9..];
             }
             result
@@ -1712,6 +2012,84 @@ fn streaming_stays_quiet_for_selectors_that_keep_working() {
         </style></head><body><p>x</p></body></html>"#;
 
     let streaming = run_capturing_stderr(html, &["--streaming"], "warn-selector-safe");
+    assert!(!streaming.contains("warning:"), "got: {streaming}");
+}
+
+/// #97: an `absolute` with no positioned ancestor belongs on the first page, which streaming
+/// has already written by the time the element is reached. It is not drawn, so a warning says
+/// so, once per document however many there are.
+#[test]
+fn streaming_warns_once_about_absolutes_whose_first_page_is_already_written() {
+    let html = r#"<html><body>
+        <div style="height: 1500px">tall</div>
+        <div><span style="position: absolute; top: 0; right: 0">A</span></div>
+        <div><span style="position: absolute; top: 0; left: 0">B</span></div>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-absolute-streaming");
+    assert_eq!(
+        streaming.matches("warning:").count(),
+        1,
+        "one warning expected, got: {streaming}"
+    );
+    assert!(streaming.contains("position: absolute"), "got: {streaming}");
+
+    let batch = run_capturing_stderr(html, &[], "warn-absolute-batch");
+    assert!(!batch.contains("warning:"), "got: {batch}");
+}
+
+/// #97: `fixed` repeats on every page in batch. Met after pages have been written, streaming
+/// cannot put it on those, so it warns, once however many such elements there are.
+#[test]
+fn streaming_warns_once_about_fixed_elements_met_after_pages_are_written() {
+    let html = r#"<html><body>
+        <div style="height: 1500px">tall</div>
+        <div><span style="position: fixed; top: 0; left: 0">F1</span></div>
+        <span style="position: fixed; bottom: 0; left: 0">F2</span>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-fixed-streaming");
+    assert_eq!(
+        streaming.matches("warning:").count(),
+        1,
+        "one warning expected, got: {streaming}"
+    );
+    assert!(streaming.contains("position: fixed"), "got: {streaming}");
+
+    let batch = run_capturing_stderr(html, &[], "warn-fixed-batch");
+    assert!(!batch.contains("warning:"), "got: {batch}");
+}
+
+/// #97: a `fixed` element met before any page is written repeats on every page as in batch,
+/// so there is nothing to warn about.
+#[test]
+fn streaming_stays_quiet_about_a_fixed_element_at_the_start() {
+    let html = r#"<html><body>
+        <div style="position: fixed; top: 0; right: 0">WATERMARK</div>
+        <div><span style="position: fixed; bottom: 0; left: 0">footer</span></div>
+        <div style="height: 1500px">tall</div>
+        <p>end</p>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-fixed-start");
+    assert!(!streaming.contains("warning:"), "got: {streaming}");
+}
+
+/// #97: a nested `absolute` streaming draws as batch does needs no warning.
+#[test]
+fn streaming_stays_quiet_about_an_absolute_it_draws() {
+    let html = r#"<html><body>
+        <div style="position: relative; height: 40px">
+          <div style="position: absolute; right: 0; top: 0">ABS</div>
+        </div>
+        <div style="height: 1500px">tall</div>
+        <div style="position: relative; height: 40px">
+          <div style="position: absolute; right: 0; top: 0">ABS</div>
+        </div>
+        <p>tail</p>
+    </body></html>"#;
+
+    let streaming = run_capturing_stderr(html, &["--streaming"], "warn-absolute-drawn");
     assert!(!streaming.contains("warning:"), "got: {streaming}");
 }
 
