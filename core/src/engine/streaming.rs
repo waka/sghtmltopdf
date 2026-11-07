@@ -832,7 +832,8 @@ impl<S: Sink> Engine<S> {
                 &state.pinned,
             );
         }
-        let written = state.writer.page_count();
+        // Compared with the paginator's page indices, which count body pages only.
+        let written = state.writer.body_page_count();
         state.finished_runs.retain(|(last_page, nodes)| {
             if *last_page >= written {
                 return true;
@@ -1157,5 +1158,48 @@ mod tests {
                 "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
             );
         }
+    }
+
+    #[test]
+    fn streaming_with_a_cover_keeps_the_styles_of_inline_runs_until_their_page_is_written() {
+        // The pages of an inline run are counted by the paginator, which sees body pages
+        // only. Comparing them with every page written, cover included, freed a run's
+        // styles while its page was still held, so its boxes lost their background.
+        let mut html = String::from(
+            "<style>span { display: inline-block; width: 10px; height: 10px; \
+             background: rgb(255, 0, 0); }</style><body>",
+        );
+        for i in 0..40 {
+            html.push_str(&format!(
+                "run {i} <span></span><div style='height: 40px'></div>"
+            ));
+        }
+        let render = |mode| {
+            let mut options = EngineOptions {
+                mode,
+                fonts: vec![font_spec()],
+                disable_system_fonts: true,
+                cover_html: Some(
+                    "<p>one</p><p style='break-before:page'>two</p>\
+                     <p style='break-before:page'>three</p>"
+                        .into(),
+                ),
+                ..EngineOptions::default()
+            };
+            options.output.compress = false;
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(html.as_bytes()).unwrap();
+            engine.finish().unwrap()
+        };
+        let red = |bytes: &[u8]| {
+            bytes
+                .windows(b"1 0 0 rg".len())
+                .filter(|w| *w == b"1 0 0 rg")
+                .count()
+        };
+        let batch = render(Mode::Batch);
+        let streaming = render(Mode::Streaming);
+        assert!(red(&batch) > 0);
+        assert_eq!(red(&streaming), red(&batch));
     }
 }
