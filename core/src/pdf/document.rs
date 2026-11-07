@@ -505,6 +505,7 @@ pub fn encode_pdf_with_options(
         write_resources(
             p.resources(),
             &plan,
+            None,
             &page_image_refs,
             &form_refs,
             &alpha_gs_names,
@@ -539,6 +540,7 @@ pub fn encode_pdf_with_options(
             write_resources(
                 form.resources(),
                 &plan,
+                None,
                 &page_image_refs,
                 &form_refs,
                 &alpha_gs_names,
@@ -776,13 +778,14 @@ pub(super) fn write_document_info(
 pub(super) fn write_resources(
     mut resources: pdf_writer::writers::Resources<'_>,
     plan: &FontPlan,
+    outline_fonts_used: Option<&[bool]>,
     page_image_refs: &[Ref],
     form_refs: &[Ref],
     alpha_gs_names: &[String],
     alpha_gs_ids: &[Ref],
 ) {
     let mut font_dict = resources.fonts();
-    for (name, id) in plan.resource_entries() {
+    for (name, id) in plan.resource_entries(outline_fonts_used) {
         font_dict.pair(Name(name.as_bytes()), id);
     }
     font_dict.finish();
