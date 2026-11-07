@@ -35,7 +35,7 @@ use super::document::{
     TextFonts, ALPHA_STEPS,
 };
 use super::file_id::{id_entry, FileIdHasher};
-use super::font::{deflate, embed_font_streaming_chunks, FontUsage};
+use super::font::{embed_font_streaming_chunks, FontUsage, StreamCompressor};
 use super::img::{embed_image_streaming_chunks, ids_for_image, ImageIds, PreparedImage};
 use super::options::PdfOutputOptions;
 use super::outline::{collect_bookmark_positions, write_outline, Bookmark, OutlineEntry};
@@ -102,6 +102,7 @@ pub struct StreamingPdfWriter<S: Sink> {
     outline_entries: Vec<OutlineEntry>,
     /// Metadata, compression, scale and grayscale.
     output: PdfOutputOptions,
+    compressor: Option<StreamCompressor>,
     /// The subdocument to composite onto the next page written
     /// (`--header-html`/`--footer-html`). Consumed by `write_page`.
     pending_overlays: Vec<PageOverlay>,
@@ -195,6 +196,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             links,
             destinations: Vec::new(),
             outline_entries: Vec::new(),
+            compressor: None,
             output,
             pending_overlays: Vec::new(),
             pending_page_number: None,
@@ -462,7 +464,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             content_bytes = strip_empty_artifacts(content_bytes);
         }
         let stream_bytes = if self.output.compress {
-            deflate(&content_bytes)
+            self.compressor
+                .get_or_insert_with(StreamCompressor::new)
+                .compress(&content_bytes)
         } else {
             content_bytes.to_vec()
         };
@@ -473,6 +477,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             content_stream.filter(Filter::FlateDecode);
         }
         content_stream.finish();
+        if let Some(compressor) = &mut self.compressor {
+            compressor.recycle(stream_bytes);
+        }
         self.write_chunk(content_id, &chunk)?;
 
         // The `<a href>` annotations, and the positions of the anchors landing on this page.
@@ -692,7 +699,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
             );
             let bytes = content.finish();
             let bytes = if self.output.compress {
-                deflate(&bytes)
+                self.compressor
+                    .get_or_insert_with(StreamCompressor::new)
+                    .compress(&bytes)
             } else {
                 bytes
             };
@@ -717,6 +726,9 @@ impl<S: Sink> StreamingPdfWriter<S> {
                     &self.alpha_gs_ids,
                 );
             }
+            if let Some(compressor) = &mut self.compressor {
+                compressor.recycle(bytes);
+            }
             self.write_chunk(id, &chunk)?;
         }
         Ok(())
@@ -726,6 +738,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
     /// and the trailer) and call `sink.finish()`.
     pub fn finish(mut self, fonts: &FontCollection) -> Result<S::Output, S::Error> {
         self.write_deferred_decorations(fonts, |_, _| Ok::<_, S::Error>(Vec::new()))?;
+        self.compressor = None;
         let usages = std::mem::take(&mut self.usages);
         for (index, font) in fonts.fonts().iter().enumerate() {
             let Some(simple) = self.font_plan.simple(index) else {
