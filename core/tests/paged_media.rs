@@ -4,11 +4,11 @@
 //!
 //! The same approach as `background.rs`/`box_sizing.rs`: catch regressions by going through
 //! the real pipeline. This feature is wired directly into `Engine` (`core/src/engine.rs`)
-//! (resolving `@page`, the Mode::Streaming restriction on `counter(pages)` and pre-counting
+//! (resolving `@page`, deferred streaming `counter(pages)` and pre-counting
 //! the total pages are all the `Engine` layer's job), so unlike the other E2E test files it
 //! uses the `Engine` API directly.
 
-use sghtmltopdf::engine::{Engine, EngineError, EngineOptions, FontSpec, Mode};
+use sghtmltopdf::engine::{Engine, EngineOptions, FontSpec, Mode};
 use sghtmltopdf::sink::MemorySink;
 
 const FONT_PATH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fonts/DejaVuSans.ttf");
@@ -205,20 +205,21 @@ fn at_page_first_selects_different_margin_box_content_than_other_pages() {
 }
 
 #[test]
-fn counter_pages_in_a_margin_box_is_rejected_in_streaming_mode() {
+fn counter_pages_in_a_margin_box_works_in_streaming_mode() {
     let mut options = EngineOptions::default();
     options.mode = Mode::Streaming;
     options.fonts = vec![font_spec()];
     let mut engine = Engine::new(options, MemorySink::new());
-    let result = engine.feed(
-        br#"<html><head><style>
+    engine
+        .feed(
+            br#"<html><head><style>
               @page { @bottom-center { content: counter(pages); } }
             </style></head><body><p>x</p></body></html>"#,
-    );
-    match result {
-        Err(EngineError::UnsupportedInStreamingMode(_)) => {}
-        other => panic!("expected UnsupportedInStreamingMode, got {other:?}"),
-    }
+        )
+        .unwrap();
+    let bytes = engine.finish().unwrap();
+    assert!(count_occurrences(&bytes, b"/Subtype /Form") > 0);
+    assert_eq!(count_occurrences(&bytes, b"/MediaBox"), 1);
 }
 
 #[test]

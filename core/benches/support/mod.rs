@@ -146,7 +146,7 @@ pub struct Fixture {
     pub name: &'static str,
     pub file: &'static str,
     /// Can be rendered in `Mode::Streaming` without hitting a hard error
-    /// (`counter(pages)`, `<body>` decorations, trailing `<style>`, ...).
+    /// (`<body>` decorations, trailing `<style>`, ...).
     pub streaming: bool,
     /// Loads images, stylesheets or fonts from disk. Such fixtures cannot be
     /// posted to the HTTP server, which disables local file access.
@@ -488,8 +488,9 @@ pub mod alloc {
     }
 }
 
-/// Peak resident set size of this process (`RUSAGE_SELF`) or of its waited
-/// children (`RUSAGE_CHILDREN`), in bytes.
+/// Peak resident set size of this process or its waited children, in bytes.
+/// On Windows, use `child_peak_rss_bytes` for an individual child process.
+#[cfg(unix)]
 pub fn peak_rss_bytes(children: bool) -> u64 {
     let who = if children {
         libc::RUSAGE_CHILDREN
@@ -509,5 +510,81 @@ pub fn peak_rss_bytes(children: bool) -> u64 {
         maxrss
     } else {
         maxrss * 1024
+    }
+}
+
+#[cfg(windows)]
+fn process_peak_rss_bytes(handle: *mut std::ffi::c_void) -> u64 {
+    #[repr(C)]
+    struct ProcessMemoryCounters {
+        cb: u32,
+        page_fault_count: u32,
+        peak_working_set_size: usize,
+        working_set_size: usize,
+        quota_peak_paged_pool_usage: usize,
+        quota_paged_pool_usage: usize,
+        quota_peak_non_paged_pool_usage: usize,
+        quota_non_paged_pool_usage: usize,
+        pagefile_usage: usize,
+        peak_pagefile_usage: usize,
+    }
+    #[link(name = "psapi")]
+    extern "system" {
+        fn GetProcessMemoryInfo(
+            process: *mut std::ffi::c_void,
+            counters: *mut ProcessMemoryCounters,
+            size: u32,
+        ) -> i32;
+    }
+    let size = std::mem::size_of::<ProcessMemoryCounters>() as u32;
+    let mut counters = ProcessMemoryCounters {
+        cb: size,
+        page_fault_count: 0,
+        peak_working_set_size: 0,
+        working_set_size: 0,
+        quota_peak_paged_pool_usage: 0,
+        quota_paged_pool_usage: 0,
+        quota_peak_non_paged_pool_usage: 0,
+        quota_non_paged_pool_usage: 0,
+        pagefile_usage: 0,
+        peak_pagefile_usage: 0,
+    };
+    // SAFETY: the handle remains valid for this call and counters has the Windows
+    // PROCESS_MEMORY_COUNTERS layout, with its size supplied to the API.
+    if unsafe { GetProcessMemoryInfo(handle, &mut counters, size) } == 0 {
+        return 0;
+    }
+    counters.peak_working_set_size as u64
+}
+
+#[cfg(windows)]
+pub fn peak_rss_bytes(children: bool) -> u64 {
+    if children {
+        return 0;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> *mut std::ffi::c_void;
+    }
+    // SAFETY: GetCurrentProcess returns a valid pseudo-handle for this process.
+    process_peak_rss_bytes(unsafe { GetCurrentProcess() })
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn peak_rss_bytes(_children: bool) -> u64 {
+    0
+}
+
+/// Read a waited child's peak RSS while its process handle is still owned.
+pub fn child_peak_rss_bytes(child: &std::process::Child) -> u64 {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        process_peak_rss_bytes(child.as_raw_handle())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = child;
+        peak_rss_bytes(true)
     }
 }

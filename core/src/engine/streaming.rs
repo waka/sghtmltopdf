@@ -7,16 +7,18 @@ use std::rc::Rc;
 
 use super::{
     append_user_stylesheets, apply_content_options, apply_page_rule_settings_override,
-    build_page_overlays, collect_bookmarks, ensure_default_font, load_explicit_fonts,
-    overlay_fetcher, page_rules_with_extra, register_generic_fonts, warn_unresolved_font_families,
-    Engine, EngineError, OverlayCache,
+    build_page_overlays, build_toc_pages, check_deadline, checked_page_count_add,
+    collect_bookmarks, collect_headings, ensure_default_font, load_explicit_fonts, overlay_fetcher,
+    page_rules_with_extra, record_streaming_headings, register_generic_fonts,
+    render_standalone_document, warn_unresolved_font_families, Engine, EngineError, OverlayCache,
+    PageNumberPlan, TocHeading,
 };
 use crate::fonts::{
     ensure_cjk_fallback_font, load_font_faces, warn_uncovered_chars, FontCollection, SystemFonts,
 };
 use crate::html::{
-    collect_anchor_targets, find_base_href, find_document_language, find_document_title, Dom,
-    NodeId,
+    collect_anchor_targets, collect_anchor_targets_in_subtree, find_base_href,
+    find_document_language, find_document_title, Dom, NodeId,
 };
 use crate::img::{DocumentImageCache, ImageFetcher};
 use crate::layout::{
@@ -28,15 +30,14 @@ use crate::layout::{
     PositionedKind, PositionedLeftovers, StreamingPaginator, TopLevelKind,
 };
 use crate::pdf::{
-    anchor_destination_name, ImageAssetCache, LinkSettings, PreparedImage, StreamingPdfWriter,
-    SvgFontDb,
+    anchor_destination_name, ImageAssetCache, LinkSettings, PageRole, PreparedImage,
+    StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
     compute_single_element_style, compute_styles_with_parent, extract_author_stylesheet,
-    needs_preceding_siblings, root_custom_properties, rules_use_page_count,
-    streaming_unsafe_selectors, user_agent_stylesheet, ComputedStyle, Float,
-    LengthPercentageOrAuto, Stylesheet,
+    needs_preceding_siblings, root_custom_properties, streaming_unsafe_selectors,
+    user_agent_stylesheet, ComputedStyle, Float, LengthPercentageOrAuto, Stylesheet,
 };
 
 /// The state needed to process top-level elements under `Mode::Streaming`, settled once when
@@ -110,6 +111,14 @@ pub(super) struct StreamingState<S: Sink> {
     release_whole_subtree: bool,
     paginator: StreamingPaginator,
     writer: StreamingPdfWriter<S>,
+    /// `--page-offset`, added to every displayed page number.
+    page_offset: usize,
+    /// The TOC headings whose body page is known, in document order.
+    headings: Vec<TocHeading>,
+    /// The TOC headings laid out but not on a written page yet, keyed on their element.
+    pending_headings: HashMap<NodeId, TocHeading>,
+    /// The number of headings collected so far, so automatic anchors stay unique.
+    heading_serial: usize,
     /// The cache memoising `<img>` fetch and decode results within the document.
     image_cache: ImageAssetCache,
 }
@@ -273,29 +282,6 @@ impl<S: Sink> Engine<S> {
             &root_properties,
         );
         let page_settings = apply_page_rule_settings_override(self.options.settings, &page_rules);
-        if rules_use_page_count(&page_rules) {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "counter(pages) in an @page margin box cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-        // `[topage]` in `--header-html`/`--footer-html` is unusable for the same reason.
-        if self.options.header_footer_html.uses_total_pages() {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "[topage] in --header-html/--footer-html cannot be used in streaming mode\n  \
-                 (the total page count cannot be known in a single pass).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-        // A table of contents cannot be built until the whole body has been paginated.
-        if self.options.toc.enabled {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "--toc cannot be used in streaming mode\n  \
-                 (a table of contents needs the body's page numbers).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
         // A backward-referencing selector always fails to match. It is not an error, but the
         // result changing silently is worth avoiding, so it is warned about.
         let unsafe_selectors = streaming_unsafe_selectors(&author);
@@ -429,13 +415,13 @@ impl<S: Sink> Engine<S> {
             .metadata
             .fill_language_from_document(find_document_language(&self.parser.dom()));
 
-        let writer = StreamingPdfWriter::with_options(
+        let mut writer = StreamingPdfWriter::with_options(
             &fonts,
             page_settings,
             sink,
             page_rules.clone(),
             LinkSettings {
-                anchor_names: anchor_names.clone(),
+                anchor_names: HashMap::new(),
                 base_href: base_href.clone(),
                 external: self.options.content.external_links,
                 internal: self.options.content.internal_links,
@@ -447,6 +433,25 @@ impl<S: Sink> Engine<S> {
             HashMap::new(),
         )
         .map_err(EngineError::Io)?;
+        // The cover is a separate document whose `NodeId`s would collide with the body's
+        // anchors, so they are set aside while it is written.
+        if let Some(html) = &self.options.cover_html {
+            writer.replace_anchor_names(HashMap::new());
+            for page in render_standalone_document(html, &fonts, &page_settings) {
+                check_deadline(self.options.deadline)?;
+                writer.set_next_page_role(PageRole::Cover);
+                writer.set_next_page_number(None);
+                writer
+                    .write_page(&page, &HashMap::new(), &HashMap::new(), &fonts, None)
+                    .map_err(EngineError::Io)?;
+            }
+        }
+        writer.replace_anchor_names(anchor_names);
+        // With a TOC, every body page number moves by the TOC's length, which is only known
+        // at the end, so the HTML header/footer is drawn then as well.
+        writer.defer_page_overlays(
+            self.options.toc.enabled || self.options.header_footer_html.uses_total_pages(),
+        );
         let image_cache = ImageAssetCache::with_fetcher(
             ImageFetcher::new(base_dir.to_path_buf(), self.options.allow_remote_assets)
                 .with_base_href(base_href)
@@ -492,6 +497,10 @@ impl<S: Sink> Engine<S> {
             release_whole_subtree,
             paginator: StreamingPaginator::new(page_settings.content_height()),
             writer,
+            page_offset: self.options.page_offset,
+            headings: Vec::new(),
+            pending_headings: HashMap::new(),
+            heading_serial: 0,
             image_cache,
         })
     }
@@ -670,6 +679,16 @@ impl<S: Sink> Engine<S> {
         );
         let own_node = item_box.node;
         let item_style = own_node.and_then(|node| state.styles.get(&node).cloned());
+        // The anchors parsed after the streaming state was set up are only visible here. A TOC
+        // heading with an `id` links to that name, so they are read before the headings.
+        let mut anchors: HashMap<NodeId, String> = {
+            let dom = parser.dom();
+            nodes
+                .iter()
+                .flat_map(|&node| collect_anchor_targets_in_subtree(&dom, node))
+                .map(|(node, id)| (node, anchor_destination_name(&id)))
+                .collect()
+        };
         let mut pages = Vec::new();
         let positioned = if item_style
             .as_ref()
@@ -694,9 +713,24 @@ impl<S: Sink> Engine<S> {
                 state.styles.remove(&node);
                 state.background_images.remove(&node);
             }
+            // Read the TOC headings now, while the DOM still holds their text. Their page is
+            // only known once the page they land on is written.
+            if options.toc.enabled {
+                for (heading_node, heading) in collect_headings(
+                    &parser.dom(),
+                    [std::slice::from_ref(&laid_out)],
+                    &mut anchors,
+                    state.heading_serial,
+                ) {
+                    state.heading_serial += 1;
+                    state.pending_headings.insert(heading_node, heading);
+                }
+            }
             pages = state.paginator.push_item(&mut laid_out);
             positioned
         };
+
+        state.writer.extend_anchor_names(anchors);
 
         // Layout is already complete and this DOM subtree (its text content, attributes and
         // so on) is never read again, so it can be freed immediately without waiting for the
@@ -725,10 +759,15 @@ impl<S: Sink> Engine<S> {
             &mut state.warned_unplaced_absolute,
         );
         for page in &pages {
-            if !options.header_footer_html.is_empty() {
-                let page_number = state.writer.page_count() + 1;
-                // Under `Mode::Streaming` the total page count is unknown, so `[topage]` comes out empty.
-
+            record_streaming_headings(
+                &state.writer,
+                page,
+                &mut state.pending_headings,
+                &mut state.headings,
+            );
+            let page_number = body_page_number(state.page_offset, state.writer.body_page_count())?;
+            // Overlays that depend on the TOC's length or the total are drawn at the end.
+            if !options.header_footer_html.is_empty() && !state.writer.defers_page_overlays() {
                 let overlays = build_page_overlays(
                     &options.header_footer_html,
                     &state.fonts,
@@ -752,11 +791,11 @@ impl<S: Sink> Engine<S> {
                 }
                 state.writer.set_page_overlays(overlays);
             }
+            state.writer.set_next_page_number(Some(page_number));
             state
                 .writer
-                // `Mode::Streaming` cannot know the total page count in principle, so it is
-                // always `None` (a use of `counter(pages)` has already been rejected in
-                // `init_streaming_state`).
+                // Margin boxes that need the total are drawn at the end, as forms the page
+                // refers to now.
                 .write_page(
                     page,
                     &state.styles,
@@ -793,7 +832,8 @@ impl<S: Sink> Engine<S> {
                 &state.pinned,
             );
         }
-        let written = state.writer.page_count();
+        // Compared with the paginator's page indices, which count body pages only.
+        let written = state.writer.body_page_count();
         state.finished_runs.retain(|(last_page, nodes)| {
             if *last_page >= written {
                 return true;
@@ -840,6 +880,9 @@ impl<S: Sink> Engine<S> {
                     image_cache,
                     page_settings,
                     mut overlay_cache,
+                    page_offset,
+                    mut headings,
+                    mut pending_headings,
                     ..
                 } = state;
                 if self.options.content.abort_on_media_error {
@@ -848,8 +891,10 @@ impl<S: Sink> Engine<S> {
                     }
                 }
                 for page in paginator.finish() {
-                    if !self.options.header_footer_html.is_empty() {
-                        let page_number = writer.page_count() + 1;
+                    record_streaming_headings(&writer, &page, &mut pending_headings, &mut headings);
+                    let page_number = body_page_number(page_offset, writer.body_page_count())?;
+                    if !self.options.header_footer_html.is_empty() && !writer.defers_page_overlays()
+                    {
                         let overlays = build_page_overlays(
                             &self.options.header_footer_html,
                             &fonts,
@@ -872,10 +917,78 @@ impl<S: Sink> Engine<S> {
                         }
                         writer.set_page_overlays(overlays);
                     }
+                    writer.set_next_page_number(Some(page_number));
                     writer
                         .write_page(&page, &styles, &background_images, &fonts, None)
                         .map_err(EngineError::Io)?;
                 }
+                // The TOC pages are written after the body, but the page tree lists them
+                // before it.
+                if self.options.toc.enabled {
+                    check_deadline(self.options.deadline)?;
+                    let (toc_pages, toc_styles) = build_toc_pages(
+                        &headings,
+                        &self.options.toc,
+                        page_offset,
+                        &fonts,
+                        &page_settings,
+                    )?;
+                    let numbering = PageNumberPlan::new(
+                        0,
+                        toc_pages.len(),
+                        writer.body_page_count(),
+                        page_offset,
+                    )?;
+                    if writer.body_page_count() > 0 {
+                        numbering.displayed_body_page::<S::Error>(writer.body_page_count() - 1)?;
+                    }
+                    writer.shift_deferred_page_numbers(toc_pages.len()).ok_or(
+                        EngineError::PageNumberOverflow("the body page number overflowed"),
+                    )?;
+                    writer.defer_page_overlays(false);
+                    // The TOC is a separate document whose `NodeId`s must not alias the
+                    // body's anchors or bookmarks.
+                    writer.replace_anchor_names(HashMap::new());
+                    writer.clear_bookmarks();
+                    let total = numbering.total_pages()?;
+                    for (index, page) in toc_pages.iter().enumerate() {
+                        check_deadline(self.options.deadline)?;
+                        writer.set_next_page_role(PageRole::Toc);
+                        writer.set_next_page_number(Some(numbering.displayed_toc_page(index)?));
+                        writer
+                            .write_page(page, &toc_styles, &HashMap::new(), &fonts, Some(total))
+                            .map_err(EngineError::Io)?;
+                    }
+                }
+                let deferred_overlays =
+                    self.options.toc.enabled || self.options.header_footer_html.uses_total_pages();
+                writer.write_deferred_decorations(&fonts, |page, total| {
+                    check_deadline(self.options.deadline)?;
+                    if !deferred_overlays {
+                        return Ok(Vec::new());
+                    }
+                    let overlays = build_page_overlays(
+                        &self.options.header_footer_html,
+                        &fonts,
+                        &page_settings,
+                        page,
+                        Some(total),
+                        &overlay_fetcher(),
+                        &DocumentImageCache::new(),
+                        &mut overlay_cache,
+                        self.options.content.load_images,
+                    );
+                    if self.options.content.abort_on_media_error {
+                        if let Some(err) = overlay_cache
+                            .images
+                            .as_ref()
+                            .and_then(ImageAssetCache::had_errors)
+                        {
+                            return Err(EngineError::MediaLoad(err));
+                        }
+                    }
+                    Ok(overlays)
+                })?;
                 writer.finish(&fonts).map_err(EngineError::Io)
             }
             None => {
@@ -890,6 +1003,16 @@ impl<S: Sink> Engine<S> {
             }
         }
     }
+}
+
+/// The displayed number of the next body page: `--page-offset`, plus the body pages written,
+/// plus 1. The TOC's length is added later, when the deferred decorations are drawn.
+fn body_page_number<E>(page_offset: usize, body_pages: usize) -> Result<usize, EngineError<E>> {
+    checked_page_count_add(
+        checked_page_count_add(page_offset, body_pages, "the body page number overflowed")?,
+        1,
+        "the body page number overflowed",
+    )
 }
 
 /// Remove from `styles` the `ComputedStyle`s of the nodes in the subtree under `root`.
@@ -982,7 +1105,7 @@ mod tests {
         // leave 200 elements' worth (over 400 entries) in `styles`. Freeing them as each page
         // is flushed keeps it to roughly the most recent unflushed page's worth (a few dozen entries).
 
-        let mut html_src = String::from("<style>.item { height: 100px; margin: 0; }</style><body>");
+        let mut html_src = String::from("<style>@page { @bottom-center { content: counter(pages); } } .item { height: 100px; margin: 0; }</style><body>");
         for i in 0..200 {
             html_src.push_str(&format!(r#"<p class="item">item {i}</p>"#));
         }
@@ -1011,5 +1134,73 @@ mod tests {
 
         let bytes = engine.finish().unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
+    }
+
+    #[test]
+    fn streaming_collapses_adjacent_top_level_margins() {
+        for (bottom, top, gap) in [(10, 10, 10), (20, 10, 20), (20, -10, 10), (-20, -10, -20)] {
+            let mut engine = Engine::new(
+                EngineOptions {
+                    mode: Mode::Streaming,
+                    fonts: vec![font_spec()],
+                    disable_system_fonts: true,
+                    ..EngineOptions::default()
+                },
+                MemorySink::new(),
+            );
+            let html = format!("<style>body {{ margin:0; padding:1px; }} div {{ height:40px; }} \
+                #one {{ margin:0 0 {bottom}px; }} #two {{ margin:{top}px 0 0; }}</style>\
+                <body><div id='one'></div><span style='display:none'></span><div id='two'></div><p>pending</p>");
+            engine.feed(html.as_bytes()).unwrap();
+            let state = engine.streaming.as_ref().unwrap();
+            assert_eq!(
+                state.cursor_y,
+                (81 + gap) as f32,
+                "adjacent margins {bottom}px and {top}px must collapse across a hidden element"
+            );
+        }
+    }
+
+    #[test]
+    fn streaming_with_a_cover_keeps_the_styles_of_inline_runs_until_their_page_is_written() {
+        // The pages of an inline run are counted by the paginator, which sees body pages
+        // only. Comparing them with every page written, cover included, freed a run's
+        // styles while its page was still held, so its boxes lost their background.
+        let mut html = String::from(
+            "<style>span { display: inline-block; width: 10px; height: 10px; \
+             background: rgb(255, 0, 0); }</style><body>",
+        );
+        for i in 0..40 {
+            html.push_str(&format!(
+                "run {i} <span></span><div style='height: 40px'></div>"
+            ));
+        }
+        let render = |mode| {
+            let mut options = EngineOptions {
+                mode,
+                fonts: vec![font_spec()],
+                disable_system_fonts: true,
+                cover_html: Some(
+                    "<p>one</p><p style='break-before:page'>two</p>\
+                     <p style='break-before:page'>three</p>"
+                        .into(),
+                ),
+                ..EngineOptions::default()
+            };
+            options.output.compress = false;
+            let mut engine = Engine::new(options, MemorySink::new());
+            engine.feed(html.as_bytes()).unwrap();
+            engine.finish().unwrap()
+        };
+        let red = |bytes: &[u8]| {
+            bytes
+                .windows(b"1 0 0 rg".len())
+                .filter(|w| *w == b"1 0 0 rg")
+                .count()
+        };
+        let batch = render(Mode::Batch);
+        let streaming = render(Mode::Streaming);
+        assert!(red(&batch) > 0);
+        assert_eq!(red(&streaming), red(&batch));
     }
 }

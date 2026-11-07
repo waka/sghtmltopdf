@@ -23,6 +23,6 @@ pub use options::{
     DocumentMetadata, PdfOutputOptions, DEFAULT_SCALE,
 };
 pub use outline::Bookmark;
-pub use streaming::StreamingPdfWriter;
+pub use streaming::{PageRole, StreamingPdfWriter};
 pub use svg::SvgFontDb;
 pub use tagging::{collect_tag_roles, TagRole};

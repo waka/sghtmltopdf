@@ -38,6 +38,19 @@ cargo bench -p sghtmltopdf -- --baseline main
 
 HTML reports land in `target/criterion/report/index.html`.
 
+For a local before/after allocation comparison, run the same filtered cases on
+both revisions and save separate JSON files (absolute output paths avoid Cargo's
+package working-directory differences). For example:
+
+```sh
+cargo bench -p sghtmltopdf --bench metrics -- --filter scale/paragraphs --runs 3 --no-time --no-fail --json <absolute-output-path>
+```
+
+Compare the two runs' `cases` by `name`, especially `alloc_count`, `alloc_bytes`,
+`peak_live_bytes`, `pages`, and `pdf_bytes`. These are fresh measurements; the
+printed baseline verdict is separate. `--no-fail` allows results to be saved even
+when the committed baseline differs. Small timing/RSS differences can be noise.
+
 ## The deterministic gate (`metrics`)
 
 Wall-clock time on a shared runner is noisy. The `metrics` target records the
@@ -66,6 +79,12 @@ When a change is intentional (a layout fix that moves a page break, a smaller
 font subset), re-run with `--save-baseline` and commit the new
 `baseline.json` in the same PR so the diff documents the change.
 
+Peak RSS uses `getrusage` on Unix and `GetProcessMemoryInfo`'s peak working set on
+Windows. CLI child measurements retain the process handle until after the child
+exits. A failed or unsupported RSS query reports zero; allocation, page-count,
+PDF-size, and timing measurements remain available. RSS is compared only against
+a baseline from the same OS and architecture.
+
 CI (`.github/workflows/ci.yml`, job `bench`) runs this same gate against the
 committed baseline with `--no-time`, since a shared runner's clock is not
 comparable but its deterministic numbers are. The criterion targets run once
@@ -75,7 +94,7 @@ each (`--test`) there to catch a bench that stopped working.
 
 `fixtures/*.html`, one document per feature area. Each is a few pages long so
 every stage has measurable work. Two flags in `support/mod.rs` describe each
-fixture: `streaming` (no `counter(pages)`, `<body>` decorations, or trailing
+fixture: `streaming` (no `<body>` decorations or trailing
 `<style>`, so it can run in streaming mode) and `local_assets` (reads images,
 CSS, or fonts from disk, so it cannot be posted to the HTTP server).
 

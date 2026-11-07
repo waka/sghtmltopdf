@@ -47,9 +47,9 @@ RSpec.describe "Header/footer HTML content" do
         .to start_with("%PDF-")
     end
 
-    it "retains streaming restrictions for #{side} total-page placeholders" do
-      expect { Sghtmltopdf.render(html, streaming: true, "#{side}_html_content" => markup) }
-        .to raise_error(Sghtmltopdf::RenderError, /\[topage\]/)
+    it "accepts #{side} total-page placeholders in streaming mode" do
+      expect(Sghtmltopdf.render(html, streaming: true, "#{side}_html_content" => markup))
+        .to start_with("%PDF-")
       expect(Sghtmltopdf.render(html, streaming: true, "#{side}_html_content" => "<div>[page]</div>"))
         .to start_with("%PDF-")
     end

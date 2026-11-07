@@ -75,7 +75,7 @@ p {
 * `size`/`margin`はページごとに変えられません。`:first`/`:left`/`:right`付きの`size`/`margin`宣言はパースされますが適用されず、これらの擬似クラスは margin boxの 内容の出し分けにだけ使えます
 * 名前付きページ(`@page intro`と`page: intro`)は非対応です
 * margin boxの寸法は簡略化しています。4隅は縦横マージンの交差部分で固定、残り12個は各辺を3等分した均等割りです(`width`指定は無視されます)
-* `counter(pages)`は[ストリーミングモード](../usage/cli/streaming.md)では使えません(総ページ数が1パスでは決まらないため)
+* `counter(pages)`は[ストリーミングモード](../usage/cli/streaming.md)でも使えます。総ページ数が必要なmargin boxはPDF完成時に描画します
 
 CLIの`--header-center`などのオプションは、内部的にこの`@page`のmargin boxへマップされます。
 両方書いた場合はCSSが勝ちます。

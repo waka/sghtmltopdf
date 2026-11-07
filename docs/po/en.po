@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-11-01T20:27:39+09:00\n"
+"POT-Creation-Date: 2026-11-07T15:59:57+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -345,7 +345,7 @@ msgstr ""
 msgid "段落が主体の文書:"
 msgstr "A document made of paragraphs:"
 
-#: src/index.md:56 src/usage/cli/streaming.md:56
+#: src/index.md:56 src/usage/cli/streaming.md:67
 msgid "要素数"
 msgstr "Elements"
 
@@ -366,7 +366,7 @@ msgstr "wkhtmltopdf"
 msgid "ヘッドレスChrome"
 msgstr "Headless Chrome"
 
-#: src/index.md:58 src/index.md:66 src/usage/cli/streaming.md:59
+#: src/index.md:58 src/index.md:66 src/usage/cli/streaming.md:70
 msgid "5,000"
 msgstr "5,000"
 
@@ -386,7 +386,7 @@ msgstr "44MB / 0.49s"
 msgid "543MB / 1.32秒"
 msgstr "543MB / 1.32s"
 
-#: src/index.md:59 src/index.md:67 src/usage/cli/streaming.md:60
+#: src/index.md:59 src/index.md:67 src/usage/cli/streaming.md:71
 msgid "20,000"
 msgstr "20,000"
 
@@ -406,7 +406,7 @@ msgstr "86MB / 2.60s"
 msgid "943MB / 7.45秒"
 msgstr "943MB / 7.45s"
 
-#: src/index.md:60 src/usage/cli/streaming.md:61
+#: src/index.md:60 src/usage/cli/streaming.md:72
 msgid "60,000"
 msgstr "60,000"
 
@@ -1359,7 +1359,7 @@ msgstr ""
 "The character encoding of the input. The order is BOM, then `--encoding`, "
 "then `<meta charset>`, then UTF-8"
 
-#: src/usage/cli/reference.md:35 src/usage/cli/streaming.md:56
+#: src/usage/cli/reference.md:35 src/usage/cli/streaming.md:67
 #: src/migration/wkhtmltopdf-options.md:158
 msgid "`--streaming`"
 msgstr "`--streaming`"
@@ -2012,14 +2012,14 @@ msgstr ""
 "The HTML to use as the cover. It is not counted in the page numbers and gets "
 "no header or footer"
 
-#: src/usage/cli/reference.md:196 src/usage/cli/streaming.md:19
+#: src/usage/cli/reference.md:196
 msgid "`--toc`"
 msgstr "`--toc`"
 
 #: src/usage/cli/reference.md:196
-msgid "目次を本文の前に挿入する(ストリーミングモードでは使えない)"
+msgid "目次を本文の前に挿入する(ストリーミングモードでも対応)"
 msgstr ""
-"Insert a table of contents before the body; not available in streaming mode"
+"Insert a table of contents before the body; also available in streaming mode"
 
 #: src/usage/cli/reference.md:197
 msgid "`--toc-header-text <TEXT>`"
@@ -2398,56 +2398,44 @@ msgid "理由"
 msgstr "Why"
 
 #: src/usage/cli/streaming.md:18
-msgid "`counter(pages)` / ヘッダー・フッターの`[topage]`"
-msgstr "`counter(pages)`, and `[topage]` in headers and footers"
-
-#: src/usage/cli/streaming.md:18
-msgid "総ページ数は1パスでは決まらない"
-msgstr "The total page count is not known in a single pass"
-
-#: src/usage/cli/streaming.md:19
-msgid "同上(目次には本文のページ番号が要る)"
-msgstr "Same reason; a table of contents needs the page numbers of the body"
-
-#: src/usage/cli/streaming.md:20
 msgid "`<html>`/`<body>`自身の背景色・枠線"
 msgstr "A background colour or border on `<html>` or `<body>` itself"
 
-#: src/usage/cli/streaming.md:20
+#: src/usage/cli/streaming.md:18
 msgid "複数ページにまたがる装飾の再現が必要になる"
 msgstr "That decoration would have to be reproduced across every page"
 
-#: src/usage/cli/streaming.md:21
+#: src/usage/cli/streaming.md:19
 msgid "`<body>`より後の`<style>` / `<link rel=\"stylesheet\">`"
 msgstr "`<style>` or `<link rel=\"stylesheet\">` after `<body>`"
 
-#: src/usage/cli/streaming.md:21
+#: src/usage/cli/streaming.md:19
 msgid "既に書き出したページへ遡って適用できない"
 msgstr "It cannot be applied retroactively to pages that are already written"
 
-#: src/usage/cli/streaming.md:23
+#: src/usage/cli/streaming.md:21
 msgid "警告のうえ続行するもの"
 msgstr "Warned about, but processing continues"
 
-#: src/usage/cli/streaming.md:25
+#: src/usage/cli/streaming.md:23
 msgid "結果が変わるため、黙って進めずに警告を出します。"
 msgstr ""
 "These change the result, so a warning is printed rather than passing over "
 "them silently."
 
-#: src/usage/cli/streaming.md:27
+#: src/usage/cli/streaming.md:25
 msgid "制約"
 msgstr "Limitation"
 
-#: src/usage/cli/streaming.md:27 src/supports/fonts.md:105
+#: src/usage/cli/streaming.md:25 src/supports/fonts.md:105
 msgid "挙動"
 msgstr "Behaviour"
 
-#: src/usage/cli/streaming.md:29
+#: src/usage/cli/streaming.md:27
 msgid "`font-family`名からのシステムフォント自動探索"
 msgstr "Finding a system font from a `font-family` name"
 
-#: src/usage/cli/streaming.md:29
+#: src/usage/cli/streaming.md:27
 msgid ""
 "既定のフォントで描画する。`--font`/`--gothic-font`/`--serif-font`/`--mono-"
 "font`か`@font-face`で明示すれば解決できる"
@@ -2455,11 +2443,11 @@ msgstr ""
 "The default font is used instead. Naming the font with `--font`, `--gothic-"
 "font`, `--serif-font`, `--mono-font`, or `@font-face` resolves it."
 
-#: src/usage/cli/streaming.md:30
+#: src/usage/cli/streaming.md:28
 msgid "文字を描画できるフォントのシステム探索"
 msgstr "Searching the system for a font that can draw a given character"
 
-#: src/usage/cli/streaming.md:30
+#: src/usage/cli/streaming.md:28
 msgid ""
 "文書全体を先読みできないため行わない。フォントを1つも指定しなかった場合だけ、"
 "CJK用のフォントを1本先回りで読み込む([フォント](../../supports/fonts.md#スト"
@@ -2470,7 +2458,7 @@ msgstr ""
 "fonts.md#a-note-on-streaming-mode)). Characters that cannot be drawn are "
 "reported one by one."
 
-#: src/usage/cli/streaming.md:31
+#: src/usage/cli/streaming.md:29
 msgid ""
 "`:last-of-type`・`:only-of-type`・`:nth-last-child()`・`:nth-last-of-"
 "type()`・`:has(~ ...)`"
@@ -2478,11 +2466,11 @@ msgstr ""
 "`:last-of-type`, `:only-of-type`, `:nth-last-child()`, `:nth-last-of-"
 "type()`, `:has(~ ...)`"
 
-#: src/usage/cli/streaming.md:31
+#: src/usage/cli/streaming.md:29
 msgid "結果が変わる(余分にマッチする、または取りこぼす)"
 msgstr "The result changes: they match too much, or miss altogether"
 
-#: src/usage/cli/streaming.md:33
+#: src/usage/cli/streaming.md:31
 msgid ""
 "`<body>`直下の要素は、次の兄弟が現れた時点でスタイルを確定させます。 そのため"
 "「この先に同じ型の要素が続くか」を要求するセレクタだけが判定できません。 「最"
@@ -2495,7 +2483,7 @@ msgstr ""
 "\"remove the rule on the last row only\" by adding a class and writing `."
 "last { … }` instead."
 
-#: src/usage/cli/streaming.md:37
+#: src/usage/cli/streaming.md:35
 msgid ""
 "これ以外の兄弟セレクタ(`+`・`~`・`:first-child`・`:nth-child()`・`:last-"
 "child`など)はバッチと同じ結果になります。 詳細は[セレクタ](../../supports/"
@@ -2506,35 +2494,40 @@ msgstr ""
 "(../../supports/selectors.md#restrictions-specific-to-streaming-mode) for "
 "the details."
 
-#: src/usage/cli/streaming.md:40
+#: src/usage/cli/streaming.md:38
 msgid "使えるもの"
 msgstr "Still available"
 
-#: src/usage/cli/streaming.md:42
+#: src/usage/cli/streaming.md:40
 msgid "以下はストリーミングモードでも通常どおり使えます。"
 msgstr "The following work exactly as they do in the normal mode."
 
+#: src/usage/cli/streaming.md:42
+msgid "`--cover`(表紙)・`--toc`(目次)・`--page-offset`"
+msgstr ""
+"`--cover` (a cover page), `--toc` (a table of contents), and `--page-offset`"
+
+#: src/usage/cli/streaming.md:43
+msgid "ヘッダー/フッター(`[page]`・`[topage]`、HTMLも対応)"
+msgstr "Headers and footers, `[page]` and `[topage]` included, HTML ones too"
+
 #: src/usage/cli/streaming.md:44
-msgid "`--cover`(表紙)"
-msgstr "`--cover`, the cover page"
+msgid "`@page`のmargin box内の`counter(page)`・`counter(pages)`"
+msgstr "`counter(page)` and `counter(pages)` in `@page` margin boxes"
 
 #: src/usage/cli/streaming.md:45
-msgid "ヘッダー/フッター(`[page]`まで。`[topage]`は不可)"
-msgstr "Headers and footers, as far as `[page]`; `[topage]` is not available"
-
-#: src/usage/cli/streaming.md:46
 msgid "ページ設定・PDFメタデータ"
 msgstr "Page setup and PDF metadata"
 
-#: src/usage/cli/streaming.md:47
+#: src/usage/cli/streaming.md:46
 msgid "`--grayscale` / `--dpi` / `--zoom`"
 msgstr "`--grayscale`, `--dpi`, and `--zoom`"
 
-#: src/usage/cli/streaming.md:48
+#: src/usage/cli/streaming.md:47
 msgid "コンテンツ挙動のオプション(`--no-images`等)"
 msgstr "The options that change what is drawn, such as `--no-images`"
 
-#: src/usage/cli/streaming.md:49
+#: src/usage/cli/streaming.md:48
 msgid ""
 "`break-before`/`break-after`/`break-inside`・`orphans`/`widows`などの[ページ"
 "分割](../../supports/pagination.md)"
@@ -2542,11 +2535,46 @@ msgstr ""
 "[Page breaks](../../supports/pagination.md), including `break-before`, "
 "`break-after`, `break-inside`, `orphans`, and `widows`"
 
-#: src/usage/cli/streaming.md:51
+#: src/usage/cli/streaming.md:50
+msgid ""
+"総ページ数が必要な装飾は、先行参照するPDF Form XObjectとして最後に書き出しま"
+"す。 本文のページはその都度書き出して解放するため、シークや本文全体の保持は不"
+"要です。 保持する追加情報はページごとの参照とページ番号で、装飾も1ページずつ"
+"描画します。 既存オブジェクトを書き換えないので、増分更新や2個目の相互参照表"
+"も不要です。 PDFは最後の相互参照表とトレーラーを書き終えてから完成します。"
+msgstr ""
+"Decoration that needs the total page count is written last, as PDF Form "
+"XObjects the pages refer to ahead of time. Body pages are still written and "
+"released as they settle, so neither seeking nor keeping the whole body is "
+"needed. The only extra information kept is a reference and a page number per "
+"page, and the decoration is drawn one page at a time as well. No object "
+"already written is rewritten, so neither an incremental update nor a second "
+"cross-reference table is needed. The PDF is complete once the final cross-"
+"reference table and trailer are written."
+
+#: src/usage/cli/streaming.md:56
+msgid ""
+"目次は見出しのテキスト・リンク先・本文ページ番号だけを保持し、本文のレイアウ"
+"トは解放します。 目次ページは最後に書き出しますが、完成したPDFのページ順は表"
+"紙 → 目次 → 本文です。 表紙はページ番号と総ページ数に含めません。 目次と本文"
+"は`1 + --page-offset`から連番になり、総ページ数にはオフセットを加えません。 "
+"目次がある場合、本文のヘッダー/フッターとmargin boxも目次のページ数が確定して"
+"から描画します。"
+msgstr ""
+"For the table of contents, only each heading's text, link target, and body "
+"page number are kept, and the body's layout is released. The table of "
+"contents pages are written last, but the finished PDF orders its pages as "
+"cover, table of contents, then body. The cover counts neither in the page "
+"numbers nor in the total. The table of contents and the body are numbered "
+"continuously from `1 + --page-offset`, and the total does not include the "
+"offset. With a table of contents, the body's headers, footers, and margin "
+"boxes are also drawn once the number of table of contents pages is settled."
+
+#: src/usage/cli/streaming.md:62
 msgid "メモリと処理時間"
 msgstr "Memory and processing time"
 
-#: src/usage/cli/streaming.md:53
+#: src/usage/cli/streaming.md:64
 msgid ""
 "同じHTMLを両モードで変換した実測値です。 各セルは「ピークメモリ / 処理時間」"
 "を表します。"
@@ -2554,67 +2582,67 @@ msgstr ""
 "These are measured figures for converting the same HTML in both modes. Each "
 "cell shows peak memory and processing time."
 
-#: src/usage/cli/streaming.md:56
+#: src/usage/cli/streaming.md:67
 msgid "HTMLサイズ"
 msgstr "HTML size"
 
-#: src/usage/cli/streaming.md:56
+#: src/usage/cli/streaming.md:67
 msgid "通常モード"
 msgstr "Normal mode"
 
-#: src/usage/cli/streaming.md:58
+#: src/usage/cli/streaming.md:69
 msgid "1,000"
 msgstr "1,000"
 
-#: src/usage/cli/streaming.md:58
+#: src/usage/cli/streaming.md:69
 msgid "46KB"
 msgstr "46KB"
 
-#: src/usage/cli/streaming.md:58
+#: src/usage/cli/streaming.md:69
 msgid "11MB / 0.02秒"
 msgstr "11MB / 0.02s"
 
-#: src/usage/cli/streaming.md:58
+#: src/usage/cli/streaming.md:69
 msgid "8MB / 0.02秒"
 msgstr "8MB / 0.02s"
 
-#: src/usage/cli/streaming.md:59
+#: src/usage/cli/streaming.md:70
 msgid "233KB"
 msgstr "233KB"
 
-#: src/usage/cli/streaming.md:59
+#: src/usage/cli/streaming.md:70
 msgid "26MB / 0.08秒"
 msgstr "26MB / 0.08s"
 
-#: src/usage/cli/streaming.md:59
+#: src/usage/cli/streaming.md:70
 msgid "10MB / 0.10秒"
 msgstr "10MB / 0.10s"
 
-#: src/usage/cli/streaming.md:60
+#: src/usage/cli/streaming.md:71
 msgid "946KB"
 msgstr "946KB"
 
-#: src/usage/cli/streaming.md:60
+#: src/usage/cli/streaming.md:71
 msgid "81MB / 0.35秒"
 msgstr "81MB / 0.35s"
 
-#: src/usage/cli/streaming.md:60
+#: src/usage/cli/streaming.md:71
 msgid "15MB / 0.38秒"
 msgstr "15MB / 0.38s"
 
-#: src/usage/cli/streaming.md:61
+#: src/usage/cli/streaming.md:72
 msgid "2.8MB"
 msgstr "2.8MB"
 
-#: src/usage/cli/streaming.md:61
+#: src/usage/cli/streaming.md:72
 msgid "228MB / 1.05秒"
 msgstr "228MB / 1.05s"
 
-#: src/usage/cli/streaming.md:61
+#: src/usage/cli/streaming.md:72
 msgid "28MB / 1.07秒"
 msgstr "28MB / 1.07s"
 
-#: src/usage/cli/streaming.md:63
+#: src/usage/cli/streaming.md:74
 msgid ""
 "通常モードのピークメモリは文書サイズにほぼ比例して増えますが、`--streaming`で"
 "はほとんど増えません。 60,000要素では約8分の1になります。 `--streaming`でもわ"
@@ -2627,7 +2655,7 @@ msgstr ""
 "reference table, which holds the position of every object, and from the "
 "tally of glyphs in use, both of which are kept until the end."
 
-#: src/usage/cli/streaming.md:67
+#: src/usage/cli/streaming.md:78
 msgid ""
 "処理時間は両モードでほぼ変わりません。 `--streaming`のほうがわずかに遅く出ま"
 "すが、差はどの規模でも0.03秒以内で、文書が大きくなるほど相対差は縮まります"
@@ -2639,11 +2667,11 @@ msgstr ""
 "and shrinks in relative terms as the document grows (2% at 60,000 elements). "
 "You are not trading time away for the large drop in memory."
 
-#: src/usage/cli/streaming.md:71
+#: src/usage/cli/streaming.md:82
 msgid "測定条件は次のとおりです。"
 msgstr "The measurements were taken as follows."
 
-#: src/usage/cli/streaming.md:73
+#: src/usage/cli/streaming.md:84
 msgid ""
 "sghtmltopdf 0.1.0のreleaseビルド、Intel Core Ultra 7 258V / メモリ16GB / "
 "WSL2(Linux 5.15)"
@@ -2651,35 +2679,35 @@ msgstr ""
 "A release build of sghtmltopdf 0.1.0, on an Intel Core Ultra 7 258V with "
 "16GB of memory, under WSL2 (Linux 5.15)"
 
-#: src/usage/cli/streaming.md:74
+#: src/usage/cli/streaming.md:85
 msgid "高さ60pxの`<p>`を要素数ぶん並べただけのHTML。フォントは`--font`で明示"
 msgstr ""
 "HTML consisting of nothing but the given number of `<p>` elements, each 60px "
 "tall, with the font named through `--font`"
 
-#: src/usage/cli/streaming.md:75
+#: src/usage/cli/streaming.md:86
 msgid ""
 "ピークメモリはプロセスの最大常駐セットサイズ(RSS)。2回実行して良いほうの値"
 msgstr ""
 "Peak memory is the maximum resident set size (RSS) of the process, taking "
 "the better of two runs"
 
-#: src/usage/cli/streaming.md:77
+#: src/usage/cli/streaming.md:88
 msgid "いつ使うか"
 msgstr "When to use it"
 
-#: src/usage/cli/streaming.md:79
+#: src/usage/cli/streaming.md:90
 msgid "数千ページ規模の帳票を1本のHTMLから出す"
 msgstr ""
 "Producing a statement of several thousand pages from a single HTML file"
 
-#: src/usage/cli/streaming.md:80
+#: src/usage/cli/streaming.md:91
 msgid "メモリの上限が厳しい環境(コンテナのメモリ制限、サーバレス)で動かす"
 msgstr ""
 "Running where memory is tightly capped, such as under a container limit or "
 "on a serverless platform"
 
-#: src/usage/cli/streaming.md:82
+#: src/usage/cli/streaming.md:93
 msgid ""
 "逆に、数十ページの請求書のような文書では通常モードで十分です。 制約を負ってま"
 "で使うものではありません。"
@@ -2687,7 +2715,7 @@ msgstr ""
 "For a document of a few dozen pages, such as an invoice, the normal mode is "
 "fine. There is no reason to take on the limitations."
 
-#: src/usage/cli/streaming.md:85
+#: src/usage/cli/streaming.md:96
 msgid ""
 "[サーバモード](../server.md)では、クエリに`streaming`を付けると同じモードにな"
 "ります。 `?stream=1`(chunkedで返す)と組み合わせると、入力・レンダリング・出力"
@@ -2697,15 +2725,15 @@ msgstr ""
 "`streaming` to the query. Combined with `?stream=1`, which returns the body "
 "chunked, input, rendering, and output all become incremental."
 
-#: src/usage/cli/streaming.md:89
+#: src/usage/cli/streaming.md:100
 msgid "'http://127.0.0.1:8080/pdf?stream=1&streaming'"
 msgstr "'http://127.0.0.1:8080/pdf?stream=1&streaming'"
 
-#: src/usage/cli/streaming.md:92
+#: src/usage/cli/streaming.md:103
 msgid "ストリーミング時の処理の流れ"
 msgstr "How streaming works"
 
-#: src/usage/cli/streaming.md:94
+#: src/usage/cli/streaming.md:105
 msgid ""
 "```mermaid\n"
 "flowchart TD\n"
@@ -2729,7 +2757,7 @@ msgstr ""
 "    E -. \"free the memory and read on\" .-> B\n"
 "```"
 
-#: src/usage/cli/streaming.md:105
+#: src/usage/cli/streaming.md:116
 msgid ""
 "ページの区切りが確定した時点でPDFを書き出し、そのページ分のメモリを解放して先"
 "へ読み進めることで、大きな文書でも消費メモリを増やさず処理を可能にしていま"
@@ -4197,13 +4225,15 @@ msgstr ""
 
 #: src/usage/ruby_rails.md:360
 msgid ""
-"その代わり、文書全体を見ないと決まらないもの(`toc`・`counter(pages)`・"
-"`<body>`より後の`<style>`など)が使えません。 制約の一覧は[ストリーミングモー"
-"ド](./cli/streaming.md)を参照してください。"
+"その代わり、`<body>`より後の`<style>`などが使えません。 `toc`・"
+"`counter(pages)`・`[topage]`は、総ページ数が確定してから目次と装飾を描画する"
+"ことで対応しています。 制約の一覧は[ストリーミングモード](./cli/streaming.md)"
+"を参照してください。"
 msgstr ""
-"In exchange, anything that cannot be decided without the whole document, "
-"such as `toc`, `counter(pages)`, or a `<style>` after `<body>`, becomes "
-"unavailable. See [Streaming mode](./cli/streaming.md) for the full list."
+"In exchange, a few things such as a `<style>` after `<body>` become "
+"unavailable. `toc`, `counter(pages)`, and `[topage]` are supported by "
+"drawing the table of contents and the page decoration once the total page "
+"count is settled. See [Streaming mode](./cli/streaming.md) for the full list."
 
 #: src/usage/rust.md:3
 msgid ""
@@ -4733,9 +4763,12 @@ msgid "`overflow`"
 msgstr "`overflow`"
 
 #: src/supports/properties.md:24
+#, fuzzy
 msgid ""
-"`visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。スクロールバー"
-"の概念は無い。`overflow-x`/`overflow-y`は非対応"
+"`visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。クリップ領域は"
+"padding boxで、`border-radius`があればborderの太さだけ半径を小さくした角丸"
+"(padding edge)に沿う。スクロールバーの概念は無い。`overflow-x`/`overflow-y`は"
+"非対応"
 msgstr ""
 "Anything other than `visible`, that is `hidden`, `scroll`, and `auto`, clips "
 "alike; they are not told apart. There is no notion of a scrollbar. `overflow-"
@@ -5037,10 +5070,13 @@ msgid "`border-radius`"
 msgstr "`border-radius`"
 
 #: src/supports/properties.md:55
+#, fuzzy
 msgid ""
 "1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`の"
 "み)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォール"
-"バックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック"
+"バックする。`groove`/`ridge`/`inset`/`outset`との併用も同様にフォールバック。"
+"背景画像、`overflow`のクリップ、`<img>`の画像も角丸に沿ってクリップする(CSS "
+"Backgrounds 3 § 5.3)"
 msgstr ""
 "One to four values, plus the elliptical syntax with `/`. Percentages are not "
 "supported; `<length>` only. When the four sides do not share the same width, "
@@ -5306,15 +5342,15 @@ msgid ""
 "`normal`/`bold`/`1`〜`1000`の数値(`bolder`/`lighter`は非対応)。同じファミリー"
 "の`@font-face`が複数の太さを持つ場合は、CSS Fonts 4の照合規則で最も近い太さの"
 "フェイスを選ぶ(宣言順によらない)。システムフォントは600以上をBold、それ未満を"
-"Regularとして探す。600以上の指定に600以上のフェイスが無い場合は塗り+縁取りの疑"
-"似ボールドで描画"
+"Regularとして探す。600以上の指定に600以上のフェイスが無い場合は塗り+縁取りの"
+"疑似ボールドで描画"
 msgstr ""
 "`normal`, `bold`, and numbers from `1` to `1000` (`bolder` and `lighter` are "
 "not supported). When `@font-face` gives one family several weights, the face "
 "closest to the requested weight is used, by the CSS Fonts 4 matching rules "
 "(declaration order does not matter). System fonts are looked up as Bold for "
-"600 and above and as Regular below that. A weight of 600 or more with no face "
-"of 600 or more gets a synthetic bold, drawn by filling and stroking"
+"600 and above and as Regular below that. A weight of 600 or more with no "
+"face of 600 or more gets a synthetic bold, drawn by filling and stroking"
 
 #: src/supports/properties.md:91 src/supports/fonts.md:108
 msgid "`font-style`"
@@ -5647,12 +5683,9 @@ msgstr "Not implemented. Backgrounds are drawn against the border box"
 
 #: src/supports/properties.md:124
 msgid ""
-"`border-radius`と`background-image`を併用した場合、角丸によるクリップは行わな"
-"い(角丸は背景色の塗りにのみ効く)。"
+"`border-radius`を指定した場合、`background-image`も背景色と同じ角丸(border "
+"edge)でクリップする。"
 msgstr ""
-"When `border-radius` and `background-image` are used together, the image is "
-"not clipped to the rounded corners; the rounding applies to the background "
-"colour fill only."
 
 #: src/supports/properties.md:126
 msgid "テーブル"
@@ -5922,12 +5955,12 @@ msgstr ""
 #: src/supports/properties.md:173
 msgid ""
 "`counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使え"
-"る(`counter(pages)`はストリーミングモードでは総ページ数が確定しないためエラー"
-"になる)。"
+"る。ストリーミングモードでも、総ページ数が必要なmargin boxをPDF完成時に描画す"
+"る。"
 msgstr ""
 "Page numbers through `counter(page)` and `counter(pages)` can be used inside "
-"the `@page` margin boxes. `counter(pages)` is an error in streaming mode, "
-"where the total page count is never settled."
+"the `@page` margin boxes. In streaming mode too, the margin boxes that need "
+"the total page count are drawn when the PDF is completed."
 
 #: src/supports/properties.md:175
 msgid "ページ分割(CSS Fragmentation)"
@@ -6712,11 +6745,11 @@ msgstr "`::before`, `::after`"
 
 #: src/supports/selectors.md:50
 msgid ""
-"要素の最初と最後の子として、それ自身のボックスを生成する。擬似要素に書いた宣言"
-"(`font-size`・`color`・`display`・`margin`・`position`・`transform`等)が適用"
-"され、書かれていないプロパティは要素から継承する。ブロック子を持つ要素でも生成"
-"され、`display: none`なら生成しない。擬似要素自身の`counter-reset`/`counter-"
-"increment`は適用されない。表(`display: table`)の要素には生成されない"
+"要素の最初と最後の子として、それ自身のボックスを生成する。擬似要素に書いた宣"
+"言(`font-size`・`color`・`display`・`margin`・`position`・`transform`等)が適"
+"用され、書かれていないプロパティは要素から継承する。ブロック子を持つ要素でも"
+"生成され、`display: none`なら生成しない。擬似要素自身の`counter-reset`/"
+"`counter-increment`は適用されない。表(`display: table`)の要素には生成されない"
 msgstr ""
 "Each generates a box of its own, as the first and last child of the element. "
 "Declarations on the pseudo-element (`font-size`, `color`, `display`, "
@@ -7119,14 +7152,12 @@ msgstr "The margin boxes inside `@page`"
 msgid ""
 "`@top-left-corner`/`@top-left`/`@top-center`/`@top-right`…の16種すべて。"
 "`content`のテキスト描画のみで、背景色・枠線等の装飾は非対応。`counter(page)`/"
-"`counter(pages)`でページ番号を出力できる(`counter(pages)`はストリーミングモー"
-"ドでは非対応)"
+"`counter(pages)`でページ番号を出力できる(ストリーミングモードにも対応)"
 msgstr ""
 "All sixteen of them, `@top-left-corner`, `@top-left`, `@top-center`, `@top-"
 "right`, and so on. Only text from `content` is drawn; decoration such as "
 "background colours and borders is not supported. Page numbers can be printed "
-"with `counter(page)` and `counter(pages)`, though `counter(pages)` is "
-"unavailable in streaming mode"
+"with `counter(page)` and `counter(pages)`, in streaming mode as well"
 
 #: src/supports/selectors.md:135 src/supports/fonts.md:44
 msgid "`@font-face`"
@@ -7303,8 +7334,10 @@ msgid "`position: absolute`/`fixed`は無視される"
 msgstr "`position: absolute` and `fixed` are ignored"
 
 #: src/supports/selectors.md:160
-msgid "`counter(pages)`(総ページ数)は使えない"
-msgstr "`counter(pages)`, the total page count, is unavailable"
+msgid "`counter(pages)`(総ページ数)はPDF完成時に描画することで対応する"
+msgstr ""
+"`counter(pages)`, the total page count, is supported by drawing it when the "
+"PDF is completed"
 
 #: src/supports/fonts.md:3
 msgid ""
@@ -7548,17 +7581,17 @@ msgstr "Value"
 #: src/supports/fonts.md:107
 msgid ""
 "`normal`/`bold`/`1`〜`1000`の数値。同じファミリーの`@font-face`が複数の太さを"
-"持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選びます(宣言順には"
-"よりません)。システムフォントは600以上をBold、それ未満をRegularとして探します。"
-"600以上の指定に600以上のフェイスが無い場合は、塗りに縁取りを足した疑似ボールド"
-"で描画します"
+"持つ場合は、CSS Fonts 4の照合規則で最も近い太さのフェイスを選びます(宣言順に"
+"はよりません)。システムフォントは600以上をBold、それ未満をRegularとして探しま"
+"す。600以上の指定に600以上のフェイスが無い場合は、塗りに縁取りを足した疑似"
+"ボールドで描画します"
 msgstr ""
-"`normal`, `bold`, or a number from `1` to `1000`. When `@font-face` gives one "
-"family several weights, the face closest to the requested weight is used, by "
-"the CSS Fonts 4 matching rules (declaration order does not matter). System "
-"fonts are looked up as Bold for 600 and above and as Regular below that. A "
-"weight of 600 or more with no face of 600 or more gets a synthetic bold, drawn "
-"by adding a stroke around the fill"
+"`normal`, `bold`, or a number from `1` to `1000`. When `@font-face` gives "
+"one family several weights, the face closest to the requested weight is "
+"used, by the CSS Fonts 4 matching rules (declaration order does not matter). "
+"System fonts are looked up as Bold for 600 and above and as Regular below "
+"that. A weight of 600 or more with no face of 600 or more gets a synthetic "
+"bold, drawn by adding a stroke around the fill"
 
 #: src/supports/fonts.md:108
 msgid ""
@@ -8193,27 +8226,34 @@ msgstr ""
 "However many times the same image is used, it is fetched, decoded, and "
 "embedded once"
 
-#: src/supports/images.md:175
+#: src/supports/images.md:174
+msgid ""
+"`border-radius`を指定すると、画像は角丸でクリップされます。`border`や"
+"`padding`がある場合は、その分だけ半径を小さくした内側の角丸(content edge)に沿"
+"います"
+msgstr ""
+
+#: src/supports/images.md:176
 msgid "`object-fit` / `object-position`"
 msgstr "`object-fit` and `object-position`"
 
-#: src/supports/images.md:177
+#: src/supports/images.md:178
 msgid "指定した枠に対して画像をどう収めるかを制御します。"
 msgstr "These control how the image is fitted into the box you give it."
 
-#: src/supports/images.md:183
+#: src/supports/images.md:184
 msgid "/* fill | contain | cover | none | scale-down */"
 msgstr "/* fill | contain | cover | none | scale-down */"
 
-#: src/supports/images.md:188
+#: src/supports/images.md:189
 msgid "背景画像"
 msgstr "Background images"
 
-#: src/supports/images.md:192
+#: src/supports/images.md:193
 msgid "\"stamp.png\""
 msgstr "\"stamp.png\""
 
-#: src/supports/images.md:199
+#: src/supports/images.md:200
 msgid ""
 "`background-image`に書けるのは`url()`だけです。 `linear-gradient()`などのグラ"
 "デーション関数と、カンマ区切りの複数背景は非対応です。 既定では画像の内在サイ"
@@ -8223,25 +8263,21 @@ msgstr ""
 "`linear-gradient()` and comma separated multiple backgrounds are not "
 "supported. By default the image is tiled at its intrinsic size."
 
-#: src/supports/images.md:203
+#: src/supports/images.md:204
 msgid ""
-"`border-radius`と背景画像を併用した場合、角丸によるクリップは行われません(角"
-"丸は背景色の塗りにのみ効きます)。"
+"`border-radius`を指定すると、背景画像は背景色と同じ角丸でクリップされます。"
 msgstr ""
-"When `border-radius` is combined with a background image, the image is not "
-"clipped to the rounded corners; the radius applies only to the background "
-"colour."
 
-#: src/supports/images.md:205
+#: src/supports/images.md:206
 msgid "リモート画像の取得"
 msgstr "Fetching remote images"
 
-#: src/supports/images.md:207
+#: src/supports/images.md:208
 msgid "既定では無効です。 `--allow-remote-assets`で明示的に有効化します。"
 msgstr ""
 "This is off by default. Turn it on explicitly with `--allow-remote-assets`."
 
-#: src/supports/images.md:214
+#: src/supports/images.md:215
 msgid ""
 "有効にした場合も、グローバルに到達可能でない宛先へのリクエストは常にブロック"
 "されます。 判定は「グローバルなユニキャストだけを通す」方針で、次を拒否しま"
@@ -8251,53 +8287,53 @@ msgstr ""
 "are always blocked. The rule is to allow only global unicast; the following "
 "are rejected."
 
-#: src/supports/images.md:217
+#: src/supports/images.md:218
 msgid "種別"
 msgstr "Kind"
 
-#: src/supports/images.md:217
+#: src/supports/images.md:218
 msgid "範囲"
 msgstr "Ranges"
 
-#: src/supports/images.md:219
+#: src/supports/images.md:220
 msgid "ループバック"
 msgstr "Loopback"
 
-#: src/supports/images.md:219
+#: src/supports/images.md:220
 msgid "`127.0.0.0/8`、`::1`"
 msgstr "`127.0.0.0/8`, `::1`"
 
-#: src/supports/images.md:220
+#: src/supports/images.md:221
 msgid "プライベート"
 msgstr "Private"
 
-#: src/supports/images.md:220
+#: src/supports/images.md:221
 msgid "`10/8`、`172.16/12`、`192.168/16`、`fc00::/7`"
 msgstr "`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`"
 
-#: src/supports/images.md:221
+#: src/supports/images.md:222
 msgid "リンクローカル"
 msgstr "Link-local"
 
-#: src/supports/images.md:221
+#: src/supports/images.md:222
 msgid "`169.254/16`(クラウドのメタデータ`169.254.169.254`を含む)、`fe80::/10`"
 msgstr ""
 "`169.254/16` (including the cloud metadata endpoint `169.254.169.254`), "
 "`fe80::/10`"
 
-#: src/supports/images.md:222
+#: src/supports/images.md:223
 msgid "CGNAT"
 msgstr "CGNAT"
 
-#: src/supports/images.md:222
+#: src/supports/images.md:223
 msgid "`100.64.0.0/10`(クラウドの内部ロードバランサ等)"
 msgstr "`100.64.0.0/10` (cloud-internal load balancers and the like)"
 
-#: src/supports/images.md:223
+#: src/supports/images.md:224
 msgid "その他の非グローバル"
 msgstr "Other non-global"
 
-#: src/supports/images.md:223
+#: src/supports/images.md:224
 msgid ""
 "`0.0.0.0/8`、`192.0.0.0/24`、`198.18.0.0/15`、`240.0.0.0/4`、マルチキャスト、"
 "ドキュメント用"
@@ -8305,17 +8341,17 @@ msgstr ""
 "`0.0.0.0/8`, `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`, multicast, "
 "documentation"
 
-#: src/supports/images.md:224
+#: src/supports/images.md:225
 msgid "IPv6の特殊用途"
 msgstr "IPv6 special-purpose"
 
-#: src/supports/images.md:224
+#: src/supports/images.md:225
 msgid ""
 "Teredo `2001::/32`、`2001:db8::/32`、ORCHIDv2 `2001:20::/28`、`100::/64`"
 msgstr ""
 "Teredo `2001::/32`, `2001:db8::/32`, ORCHIDv2 `2001:20::/28`, `100::/64`"
 
-#: src/supports/images.md:226
+#: src/supports/images.md:227
 msgid ""
 "IPv4を埋め込むIPv6表記(IPv4-mapped `::ffff:a.b.c.d`、IPv4-compatible `::a.b."
 "c.d`、NAT64 `64:ff9b::/96`、6to4 `2002::/16`)は、埋め込まれたIPv4側で判定しま"
@@ -8326,7 +8362,7 @@ msgstr ""
 "by the embedded IPv4 address. Letting them through would allow the IPv4 "
 "filter to be bypassed."
 
-#: src/supports/images.md:229
+#: src/supports/images.md:230
 msgid ""
 "判定は名前解決の結果に対して行うため、DNSリバインディングやリダイレクト経由の"
 "迂回も同じ仕組みで防いでいます。"
@@ -8334,14 +8370,14 @@ msgstr ""
 "The check is applied to the result of name resolution, so DNS rebinding and "
 "redirect-based bypasses are prevented by the same mechanism."
 
-#: src/supports/images.md:231
+#: src/supports/images.md:232
 msgid ""
 "ポート番号は制限しません。 内部サービスはプライベートIP上にあり、そこは上の判"
 "定で塞がっています。 公開IPに対する非標準ポート(CDNやAPIの`8080`など)は正当な"
 "用途があるため、塞ぐと実用を損なうわりに得るものがありません。"
 msgstr "Private"
 
-#: src/supports/images.md:235
+#: src/supports/images.md:236
 msgid ""
 "信頼できないHTMLを変換する場合は、`--allow-path`でローカル参照の範囲も併せて"
 "絞ってください。"
@@ -8349,11 +8385,11 @@ msgstr ""
 "When converting untrusted HTML, narrow the range of local references as well "
 "with `--allow-path`."
 
-#: src/supports/images.md:241
+#: src/supports/images.md:242
 msgid "JPEGはそのまま埋め込まれる"
 msgstr "JPEG is embedded as is"
 
-#: src/supports/images.md:243
+#: src/supports/images.md:244
 msgid ""
 "JPEGはデコードせず、サイズ情報だけを読んでPDFへそのまま(DCTDecodeとして)埋め"
 "込みます。 再エンコードしないので画質は落ちず、変換も速くなります。"
@@ -8362,7 +8398,7 @@ msgstr ""
 "goes into the PDF unchanged, as `DCTDecode`. Nothing is re-encoded, so "
 "quality is preserved and conversion is faster."
 
-#: src/supports/images.md:246
+#: src/supports/images.md:247
 msgid ""
 "その代わり、`--grayscale`を指定してもJPEGとCMYK画像はカラーのまま残ります(デ"
 "コーダを持たないため)。 グレースケール化が必要な場合は、変換前の画像をグレー"
@@ -8372,7 +8408,7 @@ msgstr ""
 "since there is no decoder for them. If you need them in greyscale, convert "
 "the images before rendering."
 
-#: src/supports/images.md:249
+#: src/supports/images.md:250
 msgid ""
 "PNGとWebPはフルデコードし、アルファチャンネルがあれば透過画像として埋め込みま"
 "す。"
@@ -8380,11 +8416,11 @@ msgstr ""
 "PNG and WebP are fully decoded, and an alpha channel is carried through as "
 "transparency."
 
-#: src/supports/images.md:251
+#: src/supports/images.md:252
 msgid "画像を一切読み込まない"
 msgstr "Loading no images at all"
 
-#: src/supports/images.md:257
+#: src/supports/images.md:258
 msgid "`<img>`とCSSの`background-image`の両方を読み込まなくなります。"
 msgstr ""
 "This stops both `<img>` and the CSS `background-image` from being loaded."
@@ -8591,11 +8627,12 @@ msgstr ""
 
 #: src/supports/pagination.md:78
 msgid ""
-"`counter(pages)`は[ストリーミングモード](../usage/cli/streaming.md)では使えま"
-"せん(総ページ数が1パスでは決まらないため)"
+"`counter(pages)`は[ストリーミングモード](../usage/cli/streaming.md)でも使えま"
+"す。総ページ数が必要なmargin boxはPDF完成時に描画します"
 msgstr ""
-"`counter(pages)` is unavailable in [streaming mode](../usage/cli/streaming."
-"md), because the total page count is not known in a single pass"
+"`counter(pages)` can be used in [streaming mode](../usage/cli/streaming.md) "
+"too. The margin boxes that need the total page count are drawn when the PDF "
+"is completed"
 
 #: src/supports/pagination.md:80
 msgid ""
@@ -10874,13 +10911,14 @@ msgstr "Limitations specific to streaming mode"
 
 #: src/appendix/limitations.md:82
 msgid ""
-"`--streaming`を使う場合は、総ページ数(`counter(pages)`・`[topage]`)や目次(`--"
-"toc`)などが使えなくなります。 詳細は[ストリーミングモード](../usage/cli/"
-"streaming.md)を参照してください。"
+"`--streaming`では、本文開始後のスタイルシートなどに制約があります。目次(`--"
+"toc`)と総ページ数(`counter(pages)`・`[topage]`)には対応しています。 詳細は[ス"
+"トリーミングモード](../usage/cli/streaming.md)を参照してください。"
 msgstr ""
-"With `--streaming`, the total page count, meaning `counter(pages)` and "
-"`[topage]`, and the table of contents, `--toc`, become unavailable. See "
-"[Streaming mode](../usage/cli/streaming.md) for the details."
+"With `--streaming`, there are restrictions such as on style sheets after the "
+"body has started. The table of contents, `--toc`, and the total page count, "
+"`counter(pages)` and `[topage]`, are supported. See [Streaming mode](../"
+"usage/cli/streaming.md) for the details."
 
 #: src/appendix/limitations.md:85
 msgid "今後について"
@@ -10895,6 +10933,34 @@ msgstr ""
 "Embedding a JavaScript engine remains something to consider if the need "
 "arises. Items above that are not deliberate non-goals, such as PDF outlines, "
 "may well be supported later."
+
+#~ msgid "`counter(pages)` / ヘッダー・フッターの`[topage]`"
+#~ msgstr "`counter(pages)`, and `[topage]` in headers and footers"
+
+#~ msgid "総ページ数は1パスでは決まらない"
+#~ msgstr "The total page count is not known in a single pass"
+
+#~ msgid "同上(目次には本文のページ番号が要る)"
+#~ msgstr "Same reason; a table of contents needs the page numbers of the body"
+
+#~ msgid "`--cover`(表紙)"
+#~ msgstr "`--cover`, the cover page"
+
+#~ msgid ""
+#~ "`border-radius`と`background-image`を併用した場合、角丸によるクリップは行"
+#~ "わない(角丸は背景色の塗りにのみ効く)。"
+#~ msgstr ""
+#~ "When `border-radius` and `background-image` are used together, the image "
+#~ "is not clipped to the rounded corners; the rounding applies to the "
+#~ "background colour fill only."
+
+#~ msgid ""
+#~ "`border-radius`と背景画像を併用した場合、角丸によるクリップは行われません"
+#~ "(角丸は背景色の塗りにのみ効きます)。"
+#~ msgstr ""
+#~ "When `border-radius` is combined with a background image, the image is "
+#~ "not clipped to the rounded corners; the radius applies only to the "
+#~ "background colour."
 
 #~ msgid "`/Producer`と`/CreationDate`は常に書かれます。"
 #~ msgstr "`/Producer` and `/CreationDate` are always written."

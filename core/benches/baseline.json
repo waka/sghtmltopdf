@@ -261,7 +261,7 @@
       "alloc_bytes": 92964553,
       "peak_live_bytes": 25987335,
       "pages": 13,
-      "pdf_bytes": 108906
+      "pdf_bytes": 118066
     },
     {
       "name": "engine/streaming/images",
@@ -491,7 +491,7 @@
       "alloc_bytes": 0,
       "peak_live_bytes": 0,
       "pages": 23,
-      "pdf_bytes": 180276
+      "pdf_bytes": 180285
     },
     {
       "name": "cli/report_header_footer_html",

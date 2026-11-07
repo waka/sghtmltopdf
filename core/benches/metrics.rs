@@ -33,8 +33,8 @@ use sghtmltopdf::engine::Mode;
 
 use support::alloc::{self, CountingAlloc};
 use support::{
-    cli_font_args, fixture, fixtures_dir, page_count, peak_rss_bytes, render, Fixture, Generator,
-    FIXTURES, MANIFEST_DIR, SCALE_KINDS,
+    child_peak_rss_bytes, cli_font_args, fixture, fixtures_dir, page_count, peak_rss_bytes, render,
+    Fixture, Generator, FIXTURES, MANIFEST_DIR, SCALE_KINDS,
 };
 
 #[global_allocator]
@@ -187,7 +187,9 @@ fn measure_cli(name: &str, input: &Path, args: &[String]) -> Measurement {
     let output =
         std::env::temp_dir().join(format!("sghtmltopdf-metrics-{}.pdf", std::process::id()));
     let started = Instant::now();
-    let status = Command::new(BIN)
+    // Keep the child handle alive after wait: Windows needs it to query peak RSS.
+    // Command::status() would discard the handle before that query.
+    let mut child = Command::new(BIN)
         .arg(input)
         .args(cli_font_args())
         .args(["--allow", MANIFEST_DIR, "--quiet"])
@@ -196,8 +198,9 @@ fn measure_cli(name: &str, input: &Path, args: &[String]) -> Measurement {
         .arg(&output)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
+        .spawn()
         .expect("run sghtmltopdf");
+    let status = child.wait().expect("wait for sghtmltopdf");
     let seconds = started.elapsed().as_secs_f64();
     assert!(status.success(), "sghtmltopdf failed for {name}");
     let pdf = std::fs::read(&output).expect("read output PDF");
@@ -205,7 +208,7 @@ fn measure_cli(name: &str, input: &Path, args: &[String]) -> Measurement {
     Measurement {
         name: name.to_string(),
         seconds,
-        peak_rss_bytes: peak_rss_bytes(true),
+        peak_rss_bytes: child_peak_rss_bytes(&child),
         alloc_count: 0,
         alloc_bytes: 0,
         peak_live_bytes: 0,

@@ -170,7 +170,7 @@
 | `bookmark-label` | ⚠️ | 文字列リテラル・`attr()`・`content()`(`content(text)`と同義)の連結。初期値は`content(text)`(要素のテキスト)。ラベルは空白を畳んで使う。`content(before)`等と`counter()`は非対応。継承しない |
 | `bookmark-state` | ✅ | `open`(初期値)/`closed`。`closed`の項目は子を畳んだ状態で開く。継承しない |
 
-`counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える(`counter(pages)`はストリーミングモードでは総ページ数が確定しないためエラーになる)。
+`counter(page)`/`counter(pages)`によるページ番号は`@page`のmargin box内で使える。ストリーミングモードでも、総ページ数が必要なmargin boxをPDF完成時に描画する。
 
 ## ページ分割(CSS Fragmentation)
 
