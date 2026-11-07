@@ -72,15 +72,27 @@ RSpec.describe "streaming: true" do
 
   # Anything that cannot be decided without seeing the whole document is an error rather than a silent change of result.
   describe "the streaming mode constraints" do
-    it "makes --toc an error" do
-      expect { Sghtmltopdf.render(paragraph_html(count: 10), streaming: true, toc: true) }
-        .to raise_error(Sghtmltopdf::RenderError, /toc/)
+    let(:decorated_body) { '<body style="background: #eee"><p>x</p></body>' }
+
+    it "makes a decorated <body> an error" do
+      expect { Sghtmltopdf.render(decorated_body, streaming: true) }
+        .to raise_error(Sghtmltopdf::RenderError, /<body>/)
     end
 
     it "gives the same error with a block too" do
-      expect { Sghtmltopdf.render(paragraph_html(count: 10), streaming: true, toc: true) { |_| } }
-        .to raise_error(Sghtmltopdf::RenderError, /toc/)
+      expect { Sghtmltopdf.render(decorated_body, streaming: true) { |_| } }
+        .to raise_error(Sghtmltopdf::RenderError, /<body>/)
     end
+  end
+
+  # The TOC's pages are written after the body, but listed before it.
+  it "accepts --toc" do
+    expect(Sghtmltopdf.render(paragraph_html(count: 10), streaming: true, toc: true))
+      .to start_with("%PDF-")
+
+    chunks = []
+    Sghtmltopdf.render(paragraph_html(count: 10), streaming: true, toc: true) { |bytes| chunks << bytes }
+    expect(chunks.join).to start_with("%PDF-")
   end
 
   # The whole point of streaming mode. Without releasing pages as they settle it would use as
