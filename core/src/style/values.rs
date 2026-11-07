@@ -39,12 +39,26 @@ pub enum Display {
     None,
 }
 
-/// `font-weight`. A simplified implementation treating any numeric value (`700`, say) of 600 or more as `Bold`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
-pub enum FontWeight {
-    #[default]
-    Normal,
-    Bold,
+/// `font-weight`, a number from 1 to 1000 (`normal` is 400 and `bold` 700). The number picks
+/// among `@font-face` faces (`fonts::FontCollection`); whether it counts as bold
+/// ([`Self::is_bold`]) decides synthetic bold and the system font lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FontWeight(pub u16);
+
+impl FontWeight {
+    pub const NORMAL: Self = Self(400);
+    pub const BOLD: Self = Self(700);
+
+    /// 600 or more. Text this heavy drawn with a face lighter than 600 gets synthetic bold.
+    pub fn is_bold(self) -> bool {
+        self.0 >= 600
+    }
+}
+
+impl Default for FontWeight {
+    fn default() -> Self {
+        Self::NORMAL
+    }
 }
 
 /// `font-style`. `oblique` has no slant of its own, so it is treated as `Italic`.

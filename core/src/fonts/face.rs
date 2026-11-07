@@ -96,7 +96,7 @@ mod tests {
         FontFaceRule {
             family: family.to_string(),
             src,
-            weight: FontWeight::Normal,
+            weight: FontWeight::NORMAL,
             style: FontStyle::Normal,
             unicode_range: Vec::new(),
         }

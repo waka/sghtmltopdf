@@ -191,8 +191,8 @@ impl SystemFonts {
     }
 
     /// Load the system font named `family` (case-insensitively).
-    /// `weight`/`style` are passed straight to `fontdb`'s CSS-like matching, so with
-    /// `weight: Bold`, for example, a real Bold face in that family is chosen if one exists
+    /// `weight`/`style` are passed to `fontdb`'s CSS-like matching (the weight as Regular or
+    /// Bold, see [`to_fontdb_weight`]), so with a bold `weight`, for example, a real Bold face in that family is chosen if one exists
     /// (if not, `fontdb` returns the closest face instead, and the caller then confirms the
     /// reality with `FontCollection::is_bold` and the like before applying faux bold).
     /// `None` if no font matches.
@@ -381,10 +381,13 @@ impl SystemFonts {
     }
 }
 
+/// System fonts are looked up as Regular or Bold only, like
+/// `FontCollection::has_matching_face`, which decides whether a lookup is needed at all.
 fn to_fontdb_weight(weight: FontWeight) -> fontdb::Weight {
-    match weight {
-        FontWeight::Normal => fontdb::Weight::NORMAL,
-        FontWeight::Bold => fontdb::Weight::BOLD,
+    if weight.is_bold() {
+        fontdb::Weight::BOLD
+    } else {
+        fontdb::Weight::NORMAL
     }
 }
 
@@ -534,17 +537,24 @@ fn collect_rendered_chars<'a>(
         NodeData::Text { contents } => Some(contents.as_str()),
         _ => None,
     };
-    let generated = [
-        style.pseudo_before_content.as_deref(),
-        style.pseudo_after_content.as_deref(),
-    ];
-    out.extend(
-        text.into_iter()
-            .chain(generated.into_iter().flatten())
-            .flat_map(str::chars)
+    let drawn = |text: &'a str, style: &'a ComputedStyle| {
+        text.chars()
             .filter(|c| !c.is_whitespace() && !c.is_control())
-            .map(|c| (c, style)),
-    );
+            .map(move |c| (c, style))
+    };
+    out.extend(text.into_iter().flat_map(|text| drawn(text, style)));
+    // Generated content is drawn with the pseudo-element's own style. Only an element has
+    // one (a text node carries a copy of its parent's content strings).
+    if matches!(dom.node(node).data, NodeData::Element { .. }) {
+        for (text, pseudo) in [
+            (style.pseudo_before_content.as_deref(), node.before()),
+            (style.pseudo_after_content.as_deref(), node.after()),
+        ] {
+            if let (Some(text), Some(pseudo_style)) = (text, styles.get(&pseudo)) {
+                out.extend(drawn(text, pseudo_style));
+            }
+        }
+    }
 
     // An inline `<svg>` is drawn as one replaced box, so its `<title>`, `<desc>` and
     // `<style>` text is never page text. Only `<text>` is drawn, with the document's fonts.
@@ -626,7 +636,7 @@ pub fn ensure_cjk_fallback_font(fonts: &mut FontCollection, system: &SystemFonts
             system,
             &mut seen,
             c,
-            FontWeight::Normal,
+            FontWeight::NORMAL,
             FontStyle::Normal,
             &[],
         );
@@ -670,7 +680,7 @@ mod tests {
     fn loads_a_font_by_family_name_case_insensitively() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
-            .load("dejavu sans", FontWeight::Normal, FontStyle::Normal)
+            .load("dejavu sans", FontWeight::NORMAL, FontStyle::Normal)
             .expect("should find DejaVu Sans regardless of case");
         assert!(font.has_glyph('A'));
     }
@@ -681,7 +691,7 @@ mod tests {
         assert!(system
             .load(
                 "Definitely Not A Real Font",
-                FontWeight::Normal,
+                FontWeight::NORMAL,
                 FontStyle::Normal
             )
             .is_none());
@@ -691,7 +701,7 @@ mod tests {
     fn loads_the_real_bold_face_when_the_family_has_one() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
-            .load("DejaVu Sans", FontWeight::Bold, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::BOLD, FontStyle::Normal)
             .expect("should find a DejaVu Sans face");
         assert!(
             font.weight() >= 600,
@@ -789,7 +799,7 @@ mod tests {
             "the missing bold face should be added alongside the existing regular one"
         );
         assert!(
-            fonts.has_matching_face("DejaVu Sans", FontWeight::Bold, FontStyle::Normal),
+            fonts.has_matching_face("DejaVu Sans", FontWeight::BOLD, FontStyle::Normal),
             "a real bold face should now be available for DejaVu Sans"
         );
     }
@@ -836,13 +846,13 @@ mod tests {
     fn none_finds_nothing_so_the_document_is_built_from_the_given_fonts_only() {
         let system = SystemFonts::none();
         assert!(system
-            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
         assert!(system
-            .load_generic("monospace", FontWeight::Normal, FontStyle::Normal)
+            .load_generic("monospace", FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
         assert!(system
-            .load_covering('\u{3042}', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('\u{3042}', FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
     }
 
@@ -850,7 +860,7 @@ mod tests {
     fn load_generic_resolves_monospace_through_the_candidate_list() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
-            .load_generic("monospace", FontWeight::Normal, FontStyle::Normal)
+            .load_generic("monospace", FontWeight::NORMAL, FontStyle::Normal)
             .expect("DejaVu Sans Mono is in the candidate list and exists in the fixtures");
         assert_eq!(font.family_name().as_deref(), Some("DejaVu Sans Mono"));
     }
@@ -859,7 +869,7 @@ mod tests {
     fn load_generic_is_case_insensitive() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         assert!(system
-            .load_generic("MONOSPACE", FontWeight::Normal, FontStyle::Normal)
+            .load_generic("MONOSPACE", FontWeight::NORMAL, FontStyle::Normal)
             .is_some());
     }
 
@@ -871,7 +881,7 @@ mod tests {
         for generic in ["cursive", "fantasy", "Helvetica"] {
             assert!(
                 system
-                    .load_generic(generic, FontWeight::Normal, FontStyle::Normal)
+                    .load_generic(generic, FontWeight::NORMAL, FontStyle::Normal)
                     .is_none(),
                 "{generic} should not be resolved as a generic family"
             );
@@ -882,7 +892,7 @@ mod tests {
     fn load_generic_resolves_sans_serif_to_a_gothic_candidate() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
-            .load_generic("sans-serif", FontWeight::Normal, FontStyle::Normal)
+            .load_generic("sans-serif", FontWeight::NORMAL, FontStyle::Normal)
             .expect("DejaVu Sans is in the sans-serif candidate list and exists in the fixtures");
         assert_eq!(font.family_name().as_deref(), Some("DejaVu Sans"));
     }
@@ -893,7 +903,7 @@ mod tests {
         // monospace, there is no flag-based fallback search, so this returns None.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         assert!(system
-            .load_generic("serif", FontWeight::Normal, FontStyle::Normal)
+            .load_generic("serif", FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
     }
 
@@ -904,7 +914,7 @@ mod tests {
         // exercise the path itself directly.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let font = system
-            .load_any_monospaced(FontWeight::Normal, FontStyle::Normal)
+            .load_any_monospaced(FontWeight::NORMAL, FontStyle::Normal)
             .expect("the fixture directory contains a monospaced face");
         assert_eq!(font.family_name().as_deref(), Some("DejaVu Sans Mono"));
     }
@@ -931,7 +941,7 @@ mod tests {
     fn load_covering_finds_a_cjk_face_from_the_candidate_list() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let (family, font) = system
-            .load_covering('本', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('本', FontWeight::NORMAL, FontStyle::Normal)
             .expect("the fixture directory contains a CJK face");
         assert!(font.has_glyph('本'));
         assert!(
@@ -946,7 +956,7 @@ mod tests {
         // scan (`load_any_covering`).
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let (_, font) = system
-            .load_covering('Д', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('Д', FontWeight::NORMAL, FontStyle::Normal)
             .expect("the fixture fonts cover Cyrillic");
         assert!(font.has_glyph('Д'));
     }
@@ -956,7 +966,7 @@ mod tests {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         // No fixture font has a private-use-area character.
         assert!(system
-            .load_covering('\u{E000}', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('\u{E000}', FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
     }
 
@@ -971,7 +981,7 @@ mod tests {
             let dom = html::parse(format!("<p>a</p>{body}").as_bytes());
             let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
             let latin = system
-                .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+                .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
                 .expect("fixture");
             let mut fonts = FontCollection::new(vec![latin]);
             load_fonts_for_uncovered_chars(&mut fonts, &dom, &styles, &system);
@@ -1011,17 +1021,17 @@ mod tests {
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
 
         let latin = system
-            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
             .expect("fixture");
         let mut fonts = FontCollection::new(vec![latin]);
         assert!(
-            !fonts.can_render(&[], FontWeight::Normal, FontStyle::Normal, '本'),
+            !fonts.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, '本'),
             "precondition: a latin-only collection cannot render Japanese"
         );
 
         load_fonts_for_uncovered_chars(&mut fonts, &dom, &styles, &system);
 
-        assert!(fonts.can_render(&[], FontWeight::Normal, FontStyle::Normal, '本'));
+        assert!(fonts.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, '本'));
         assert_eq!(
             fonts.len(),
             2,
@@ -1038,12 +1048,12 @@ mod tests {
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
 
         let latin = system
-            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
             .expect("fixture");
         let mut fonts = FontCollection::new(vec![latin]);
         load_fonts_for_uncovered_chars(&mut fonts, &dom, &styles, &system);
 
-        assert!(fonts.can_render(&[], FontWeight::Normal, FontStyle::Normal, '第'));
+        assert!(fonts.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, '第'));
     }
 
     #[test]
@@ -1053,7 +1063,7 @@ mod tests {
         let styles = compute_styles(&dom, &user_agent_stylesheet(), &Stylesheet::default());
 
         let latin = system
-            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
             .expect("fixture");
         let mut fonts = FontCollection::new(vec![latin]);
         load_fonts_for_uncovered_chars(&mut fonts, &dom, &styles, &system);
@@ -1067,22 +1077,22 @@ mod tests {
         // CJK font has both, so only one is added.
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let latin = system
-            .load("DejaVu Sans", FontWeight::Normal, FontStyle::Normal)
+            .load("DejaVu Sans", FontWeight::NORMAL, FontStyle::Normal)
             .expect("fixture");
         let mut fonts = FontCollection::new(vec![latin]);
 
         ensure_cjk_fallback_font(&mut fonts, &system);
 
         assert_eq!(fonts.len(), 2);
-        assert!(fonts.can_render(&[], FontWeight::Normal, FontStyle::Normal, '漢'));
-        assert!(fonts.can_render(&[], FontWeight::Normal, FontStyle::Normal, 'あ'));
+        assert!(fonts.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, '漢'));
+        assert!(fonts.can_render(&[], FontWeight::NORMAL, FontStyle::Normal, 'あ'));
     }
 
     #[test]
     fn ensure_cjk_fallback_font_is_a_noop_when_cjk_is_already_covered() {
         let system = SystemFonts::from_dir(std::path::Path::new(FONTS_DIR));
         let cjk = system
-            .load("Noto Sans CJK JP", FontWeight::Normal, FontStyle::Normal)
+            .load("Noto Sans CJK JP", FontWeight::NORMAL, FontStyle::Normal)
             .expect("fixture");
         let mut fonts = FontCollection::new(vec![cjk]);
 
@@ -1111,7 +1121,7 @@ mod tests {
 
         let system = SystemFonts::from_dir(&dir);
         let (family, font) = system
-            .load_covering('\u{1F389}', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('\u{1F389}', FontWeight::NORMAL, FontStyle::Normal)
             .expect("a font that can draw the emoji from bitmaps should be accepted");
         assert!(family.contains("Emoji"), "family name: {family}");
         assert!(!font.has_outlines());
@@ -1119,7 +1129,7 @@ mod tests {
 
         // A character the font cannot draw at all is still not found.
         assert!(system
-            .load_covering('日', FontWeight::Normal, FontStyle::Normal)
+            .load_covering('日', FontWeight::NORMAL, FontStyle::Normal)
             .is_none());
 
         std::fs::remove_dir_all(&dir).ok();
