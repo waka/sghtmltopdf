@@ -76,12 +76,14 @@ fn decompressed_stream_bytes(pdf_bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// `/CreationDate`, and the `/ID` that hashes it, are built from the wall clock
+/// `/CreationDate`, `/ModDate`, the XMP packet's `xmp:CreateDate` and
+/// `xmp:ModifyDate`, and the `/ID` that hashes them, are built from the wall clock
 /// at the moment of writing, so a byte comparison of two separately written PDFs
 /// fails on exactly those runs that cross a second boundary (it did fail in CI:
-/// `D:20260827160357Z` against `D:20260827160358Z`, a one-byte difference). Both
-/// are fixed length, so blanking them before the comparison leaves the xref
-/// offsets intact.
+/// `D:20260827160357Z` against `D:20260827160358Z`, a one-byte difference; and
+/// again once `/ModDate` and the XMP packet were added, at `04:39:25` against
+/// `04:39:26`). All are fixed length, so blanking them before the comparison
+/// leaves the xref offsets intact.
 fn without_wall_clock_metadata(bytes: &[u8]) -> Vec<u8> {
     fn blank_value(bytes: &mut [u8], marker: &[u8], end: u8) {
         let Some(start) = bytes.windows(marker.len()).position(|w| w == marker) else {
@@ -96,6 +98,9 @@ fn without_wall_clock_metadata(bytes: &[u8]) -> Vec<u8> {
 
     let mut out = bytes.to_vec();
     blank_value(&mut out, b"/CreationDate (", b')');
+    blank_value(&mut out, b"/ModDate (", b')');
+    blank_value(&mut out, b"<xmp:CreateDate>", b'<');
+    blank_value(&mut out, b"<xmp:ModifyDate>", b'<');
     blank_value(&mut out, b"/ID [", b']');
     out
 }

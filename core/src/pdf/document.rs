@@ -1737,16 +1737,16 @@ fn render_box_with_style_inner(
 
     // `overflow: hidden`/`scroll`/`auto` (not distinguished; all clip the same way).
     // The decoration (background, borders, outline, marker) is drawn above and is unaffected
-    // by the clip. The clip boundary is always the straight padding box
-    // (it never follows `border-radius`).
+    // by the clip. The clip boundary is the padding box, rounded by the padding edge curve
+    // when a `border-radius` is set (CSS Backgrounds 3, 5.3).
     if style.overflow.clips() {
-        let padding_box = b.layout.padding_box();
-        let x = settings.margin.left + padding_box.x;
-        let y = to_pdf_y(settings, padding_box.y + padding_box.height);
+        let radii = inner_radii(
+            effective_radii(&b.layout, style),
+            b.layout.border_box(),
+            b.layout.border,
+        );
         content.save_state();
-        content.rect(x, y, padding_box.width, padding_box.height);
-        content.clip_nonzero();
-        content.end_path();
+        clip_to_box(content, b.layout.padding_box(), radii, settings);
     }
 
     match &b.content {
@@ -1810,14 +1810,7 @@ fn render_box_with_style_inner(
             if let Some(image) = image {
                 if let Some(ids) = image_ids.get(&(Rc::as_ptr(image) as usize)) {
                     let figure = content.mark_figure_begin(b.node);
-                    render_replaced_image(
-                        content,
-                        b.layout.content,
-                        style,
-                        settings,
-                        image,
-                        ids.root,
-                    );
+                    render_replaced_image(content, &b.layout, style, settings, image, ids.root);
                     content.mark_end(figure);
                 }
             }
@@ -2619,8 +2612,8 @@ fn resolve_border_conflict(
 
 /// Draw the background and borders. With no `border-radius` set, it draws straight
 /// rectangles and four independently stroked edges as before; with one set, it delegates to
-/// [`render_rounded_decoration`]. `background_image_ref` is the XObject Ref of a background
-/// image stretched to fill the border box (clipping by `border-radius` is not supported).
+/// [`render_rounded_decoration`]. `background_image_paint` is the background image, tiled
+/// over the border box and clipped to it (to its curve with a `border-radius`).
 /// The order is background colour, then background image, then borders.
 #[allow(clippy::too_many_arguments)]
 fn render_box_decoration(
@@ -2632,13 +2625,10 @@ fn render_box_decoration(
     alpha_gs_names: &[String],
 ) {
     let radii = effective_radii(layout, style);
-    let has_radius = [radii.0, radii.1, radii.2, radii.3]
-        .into_iter()
-        .any(|(rx, ry)| rx > 0.0 || ry > 0.0);
 
     render_box_shadows(content, layout, style, settings, radii, alpha_gs_names);
 
-    if has_radius {
+    if has_radius(radii) {
         render_rounded_decoration(
             content,
             layout,
@@ -2661,7 +2651,7 @@ fn render_box_decoration(
         );
     }
     if let Some(paint) = background_image_paint {
-        render_background_image(content, layout.border_box(), style, settings, &paint);
+        render_background_image(content, layout.border_box(), radii, style, settings, &paint);
     }
     render_border(content, layout, style, settings);
 }
@@ -2992,23 +2982,29 @@ fn render_image(
 }
 
 /// Draw an `<img>` (a replaced element) according to `object-fit`/`object-position`.
-/// It always clips to the content box, whatever the `object-fit` value.
+/// It always clips to the content box, whatever the `object-fit` value. With a
+/// `border-radius`, the image is trimmed to the content edge curve (CSS Backgrounds 3, 5.3):
+/// the radii less the border and padding on each side.
 fn render_replaced_image(
     content: &mut RenderTarget<'_>,
-    content_box: Rect,
+    layout: &Layout,
     style: &ComputedStyle,
     settings: &PageSettings,
     image: &PreparedImage,
     resource_ref: Ref,
 ) {
+    let content_box = layout.content;
     let rect = object_fit_rect(content_box, style, (image.width, image.height));
+    let inset = EdgeSizes {
+        top: layout.border.top + layout.padding.top,
+        right: layout.border.right + layout.padding.right,
+        bottom: layout.border.bottom + layout.padding.bottom,
+        left: layout.border.left + layout.padding.left,
+    };
+    let radii = inner_radii(effective_radii(layout, style), layout.border_box(), inset);
 
-    let x = settings.margin.left + content_box.x;
-    let y = to_pdf_y(settings, content_box.y + content_box.height);
     content.save_state();
-    content.rect(x, y, content_box.width, content_box.height);
-    content.clip_nonzero();
-    content.end_path();
+    clip_to_box(content, content_box, radii, settings);
     render_image(content, rect, settings, resource_ref);
     content.restore_state();
 }
@@ -3203,12 +3199,19 @@ fn tile_starts(origin: f32, tile: f32, min: f32, max: f32, repeat: bool) -> Vec<
 }
 
 /// Draw the rectangles computed by [`background_tile_rects`]. Unless there is exactly one
-/// tile and it coincides with the border box (as with `background-repeat: no-repeat` plus no
-/// `background-size`, where it fits anyway), a clip to the border box is interposed (the
-/// same pattern as the `overflow` clip) so the tiles cannot spill out of the box.
+/// tile and it fits inside a border box without rounded corners (as with
+/// `background-repeat: no-repeat` plus no `background-size`), a clip to the border box is
+/// interposed (the same pattern as the `overflow` clip) so the tiles cannot spill out of the
+/// box. With a `border-radius`, the clip follows the border edge curve (CSS Backgrounds 3, 5.3).
 fn render_background_image(
     content: &mut RenderTarget<'_>,
     border_box: Rect,
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
     style: &ComputedStyle,
     settings: &PageSettings,
     paint: &BackgroundImagePaint,
@@ -3223,18 +3226,15 @@ fn render_background_image(
     }
 
     let fits_without_clip = rects.len() == 1
+        && !has_radius(radii)
         && rects[0].x >= border_box.x
         && rects[0].y >= border_box.y
         && rects[0].x + rects[0].width <= border_box.x + border_box.width
         && rects[0].y + rects[0].height <= border_box.y + border_box.height;
 
     if !fits_without_clip {
-        let x = settings.margin.left + border_box.x;
-        let y = to_pdf_y(settings, border_box.y + border_box.height);
         content.save_state();
-        content.rect(x, y, border_box.width, border_box.height);
-        content.clip_nonzero();
-        content.end_path();
+        clip_to_box(content, border_box, radii, settings);
     }
 
     for rect in rects {
@@ -3358,7 +3358,8 @@ fn render_row_group_backgrounds(
 
 /// Background and border drawing when a `border-radius` is set.
 ///
-/// The background is filled as a rounded rectangle following each corner's radius. The
+/// The background colour is filled as a rounded rectangle following each corner's radius,
+/// and the background image is clipped to the same shape. The
 /// borders are stroked as a rounded path only when all four edges share a width, style and
 /// colour (combining rounding with per-edge widths, colours and styles would need complex
 /// blending at the corners and is not supported; in that case the rounding is given up and
@@ -3401,10 +3402,8 @@ fn render_rounded_decoration(
             content.restore_state();
         }
     }
-    // No clip to the rounded path: it is always drawn as a straight rectangle
-    // (combining it with border-radius is not supported).
     if let Some(paint) = background_image_paint {
-        render_background_image(content, border_box, style, settings, &paint);
+        render_background_image(content, border_box, radii, style, settings, &paint);
     }
 
     // groove/ridge/inset/outset need per-edge shading, which a plain stroke of a rounded path
@@ -3698,6 +3697,81 @@ fn shrink_radii(
         shrink(radii.2),
         shrink(radii.3),
     )
+}
+
+/// Whether any corner is rounded.
+fn has_radius(
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+) -> bool {
+    [radii.0, radii.1, radii.2, radii.3]
+        .into_iter()
+        .any(|(rx, ry)| rx > 0.0 || ry > 0.0)
+}
+
+/// The corner radii of a curve `inset` inside the border edge (CSS Backgrounds 3, 5.2): the
+/// padding edge (inset by the border widths) or the content edge (by border plus padding).
+/// Each radius shrinks by the width on its own side, down to 0. The outer radii are first
+/// clamped to the border box the way [`rounded_rect_path`] clamps them, so the inner curve
+/// follows the outer one actually drawn.
+fn inner_radii(
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+    border_box: Rect,
+    inset: EdgeSizes,
+) -> (
+    CornerRadiusPx,
+    CornerRadiusPx,
+    CornerRadiusPx,
+    CornerRadiusPx,
+) {
+    let max_rx = (border_box.width / 2.0).max(0.0);
+    let max_ry = (border_box.height / 2.0).max(0.0);
+    let corner = |(rx, ry): CornerRadiusPx, dx: f32, dy: f32| {
+        (
+            (rx.clamp(0.0, max_rx) - dx).max(0.0),
+            (ry.clamp(0.0, max_ry) - dy).max(0.0),
+        )
+    };
+    (
+        corner(radii.0, inset.left, inset.top),
+        corner(radii.1, inset.right, inset.top),
+        corner(radii.2, inset.right, inset.bottom),
+        corner(radii.3, inset.left, inset.bottom),
+    )
+}
+
+/// Narrow the clip to `rect` (layout space): a rounded rectangle when any corner has a
+/// radius, a plain one otherwise. The caller encloses it in `save_state`/`restore_state`.
+fn clip_to_box(
+    content: &mut RenderTarget<'_>,
+    rect: Rect,
+    radii: (
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+        CornerRadiusPx,
+    ),
+    settings: &PageSettings,
+) {
+    let x0 = settings.margin.left + rect.x;
+    let y_bottom = to_pdf_y(settings, rect.y + rect.height);
+    if has_radius(radii) {
+        let y_top = to_pdf_y(settings, rect.y);
+        rounded_rect_path(content, x0, y_top, x0 + rect.width, y_bottom, radii);
+    } else {
+        content.rect(x0, y_bottom, rect.width, rect.height);
+    }
+    content.clip_nonzero();
+    content.end_path();
 }
 
 /// Draw the `outline`. Unlike `border` it has no effect on layout at all, so `layout` is only
@@ -5606,6 +5680,145 @@ mod tests {
             "tiling beyond the border box should clip"
         );
         assert_eq!(count_occurrences(&decompressed, b" Do\n"), 6);
+    }
+
+    /// The path of every clip (the operators before each `W n`) in a content stream, as
+    /// `(operator, operands)` pairs.
+    fn clip_paths(text: &str) -> Vec<Vec<(String, Vec<f32>)>> {
+        let mut clips = Vec::new();
+        let mut path = Vec::new();
+        for line in text.lines() {
+            let mut parts: Vec<&str> = line.split(' ').collect();
+            let op = parts.pop().unwrap_or_default();
+            match op {
+                "m" | "l" | "c" | "re" | "h" => {
+                    let operands = parts.iter().map(|n| n.parse().unwrap()).collect();
+                    path.push((op.to_string(), operands));
+                }
+                "W" => clips.push(std::mem::take(&mut path)),
+                _ => path.clear(),
+            }
+        }
+        clips
+    }
+
+    /// The width, height and top-left horizontal radius of a clip path: a `re`, or a rounded
+    /// rectangle from [`rounded_rect_path`], which starts at the end of the top-left curve.
+    fn clip_geometry(path: &[(String, Vec<f32>)]) -> (f32, f32, f32) {
+        if let [(op, v)] = path {
+            assert_eq!(op, "re");
+            return (v[2], v[3], 0.0);
+        }
+        let points: Vec<(f32, f32)> = path
+            .iter()
+            .filter(|(_, v)| v.len() >= 2)
+            .map(|(_, v)| (v[v.len() - 2], v[v.len() - 1]))
+            .collect();
+        let xs = points.iter().map(|p| p.0);
+        let ys = points.iter().map(|p| p.1);
+        let min_x = xs.clone().fold(f32::MAX, f32::min);
+        let width = xs.fold(f32::MIN, f32::max) - min_x;
+        let height = ys.clone().fold(f32::MIN, f32::max) - ys.fold(f32::MAX, f32::min);
+        assert_eq!(path[0].0, "m");
+        (width, height, path[0].1[0] - min_x)
+    }
+
+    #[test]
+    fn background_image_is_clipped_to_the_border_edge_curve() {
+        let ua = user_agent_stylesheet();
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+
+        // One tile exactly the size of the box, which needs no clip without a radius.
+        let dom = html::parse(br#"<div class="box"></div>"#);
+        let author = parse_stylesheet(
+            r#".box {
+                width: 120px; height: 120px; border-radius: 60px;
+                background-image: url("bg.png");
+                background-repeat: no-repeat;
+                background-size: 120px 120px;
+            }"#,
+        );
+        let styles = compute_styles(&dom, &ua, &author);
+        let div = find_tag(&dom, dom.document(), "div").expect("div not found");
+        let mut background_images = HashMap::new();
+        background_images.insert(div, fake_prepared_image(40.0, 30.0));
+
+        let pages = paginate_document(&dom, &styles, &fonts, &settings);
+        let bytes = encode_pdf(&pages, &styles, &background_images, &fonts, &settings);
+        let text = String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned();
+
+        let clips = clip_paths(&text);
+        assert_eq!(clips.len(), 1, "{text}");
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 60.0));
+        assert_eq!(count_occurrences(text.as_bytes(), b" Do\n"), 1);
+    }
+
+    #[test]
+    fn overflow_clips_to_the_padding_edge_curve() {
+        // The 8px border takes 8px off each radius: 60px at the border edge, 52px at the
+        // padding edge.
+        let streams = page_streams(
+            r#"<div class="box"><p>hello</p></div>"#,
+            ".box { overflow: hidden; width: 120px; height: 120px; \
+             border: 8px solid rgb(0, 0, 0); border-radius: 60px; }",
+        );
+        let clips = clip_paths(&streams[0]);
+        assert_eq!(clips.len(), 1, "{}", streams[0]);
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 52.0));
+
+        // A radius smaller than the border leaves the padding edge square.
+        let streams = page_streams(
+            r#"<div class="box"><p>hello</p></div>"#,
+            ".box { overflow: hidden; width: 120px; height: 120px; \
+             border: 8px solid rgb(0, 0, 0); border-radius: 6px; }",
+        );
+        let clips = clip_paths(&streams[0]);
+        assert_eq!(clips.len(), 1, "{}", streams[0]);
+        assert_eq!(clip_geometry(&clips[0]), (120.0, 120.0, 0.0));
+    }
+
+    #[test]
+    fn img_is_trimmed_to_the_content_edge_curve() {
+        // A 1x1 PNG.
+        const PIXEL: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+        let ua = user_agent_stylesheet();
+        let fonts = test_fonts();
+        let settings = PageSettings::default();
+        let image_cache = crate::pdf::ImageAssetCache::new(std::path::PathBuf::from("."), false);
+
+        for (css, expected) in [
+            // Border and padding take 6 + 10 = 16px off the 40px radius.
+            (
+                "padding: 10px; border: 6px solid rgb(0, 0, 0); border-radius: 40px",
+                (120.0, 120.0, 24.0),
+            ),
+            // Tailwind's `rounded-full border-2`: a circle inside the 2px ring.
+            (
+                "border: 2px solid rgb(0, 0, 0); border-radius: 9999px",
+                (120.0, 120.0, 60.0),
+            ),
+            // Without a radius the content box is still a plain rectangle.
+            ("border: 2px solid rgb(0, 0, 0)", (120.0, 120.0, 0.0)),
+        ] {
+            let mut dom = html::parse(format!(r#"<img src="{PIXEL}">"#).as_bytes());
+            let author = parse_stylesheet(&format!("img {{ width: 120px; height: 120px; {css} }}"));
+            let styles = compute_styles(&dom, &ua, &author);
+            let pages = crate::layout::paginate_document_with_absolutes(
+                &mut dom,
+                &styles,
+                &fonts,
+                &settings,
+                &image_cache,
+            );
+            let bytes = encode_pdf(&pages, &styles, &HashMap::new(), &fonts, &settings);
+            let text = String::from_utf8_lossy(&decompressed_stream_bytes(&bytes)).into_owned();
+
+            assert_eq!(count_occurrences(text.as_bytes(), b" Do\n"), 1, "{css}");
+            let clips = clip_paths(&text);
+            assert_eq!(clips.len(), 1, "{css}\n{text}");
+            assert_eq!(clip_geometry(&clips[0]), expected, "{css}");
+        }
     }
 
     fn find_tag(dom: &crate::html::Dom, id: NodeId, tag: &str) -> Option<NodeId> {
