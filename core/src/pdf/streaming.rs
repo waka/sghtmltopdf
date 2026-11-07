@@ -866,6 +866,12 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.links.bookmarks.extend(bookmarks);
     }
 
+    /// Drop the bookmarks not found on a page yet, before writing a separate document (a TOC)
+    /// whose `NodeId`s would collide with them.
+    pub(crate) fn clear_bookmarks(&mut self) {
+        self.links.bookmarks.clear();
+    }
+
     /// Write `chunk`'s bytes (assumed to hold a single indirect object) to `sink` and record
     /// its starting offset for the xref.
     fn write_chunk(&mut self, id: Ref, chunk: &Chunk) -> Result<(), S::Error> {

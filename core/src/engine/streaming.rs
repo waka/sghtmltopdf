@@ -947,8 +947,9 @@ impl<S: Sink> Engine<S> {
                     )?;
                     writer.defer_page_overlays(false);
                     // The TOC is a separate document whose `NodeId`s must not alias the
-                    // body's anchors.
+                    // body's anchors or bookmarks.
                     writer.replace_anchor_names(HashMap::new());
+                    writer.clear_bookmarks();
                     let total = numbering.total_pages()?;
                     for (index, page) in toc_pages.iter().enumerate() {
                         check_deadline(self.options.deadline)?;
