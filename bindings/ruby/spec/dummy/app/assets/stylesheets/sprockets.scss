@@ -1,0 +1,10 @@
+@use "sprockets_palette" as palette;
+
+.invoice {
+  background-image: image-url("pipeline-logo.png");
+  background-size: 20px 16px;
+
+  h1 {
+    color: palette.$invoice_color;
+  }
+}
