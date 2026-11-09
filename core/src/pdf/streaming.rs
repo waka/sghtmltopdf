@@ -660,6 +660,13 @@ impl<S: Sink> StreamingPdfWriter<S> {
                     collect_image_uses(b, &overlay.background_images, &mut images);
                 }
             }
+            // The fonts this form draws outline glyphs with, as in `write_page`: its
+            // `/Resources` must not list a font that ends up not embedded.
+            let outline_fonts_used: Vec<bool> = self
+                .usages
+                .iter_mut()
+                .map(FontUsage::take_outline_use)
+                .collect();
             let mut image_refs = Vec::new();
             for image in &images {
                 let Some((ids, is_new)) = ids_for_image(
@@ -731,6 +738,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 write_resources(
                     form.resources(),
                     &self.font_plan,
+                    Some(&outline_fonts_used),
                     &image_refs,
                     &[],
                     &self.alpha_gs_names,
@@ -1360,7 +1368,8 @@ mod tests {
     /// `fonts`, uncompressed so the page dictionaries can be read.
     fn stream_uncompressed(src: &str, css: &str, fonts: &FontCollection) -> Vec<u8> {
         let dom = html::parse(src.as_bytes());
-        let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+        let author = parse_stylesheet(css);
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
         let settings = PageSettings::default();
         let pages = paginate_document(&dom, &styles, fonts, &settings);
         let output = PdfOutputOptions {
@@ -1371,7 +1380,7 @@ mod tests {
             fonts,
             settings,
             MemorySink::new(),
-            Vec::new(),
+            author.page_rules.clone(),
             LinkSettings::default(),
             output,
             HashMap::new(),
@@ -1387,11 +1396,23 @@ mod tests {
 
     /// The font resource names (`F0`, `F1`, ...) listed in each page's `/Resources /Font`.
     fn page_font_names(pdf: &[u8]) -> Vec<Vec<String>> {
+        font_names_after(pdf, "/Type /Page\n")
+    }
+
+    /// The same for each Form XObject (the forward-referenced decorations), in file order.
+    fn form_font_names(pdf: &[u8]) -> Vec<Vec<String>> {
+        font_names_after(pdf, "/Subtype /Form")
+    }
+
+    /// For each occurrence of `marker`, the font resource names of the dictionary it starts.
+    fn font_names_after(pdf: &[u8], marker: &str) -> Vec<Vec<String>> {
         let text = String::from_utf8_lossy(pdf);
-        text.split("/Type /Page\n")
+        text.split(marker)
             .skip(1)
-            .map(|page| {
-                let fonts = page
+            .map(|object| {
+                // Only this object's dictionary: stop at the next object.
+                let object = object.split("endobj").next().unwrap_or("");
+                let fonts = object
                     .split_once("/Font <<")
                     .and_then(|(_, rest)| rest.split_once(">>"))
                     .map(|(dict, _)| dict)
@@ -1501,6 +1522,31 @@ mod tests {
         assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 0);
         assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 0);
         assert_eq!(page_font_names(&bytes), vec![Vec::<String>::new()]);
+        assert_xref_matches_objects(&bytes);
+    }
+
+    #[test]
+    fn deferred_decoration_forms_list_only_the_fonts_they_draw_with() {
+        // Review of #147: `counter(pages)` in a margin box is drawn by a forward-referenced
+        // form written at the end. With Latin-only text and the CJK font preloaded, that form's
+        // `/Resources` must not list the CJK font either, since it is not embedded and the
+        // reference would point at a free object.
+        let fonts = test_fonts_with_cjk();
+        let bytes = stream_uncompressed(
+            "<p>Hello</p>",
+            "@page { @bottom-center { content: counter(pages); } }",
+            &fonts,
+        );
+
+        assert_eq!(
+            count_occurrences(&bytes, b"/Subtype /Form"),
+            1,
+            "the margin box is drawn by one deferred form"
+        );
+        assert_eq!(form_font_names(&bytes), vec![vec!["F0".to_string()]]);
+        assert_eq!(page_font_names(&bytes), vec![vec!["F0".to_string()]]);
+        assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 1);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 1);
         assert_xref_matches_objects(&bytes);
     }
 
