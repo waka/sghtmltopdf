@@ -343,6 +343,13 @@ impl Tagger {
         }
     }
 
+    /// Add roles collected after this tagger was created. Streaming mode
+    /// collects them one top-level element at a time, before that element's
+    /// subtree is freed.
+    pub(super) fn add_roles(&mut self, roles: HashMap<NodeId, TagRole>) {
+        self.roles.extend(roles);
+    }
+
     fn new_stream(&mut self, page: Ref, stm: Option<Ref>) -> usize {
         let key = self.entries.len() as i32;
         let index = self.streams.len();

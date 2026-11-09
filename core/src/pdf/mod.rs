@@ -25,4 +25,4 @@ pub use options::{
 pub use outline::Bookmark;
 pub use streaming::{PageRole, StreamingPdfWriter};
 pub use svg::SvgFontDb;
-pub use tagging::{collect_tag_roles, TagRole};
+pub use tagging::{collect_tag_roles, collect_tag_roles_in_subtree, TagRole};

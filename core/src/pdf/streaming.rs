@@ -228,6 +228,29 @@ impl<S: Sink> StreamingPdfWriter<S> {
         self.body_page_ids.len()
     }
 
+    /// Add tag roles collected for one top-level element. Streaming mode
+    /// collects them incrementally, before that element's subtree is freed.
+    pub(crate) fn add_tag_roles(&mut self, roles: HashMap<NodeId, TagRole>) {
+        if let Some(tagger) = &mut self.tagger {
+            tagger.add_roles(roles);
+        }
+    }
+
+    /// Suspend tagging for pages of a separate document (the TOC), whose
+    /// `NodeId`s alias the body's. Pair with [`Self::resume_tagging`].
+    pub(crate) fn suspend_tagging(&mut self) {
+        if let Some(tagger) = &mut self.tagger {
+            tagger.suspend();
+        }
+    }
+
+    /// Resume tagging after [`Self::suspend_tagging`].
+    pub(crate) fn resume_tagging(&mut self) {
+        if let Some(tagger) = &mut self.tagger {
+            tagger.resume();
+        }
+    }
+
     pub(crate) fn extend_anchor_names(&mut self, names: HashMap<NodeId, String>) {
         self.links.anchor_names.extend(names);
     }
