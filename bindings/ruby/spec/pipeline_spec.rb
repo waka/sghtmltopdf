@@ -2,7 +2,7 @@
 
 require "open3"
 
-# The path taken in an app with an asset pipeline (Propshaft) installed.
+# The path taken in an app with an asset pipeline installed.
 #
 # The dummy app itself runs without a pipeline gem (to check the defaults of a
 # plain Rails app), so an app that loads the pipeline is booted in a separate
@@ -14,14 +14,14 @@ require "open3"
 RSpec.describe "an app with an asset pipeline" do
   PIPELINE_ROOT = File.expand_path("..", __dir__)
 
-  # Boots the dummy app with Propshaft in a child process and evaluates `script`.
-  def in_pipeline_app(script)
+  # Boots the dummy app with one pipeline in a child process and evaluates `script`.
+  def in_pipeline_app(script, pipeline: "propshaft")
     boot = <<~RUBY
       ENV["RAILS_ENV"] = "test"
       require "logger"
       require "rails"
       require "action_controller/railtie"
-      require "propshaft"
+      require #{pipeline.inspect}
       require "sghtmltopdf"
       require "sghtmltopdf/railtie"
 
@@ -36,6 +36,9 @@ RSpec.describe "an app with an asset pipeline" do
         end
       end
       Rails.application.initialize!
+      if Rails.application.assets.respond_to?(:cache=)
+        Rails.application.assets.cache = Sprockets::Cache::MemoryStore.new
+      end
 
       view = ActionController::Base.helpers
       root = Rails.root.to_s
@@ -161,5 +164,118 @@ RSpec.describe "an app with an asset pipeline" do
     RUBY
 
     expect(lines).to eq(%w[true true])
+  end
+
+  context "with Sprockets and Dart Sass" do
+    it "uses compiled CSS with Sass modules, variables and nested selectors resolved" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        html = view.sghtmltopdf_stylesheet_link_tag("sprockets")
+        puts html.match?(/\.invoice h1\s*\{[^}]*color:\s*#123456[;}]/)
+        puts !html.include?("$invoice_color")
+        puts !html.include?("@use")
+        puts view.sghtmltopdf_asset_path("sprockets.css") ==
+          File.join(root, "app/assets/stylesheets/sprockets.scss")
+      RUBY
+
+      expect(lines).to eq(%w[true true true true])
+    end
+
+    it "compiles legacy Sass imports instead of treating them as CSS imports" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        html = view.sghtmltopdf_stylesheet_link_tag("sprockets_import")
+        puts html.match?(/\.legacy-invoice\s*\{[^}]*color:\s*#123456[;}]/)
+        puts !html.include?("@import")
+        puts !html.include?("$invoice_color")
+      RUBY
+
+      expect(lines).to eq(%w[true true true])
+    end
+
+    it "resolves compiled image URLs and embeds the image in the PDF" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        html = view.sghtmltopdf_stylesheet_link_tag("sprockets")
+        puts html.include?(%(url("#{root}/app/assets/images/pipeline-logo.png")))
+        puts Sghtmltopdf.render(%(#{html}<div class="invoice"><h1>Invoice</h1></div>)).include?("/Width 20")
+      RUBY
+
+      expect(lines).to eq(%w[true true])
+    end
+
+    it "embeds compiled image references when local access is restricted" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        Sghtmltopdf.configure { |c| c.allow_path = [File.join(root, "public")] }
+        html = view.sghtmltopdf_stylesheet_link_tag("sprockets")
+        puts html.include?('url("data:image/png;base64,')
+      RUBY
+
+      expect(lines).to eq(%w[true])
+    end
+
+    it "uses compiled content for a CSS import resolved through the pipeline" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        require "tempfile"
+        Tempfile.create(["sprockets-import", ".css"], Rails.public_path) do |file|
+          file.write('@import "sprockets.css";')
+          file.flush
+          html = view.sghtmltopdf_stylesheet_link_tag(file.path)
+          puts html.match?(/\.invoice h1\s*\{[^}]*color:\s*#123456[;}]/)
+          puts !html.include?("@import")
+          puts html.include?(%(url("#{root}/app/assets/images/pipeline-logo.png")))
+        end
+      RUBY
+
+      expect(lines).to eq(%w[true true true])
+    end
+
+    it "expands CSS imports with no whitespace after Sprockets compression" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        Rails.application.assets.css_compressor = :sass
+        compiled = Rails.application.assets["sprockets_css_import.css"].to_s
+        puts compiled.match?(/@import["']sprockets_child\.css["'];/)
+
+        html = view.sghtmltopdf_stylesheet_link_tag("sprockets_css_import")
+        puts html.match?(/\.compressed-child\s*\{[^}]*color:\s*#13579b[;}]/)
+        puts !html.include?("@import")
+        puts html.include?(%(url("#{root}/app/assets/images/pipeline-logo.png")))
+        puts Sghtmltopdf.render(%(#{html}<div class="compressed-child">Invoice</div>)).include?("/Width 20")
+      RUBY
+
+      expect(lines).to eq(%w[true true true true true])
+    end
+
+    it "prefers precompiled CSS in public/ over the SCSS source" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        require "fileutils"
+        dir = File.join(root, "public/assets")
+        path = File.join(dir, Rails.application.assets["sprockets.css"].digest_path)
+        begin
+          FileUtils.mkdir_p(dir)
+          File.write(path, "h1 { color: red; }")
+          html = view.sghtmltopdf_stylesheet_link_tag("sprockets")
+          puts html.include?("h1 { color: red; }")
+          puts !html.include?("#123456")
+        ensure
+          FileUtils.rm_f(path)
+        end
+      RUBY
+
+      expect(lines).to eq(%w[true true])
+    end
+
+    it "does not resolve a digested URL whose digest does not match the asset" do
+      lines = in_pipeline_app(<<~'RUBY', pipeline: "dartsass-sprockets")
+        require "tempfile"
+        Tempfile.create(["sprockets-digest", ".css"], Rails.public_path) do |file|
+          url = "/assets/pipeline-logo-#{'0' * 64}.png"
+          file.write(%(body { background-image: url("#{url}"); }))
+          file.flush
+          html = view.sghtmltopdf_stylesheet_link_tag(file.path)
+          puts html.include?(url)
+          puts !html.include?("data:image/png;base64,")
+        end
+      RUBY
+
+      expect(lines).to eq(%w[true true])
+    end
   end
 end

@@ -193,6 +193,7 @@ Railtieが次の既定値を入れます。
 
 `sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。
 このとき中身をそのまま写すのではなく、`url()`の参照先をエンジンが読める形へ指し直し、`@import`を再帰的に取り込みます。
+Sprocketsではコンパイル済みのCSSを使うため、SCSSの`@import`、変数、ネストはアプリケーション側のSassプロセッサで解決してから埋め込みます。
 
 指し直しが必要なのは、アセットパイプラインがprecompile時に`url()`を`asset_path`で書き換えるためです。
 `asset_host`を設定していればHTTPSの絶対URLになり(Sprocketsの場合)、そうでなければダイジェスト付きの`/assets/…`になります。

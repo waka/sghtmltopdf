@@ -259,6 +259,15 @@ RSpec.describe "a Rails controller", type: :rails do
   end
 
   describe "the view helpers" do
+    it "allows views to find an application's Asset model" do
+      stub_const("Asset", Class.new)
+      allow(Asset).to receive(:find).with(123).and_return("application asset")
+
+      html = InvoicesController.render(inline: "<%= Asset.find(123) %>", layout: false)
+
+      expect(html).to eq("application asset")
+    end
+
     it "inlines CSS from public/ into a <style>" do
       get "/invoices/with_stylesheet"
       inlined = last_response.body
@@ -488,6 +497,25 @@ RSpec.describe "a Rails controller", type: :rails do
         expect(html).to include("h1 { color: red; }")
         expect(html).to include("h2 { color: blue; }")
         expect(html).not_to include("print")
+      end
+
+      it "expands quoted-string imports without whitespace after @import" do
+        File.write(@dir.join("a.css"), "h1 { color: red; }")
+        File.write(@dir.join("b.css"), "h2 { color: blue; }")
+        html = inline(%(@import"a.css";@import'b.css' print;))
+
+        expect(html).to include("h1 { color: red; }")
+        expect(html).to include("h2 { color: blue; }")
+        expect(html).not_to include("@import")
+        expect(html).not_to include("print")
+      end
+
+      it "does not treat an at-rule starting with @import as an import" do
+        File.write(@dir.join("a.css"), "h1 { color: red; }")
+        html = inline(%(@importurl("a.css");))
+
+        expect(html).to include(%(@importurl("a.css");))
+        expect(html).not_to include("color: red")
       end
 
       it "does not expand a commented-out @import" do
