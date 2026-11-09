@@ -259,6 +259,15 @@ RSpec.describe "a Rails controller", type: :rails do
   end
 
   describe "the view helpers" do
+    it "allows views to find an application's Asset model" do
+      stub_const("Asset", Class.new)
+      allow(Asset).to receive(:find).with(123).and_return("application asset")
+
+      html = InvoicesController.render(inline: "<%= Asset.find(123) %>", layout: false)
+
+      expect(html).to eq("application asset")
+    end
+
     it "inlines CSS from public/ into a <style>" do
       get "/invoices/with_stylesheet"
       inlined = last_response.body

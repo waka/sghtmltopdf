@@ -1,6 +1,17 @@
 # frozen_string_literal: true
 
 module Sghtmltopdf
+  # Sprockets' filename still points at the source (e.g. invoice.scss),
+  # while its to_s holds the compiled CSS. Keep both so references can be
+  # resolved without reading the uncompiled source again.
+  # Keep this outside ViewHelpers to avoid shadowing application constants in views.
+  ResolvedAsset = Struct.new(:path, :compiled_asset) do
+    def read
+      compiled_asset ? compiled_asset.to_s : File.read(path)
+    end
+  end
+  private_constant :ResolvedAsset
+
   # Action View helpers.
   #
   # Rendering a PDF never goes through an HTTP server, so a URL such as
@@ -86,23 +97,13 @@ module Sghtmltopdf
 
     private
 
-    # Sprockets' filename still points at the source (e.g. invoice.scss),
-    # while its to_s holds the compiled CSS. Keep both so references can be
-    # resolved without reading the uncompiled source again.
-    Asset = Struct.new(:path, :compiled_asset) do
-      def read
-        compiled_asset ? compiled_asset.to_s : File.read(path)
-      end
-    end
-    private_constant :Asset
-
     def resolve_sghtmltopdf_asset(source)
       path = source.to_s
       # A source that is already a URL (or a `data:` URI) is not an asset of
       # this application. Without this, `from_public_dir` would strip the host
       # off `https://example.com/logo.png` and hand back `public/logo.png`.
       return nil if path.match?(%r{\A(?:[a-z][a-z0-9+.\-]*:|//)}i)
-      return Asset.new(path) if path.start_with?("/") && File.file?(path)
+      return ResolvedAsset.new(path) if path.start_with?("/") && File.file?(path)
 
       from_public_dir(path) || from_asset_pipeline(path)
     end
@@ -209,7 +210,7 @@ module Sghtmltopdf
       root = ::Rails.application.config.try(:relative_url_root).to_s
       path = path.delete_prefix(root) unless root.empty?
       candidate = File.join(::Rails.public_path.to_s, path)
-      return Asset.new(candidate) if File.file?(candidate)
+      return ResolvedAsset.new(candidate) if File.file?(candidate)
 
       # Nothing is precompiled in development, so the load path is asked as
       # well. The mount point is not part of a logical path either.
@@ -227,7 +228,7 @@ module Sghtmltopdf
     # same way but is looked up across every root.
     def from_stylesheet_dir(path, dir)
       candidate = File.expand_path(path, dir)
-      return Asset.new(candidate) if File.file?(candidate)
+      return ResolvedAsset.new(candidate) if File.file?(candidate)
 
       from_asset_pipeline(path.delete_prefix("./"))
     end
@@ -275,7 +276,7 @@ module Sghtmltopdf
       return nil if relative.empty?
 
       candidate = File.join(::Rails.public_path.to_s, relative)
-      File.file?(candidate) ? Asset.new(candidate) : nil
+      File.file?(candidate) ? ResolvedAsset.new(candidate) : nil
     end
 
     # `asset_path` for `source`, falling back to `source` itself.
@@ -299,7 +300,7 @@ module Sghtmltopdf
       # Propshaft
       if assets.respond_to?(:load_path)
         found = assets.load_path.find(source)
-        return Asset.new(found.path.to_s) if found.respond_to?(:path)
+        return ResolvedAsset.new(found.path.to_s) if found.respond_to?(:path)
       end
       # Sprockets
       if assets.respond_to?(:[])
@@ -312,7 +313,7 @@ module Sghtmltopdf
           candidate = assets[logical] unless logical == source
           found = candidate if candidate.respond_to?(:digest_path) && candidate.digest_path == source
         end
-        return Asset.new(found.filename.to_s, found) if found.respond_to?(:filename)
+        return ResolvedAsset.new(found.filename.to_s, found) if found.respond_to?(:filename)
       end
       nil
     end
