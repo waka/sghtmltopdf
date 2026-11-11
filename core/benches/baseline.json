@@ -501,7 +501,7 @@
       "alloc_bytes": 0,
       "peak_live_bytes": 0,
       "pages": 20,
-      "pdf_bytes": 167780
+      "pdf_bytes": 167477
     },
     {
       "name": "cli/report_cover",
