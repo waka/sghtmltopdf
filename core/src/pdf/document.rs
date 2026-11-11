@@ -5141,7 +5141,8 @@ pub struct PageOverlay {
     pub styles: HashMap<NodeId, Rc<ComputedStyle>>,
     /// The drawing settings relative to the margin area.
     pub settings: PageSettings,
-    /// The clip rectangle trimming any overflow (CSS px, origin at the page's top left).
+    /// The clip rectangle trimming any overflow (CSS px, origin at the page's top left): the
+    /// top margin for a header, everything below the top margin for a footer.
     pub clip: Rect,
 }
 
@@ -5161,7 +5162,9 @@ pub(super) fn render_page_overlay(
     let mut pending_forms: Vec<(Ref, Vec<u8>)> = Vec::new();
 
     content.save_state();
-    // Anything spilling out of the margin is trimmed (the margin is never grown automatically).
+    // Clip to `overlay.clip` (the margin is never grown automatically): a header to the top
+    // margin, a footer to everything below the top margin, so what a footer pulls up above
+    // the bottom margin draws over the content area (see `overlay_area` in `engine.rs`).
     let y = overlay.settings.size.height - overlay.clip.y - overlay.clip.height;
     content.rect(overlay.clip.x, y, overlay.clip.width, overlay.clip.height);
     content.clip_nonzero();
