@@ -323,6 +323,8 @@ impl HeaderFooterHtml {
 
 /// Build the `PageSettings` and clip rectangle relative to the margin area, for the header
 /// (`top = true`) or the footer.
+///
+/// The header is clipped to the top margin, and the footer to everything below the top margin.
 fn overlay_area(settings: &PageSettings, top: bool) -> (PageSettings, Rect) {
     let size = settings.size;
     let (margin, clip) = if top {
@@ -348,11 +350,16 @@ fn overlay_area(settings: &PageSettings, top: bool) -> (PageSettings, Rect) {
                 bottom: 0.0,
                 left: settings.margin.left,
             },
+            // The footer is still laid out in the bottom margin, but what it pulls up (with a
+            // negative margin, say) may also draw over the content area, never over the
+            // header's margin. With `[page]`/`[topage]` that lets a footer show a block above
+            // the margin on the last page only, while the body reserves that room only where it
+            // ends (#139).
             Rect {
                 x: settings.margin.left,
-                y: size.height - settings.margin.bottom,
+                y: settings.margin.top,
                 width: settings.content_width(),
-                height: settings.margin.bottom,
+                height: size.height - settings.margin.top,
             },
         )
     };
@@ -1692,6 +1699,25 @@ mod tests {
             i = data_end;
         }
         out
+    }
+
+    #[test]
+    fn a_footer_may_draw_over_the_content_area_but_not_over_the_header_margin() {
+        let settings = PageSettings::default();
+        let (header_area, header_clip) = overlay_area(&settings, true);
+        assert!((header_area.content_height() - settings.margin.top).abs() < 0.01);
+        assert_eq!(
+            (header_clip.y, header_clip.height),
+            (0.0, settings.margin.top)
+        );
+
+        // The footer is laid out in the bottom margin only...
+        let (footer_area, footer_clip) = overlay_area(&settings, false);
+        assert!((footer_area.content_height() - settings.margin.bottom).abs() < 0.01);
+        // ...but is clipped to everything below the header's margin.
+        assert_eq!(footer_clip.y, settings.margin.top);
+        assert!((footer_clip.y + footer_clip.height - settings.size.height).abs() < 0.01);
+        assert_eq!(footer_clip.width, settings.content_width());
     }
 
     #[test]
