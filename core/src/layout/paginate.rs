@@ -30,7 +30,7 @@
 //! A subtree that fits on one page without crossing a boundary, and contains no forced
 //! break, is placed with its original structure intact.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 
 use crate::fonts::FontCollection;
@@ -629,8 +629,35 @@ fn place_box(
 
 /// Whether the page must not break between two adjacent in-flow siblings.
 fn avoids_break_between(before: &LaidOutBox, after: &LaidOutBox) -> bool {
-    before.fragmentation.break_after == BreakBetween::Avoid
-        || after.fragmentation.break_before == BreakBetween::Avoid
+    hints_avoid_break_between(&before.fragmentation, &after.fragmentation)
+}
+
+/// Whether the page must not break between two adjacent boxes or table rows with these hints:
+/// `break-after: avoid` on the upper one or `break-before: avoid` on the lower one.
+fn hints_avoid_break_between(before: &FragmentationHints, after: &FragmentationHints) -> bool {
+    before.break_after == BreakBetween::Avoid || after.break_before == BreakBetween::Avoid
+}
+
+/// Whether the page must not break between two adjacent table rows.
+fn rows_avoid_break_between(before: &LaidOutTableRow, after: &LaidOutTableRow) -> bool {
+    hints_avoid_break_between(&before.fragmentation, &after.fragmentation)
+}
+
+/// The absolute Y of the bottom of a table's first piece: its head rows with the first body
+/// row, and the rows after it the page should not break before (see
+/// [`rows_avoid_break_between`]). A table with no body row counts its first row. `None` for a
+/// table with no rows.
+fn table_first_piece_bottom(rows: &[LaidOutTableRow]) -> Option<f32> {
+    let first = rows
+        .iter()
+        .position(|row| row.section != TableSection::Head)
+        .unwrap_or(0);
+    let mut last = first;
+    while last + 1 < rows.len() && rows_avoid_break_between(&rows[last], &rows[last + 1]) {
+        last += 1;
+    }
+    rows.get(..=last)
+        .map(|piece| piece.iter().map(table_row_bottom).fold(f32::MIN, f32::max))
 }
 
 /// For a block child that must not be parted from the next in-flow sibling, the absolute Y of
@@ -665,13 +692,7 @@ fn first_piece_bottom(b: &LaidOutBox, page_height: f32) -> f32 {
                 .unwrap_or_else(|| first_piece_bottom(&children[first], page_height)),
             None => bottom,
         },
-        LaidOutContent::Table(table) => table
-            .rows
-            .iter()
-            .find(|row| row.section != TableSection::Head)
-            .or(table.rows.first())
-            .map(table_row_bottom)
-            .unwrap_or(bottom),
+        LaidOutContent::Table(table) => table_first_piece_bottom(&table.rows).unwrap_or(bottom),
         LaidOutContent::Grid(grid) if grid.rows.len() > 1 => grid.rows[0].bottom,
         // Lines too few for `orphans` and `widows` are moved whole, like a single line.
         LaidOutContent::Inline(lines)
@@ -1542,9 +1563,21 @@ fn place_table(
         (top, first_row_top - extra_above - *cursor)
     };
 
-    for (index, mut row) in std::mem::take(&mut table.rows).into_iter().enumerate() {
-        let row_top = table_row_top(&row);
-        let cells_bottom = table_row_bottom(&row);
+    // The first piece of the table (see `table_first_piece_bottom`). When it does not fit in
+    // what is left of the page, the whole table starts on the next one rather than leaving its
+    // head alone at the bottom.
+    let first_piece_bottom = table_first_piece_bottom(&table.rows).unwrap_or(f32::MIN);
+
+    // A queue rather than a plain iteration: at a break, the rows the page should not break
+    // between go back to the front and are placed again on the next page. Each row keeps its
+    // index in the table.
+    let mut queue: VecDeque<(usize, LaidOutTableRow)> = std::mem::take(&mut table.rows)
+        .into_iter()
+        .enumerate()
+        .collect();
+    while let Some((index, mut row)) = queue.pop_front() {
+        let mut row_top = table_row_top(&row);
+        let mut cells_bottom = table_row_bottom(&row);
         // The last row needs room for the table's closing collapsed border too. Other rows
         // need none: at a break after them the border can move to the next page whole.
         let row_bottom = cells_bottom
@@ -1561,9 +1594,15 @@ fn place_table(
             fragment_top = top;
             shift = s;
 
-            // As with the grid, start on the next page when the first row does
-            // not fit in what is left (the caption height counts towards it).
-            if row_bottom - shift > page_height && current_page_has_content(state) {
+            // As with the grid, start on the next page when the first row, with the first
+            // piece of the table, does not fit in what is left (the caption height counts
+            // towards it).
+            let first_bottom = if index == 0 {
+                first_piece_bottom.max(row_bottom)
+            } else {
+                row_bottom
+            };
+            if first_bottom - shift > page_height && current_page_has_content(state) {
                 new_page(state, cursor);
                 // Still the first fragment: reserve its top margin, border and padding again
                 // (as in `place_grid`).
@@ -1580,8 +1619,34 @@ fn place_table(
         // The check is "this fragment already has at least one row" (not
         // `current_page_has_content`): a table has to split per row even when it is the only
         // content at the top of a page, and never creating an empty fragment guarantees progress.
+        // A fragment holding only the head rows repeated on this page takes its first body row
+        // whatever its height, for the same reason.
         let row_bottom_on_page = row_bottom - shift;
-        if row_bottom_on_page > page_height && !pending.is_empty() {
+        let only_repeated_head =
+            !is_first_fragment && pending.iter().all(|r| r.section == TableSection::Head);
+        if row_bottom_on_page > page_height && !pending.is_empty() && !only_repeated_head {
+            // The rows the page should not break between go to the next page together.
+            let keep = rows_to_keep_at_break(&pending, &row);
+            if keep < pending.len() {
+                let mut carried = pending.split_off(keep);
+                *cursor = pending.last().map_or(*cursor, table_row_bottom);
+                // Back to their coordinates before this fragment, to be placed again in
+                // order: the first carried row now starts the next fragment, and the others
+                // and `row` follow it. The carried rows are the body rows just before `row`.
+                let first_index = index - carried.len();
+                for carried_row in &mut carried {
+                    shift_table_row_y_in_place(carried_row, -shift);
+                }
+                queue.push_front((index, row));
+                let mut rest = carried.split_off(1);
+                for (offset, carried_row) in rest.drain(..).enumerate().rev() {
+                    queue.push_front((first_index + 1 + offset, carried_row));
+                }
+                row = carried.pop().expect("one row was carried");
+                row_top = table_row_top(&row);
+                cells_bottom = table_row_bottom(&row);
+            }
+
             let boundary = &row.boundary_above;
             let share_above = if *cursor + boundary.split_gaps(0.5).0 <= page_height {
                 0.5
@@ -1595,6 +1660,10 @@ fn place_table(
                     row: Box::new(without_cells(&row)),
                     share: share_above,
                 });
+            }
+            // The row the page breaks after, for the fragment below to know.
+            if let Some(last) = pending.last() {
+                previous_row = Some(without_cells(last));
             }
             flush_table_fragment(
                 container,
@@ -1658,6 +1727,31 @@ fn place_table(
     *cursor += bottom_extra;
 }
 
+/// How many of the rows of a fragment stay on its page when `next` does not fit below them.
+/// The rows the page should not break between (see [`rows_avoid_break_between`]) move to the
+/// next page together. The head rows and one more row always stay, which guarantees progress;
+/// a run of rows that cannot be broken anywhere is broken where it overflows.
+fn rows_to_keep_at_break(pending: &[LaidOutTableRow], next: &LaidOutTableRow) -> usize {
+    let min_keep = pending
+        .iter()
+        .take_while(|row| row.section == TableSection::Head)
+        .count()
+        + 1;
+    // Whether the page should not break after the first `keep` rows.
+    let avoided_at = |keep: usize| {
+        rows_avoid_break_between(&pending[keep - 1], pending.get(keep).unwrap_or(next))
+    };
+    let mut keep = pending.len();
+    while keep > min_keep && avoided_at(keep) {
+        keep -= 1;
+    }
+    if keep < pending.len() && avoided_at(keep) {
+        pending.len()
+    } else {
+        keep
+    }
+}
+
 /// A copy of `row` without its cells, for a fragment to know the row across a break.
 fn without_cells(row: &LaidOutTableRow) -> LaidOutTableRow {
     LaidOutTableRow {
@@ -1665,6 +1759,7 @@ fn without_cells(row: &LaidOutTableRow) -> LaidOutTableRow {
         cells: Vec::new(),
         section: row.section,
         group: row.group,
+        fragmentation: row.fragmentation,
         first_in_group: row.first_in_group,
         last_in_group: row.last_in_group,
         boundary_above: row.boundary_above,
@@ -1748,6 +1843,7 @@ fn shift_table_row_y(row: &LaidOutTableRow, shift: f32) -> LaidOutTableRow {
         cells: row.cells.iter().map(|c| shift_box_y(c, shift)).collect(),
         section: row.section,
         group: row.group,
+        fragmentation: row.fragmentation,
         first_in_group: row.first_in_group,
         last_in_group: row.last_in_group,
         boundary_above: row.boundary_above,
@@ -3354,6 +3450,154 @@ mod tests {
         }
         assert_eq!(head_total, pages.len(), "one header row per page");
         assert_eq!(body_total, 120, "body rows must not be duplicated");
+    }
+
+    /// The sections of the table rows on each page, in order.
+    fn table_sections_per_page(pages: &[Page]) -> Vec<Vec<TableSection>> {
+        laid_out_rows_per_page(pages)
+            .iter()
+            .map(|rows| rows.iter().map(|r| r.section).collect())
+            .collect()
+    }
+
+    /// The table rows on each page, in order.
+    fn laid_out_rows_per_page(pages: &[Page]) -> Vec<Vec<LaidOutTableRow>> {
+        fn collect(b: &LaidOutBox, out: &mut Vec<LaidOutTableRow>) {
+            match &b.content {
+                LaidOutContent::Table(table) => out.extend(table.rows.iter().cloned()),
+                LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                    for c in children {
+                        collect(c, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        pages
+            .iter()
+            .map(|page| {
+                let mut found = Vec::new();
+                for b in &page.boxes {
+                    collect(b, &mut found);
+                }
+                found
+            })
+            .collect()
+    }
+
+    fn paginate_html(html_src: &str, css: &str) -> Vec<Page> {
+        let dom = html::parse(html_src.as_bytes());
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+        paginate_document(&dom, &styles, &test_fonts(), &PageSettings::default())
+    }
+
+    #[test]
+    fn a_head_is_not_left_alone_at_the_bottom_of_a_page() {
+        // Room for the 10px head but not for the head and the 60px first body row: the whole
+        // table starts on the next page instead of leaving its head alone.
+        let filler = PageSettings::default().content_height() - 48.0;
+        let cell =
+            |h: u32| format!(r#"<td style="padding:0"><div style="height:{h}px"></div></td>"#);
+        let rows: String = (0..5).map(|_| format!("<tr>{}</tr>", cell(60))).collect();
+        let pages = paginate_html(
+            &format!(
+                r#"<div style="height:{filler}px"></div><table><thead><tr>{}</tr></thead><tbody>{rows}</tbody></table>"#,
+                cell(10)
+            ),
+            "",
+        );
+        let sections = table_sections_per_page(&pages);
+        assert!(
+            sections[0].is_empty(),
+            "the head must move with the table: {sections:?}"
+        );
+        assert_eq!(sections[1].first(), Some(&TableSection::Head));
+        assert_eq!(sections[1].get(1), Some(&TableSection::Body));
+    }
+
+    /// 40 rows of 30px, one of them (`styled`) with a style; `css` styles the whole table.
+    fn rows_with_one_styled(styled: Option<(usize, &str)>, css: &str) -> Vec<Page> {
+        let rows: String = (0..40)
+            .map(|i| {
+                let style = match styled {
+                    Some((at, css)) if at == i => format!(r#" style="{css}""#),
+                    _ => String::new(),
+                };
+                format!(
+                    r#"<tr{style}><td style="padding:0"><div style="height:30px"></div></td></tr>"#
+                )
+            })
+            .collect();
+        paginate_html(&format!("<table><tbody>{rows}</tbody></table>"), css)
+    }
+
+    #[test]
+    fn rows_the_page_should_not_break_between_move_to_the_next_page_together() {
+        let body_rows_on_first_page = |styled: Option<(usize, &str)>| {
+            table_sections_per_page(&rows_with_one_styled(styled, ""))[0].len()
+        };
+        let fitting = body_rows_on_first_page(None);
+        assert!(fitting > 2 && fitting < 40, "{fitting}");
+        // The last row that fits avoids a break after it, or the first one that does not fit
+        // avoids a break before it: both move to the next page together.
+        assert_eq!(
+            body_rows_on_first_page(Some((fitting - 1, "break-after:avoid"))),
+            fitting - 1
+        );
+        assert_eq!(
+            body_rows_on_first_page(Some((fitting, "break-before:avoid"))),
+            fitting - 1
+        );
+        // A break-after: avoid anywhere else does not move anything.
+        assert_eq!(
+            body_rows_on_first_page(Some((1, "break-after:avoid"))),
+            fitting
+        );
+    }
+
+    #[test]
+    fn a_break_moved_by_break_after_avoid_splits_the_collapsed_border_between_the_right_rows() {
+        let css = "table { border-collapse: collapse; } td { border: 4px solid black; } \
+                   tr { border-top: 8px solid black; }";
+        let fitting = laid_out_rows_per_page(&rows_with_one_styled(None, css))[0].len();
+        assert!(fitting > 2 && fitting < 40, "{fitting}");
+        let pages = rows_with_one_styled(Some((fitting - 1, "break-after:avoid")), css);
+        let rows = laid_out_rows_per_page(&pages);
+        assert_eq!(
+            rows[0].len(),
+            fitting - 1,
+            "the row avoiding the break moves"
+        );
+
+        // The last row that stays and the first one carried meet across the break.
+        let last_kept = rows[0].last().unwrap();
+        let first_moved = rows[1].first().unwrap();
+        let below = last_kept
+            .break_below
+            .as_ref()
+            .expect("a break below the last kept row");
+        let above = first_moved
+            .break_above
+            .as_ref()
+            .expect("a break above the first moved row");
+        assert_eq!(below.row.node, first_moved.node);
+        assert_eq!(above.row.node, last_kept.node);
+        assert_eq!(below.row.boundary_above, first_moved.boundary_above);
+        assert!((below.share + above.share - 1.0).abs() < 1e-6);
+        // Only the first and the last row of a fragment carry a break.
+        assert!(rows[0][..fitting - 2]
+            .iter()
+            .all(|r| r.break_below.is_none()));
+        assert!(rows[1][1..].iter().all(|r| r.break_above.is_none()));
+        // Every row is placed once, in order, within the page.
+        let total: usize = rows.iter().map(Vec::len).sum();
+        assert_eq!(total, 40);
+        let height = PageSettings::default().content_height();
+        for page in &pages {
+            for b in &page.boxes {
+                assert_within_page(b, height);
+            }
+        }
     }
 
     #[test]

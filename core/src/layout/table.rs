@@ -30,7 +30,7 @@ use super::block::{
     apply_replaced_element_auto_size, box_style, clamp_used_width, layout_box,
     layout_box_with_forced_width, resolve_border, resolve_lp, resolve_padding, shift_box_y,
     shift_box_y_in_place, shift_content_vertical, to_content_box_width, CollapsedBoundary,
-    LaidOutBox, LaidOutContent, LaidOutTable, LaidOutTableRow, PosCtx,
+    FragmentationHints, LaidOutBox, LaidOutContent, LaidOutTable, LaidOutTableRow, PosCtx,
 };
 use super::box_tree::{BoxContent, ImageBoxContent, LayoutBox, TableBox, TableCell, TableRow};
 use super::float_ctx::FloatContext;
@@ -339,6 +339,12 @@ pub(super) fn layout_table(
             cells: laid_cells,
             section: row.section,
             group: row.group,
+            fragmentation: row
+                .node
+                .and_then(|node| styles.get(&node))
+                .map_or_else(FragmentationHints::default, |style| {
+                    FragmentationHints::from(style.as_ref())
+                }),
             first_in_group: r == 0 || table.rows[r - 1].group != row.group,
             last_in_group: table
                 .rows

@@ -183,6 +183,9 @@ pub struct LaidOutTableRow {
     /// The row group element (`<thead>`/`<tbody>`/`<tfoot>`) the row sits in. `None` for a
     /// row placed directly in the table.
     pub group: Option<NodeId>,
+    /// The row's `break-before`/`break-after` and the rest, as on a block: `paginate` keeps
+    /// rows the page should not break between on the same page.
+    pub fragmentation: FragmentationHints,
     /// Whether the row is the first or the last of its row group in the whole table (not just
     /// in a fragment of it): a group's collapsed border is drawn only where the group really
     /// starts or ends, never at a page break inside it.
