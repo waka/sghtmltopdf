@@ -483,3 +483,93 @@ fn a_float_crossing_a_page_does_not_push_the_following_flow_to_the_next_page() {
 fn a_float_crossing_a_page_inside_a_bordered_parent_keeps_the_flow_alongside() {
     assert_float_column_paginates_in_parallel("border: 1px solid black;");
 }
+
+/// Issue #159: a parent's background (or border) is painted under everything it holds, so on
+/// each page its decoration fragment has to come before the float in the page's paint order.
+/// A float that starts on page 1 and continues on page 2 is already on page 2 when the flow
+/// reaches it; the parent's fragment there must still go below it, or an opaque background
+/// hides the float's continuation.
+fn assert_parent_decoration_paints_below_a_continuing_float(parent_css: &str) {
+    let html_src = "<header></header><div class=\"wrap\">\
+        <aside><p>FLOAT_ONE</p><p>FLOAT_TWO</p><p>FLOAT_THREE</p><p>FLOAT_FOUR</p></aside>\
+        <main><p>MAIN_ONE</p><p>MAIN_TWO</p><p>MAIN_THREE</p><p>MAIN_FOUR</p>\
+        <p>MAIN_FIVE</p><p>MAIN_SIX</p></main>\
+        </div>";
+    let css = format!(
+        "* {{ box-sizing: border-box; }} \
+         body {{ margin: 0; font-size: 12px; line-height: 20px; }} \
+         header {{ height: 480px; }} \
+         aside {{ float: right; width: 100px; }} \
+         main {{ width: 300px; margin-right: 100px; }} \
+         p {{ height: 50px; margin: 0; }} \
+         .wrap {{ {parent_css} }}"
+    );
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let fonts = test_fonts();
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &fonts, &settings);
+    assert_eq!(pages.len(), 2);
+
+    let root = dom.document();
+    let wrap = find_tag(&dom, root, "div").expect("the .wrap div");
+
+    for (i, page) in pages.iter().enumerate() {
+        let decorations: Vec<usize> = page
+            .boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.node == Some(wrap) && b.has_visible_decoration)
+            .map(|(idx, _)| idx)
+            .collect();
+        let floats: Vec<usize> = page
+            .boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| box_text(b).contains("FLOAT_"))
+            .map(|(idx, _)| idx)
+            .collect();
+        assert_eq!(
+            decorations.len(),
+            1,
+            "page {} should hold one .wrap fragment",
+            i + 1
+        );
+        assert!(!floats.is_empty(), "page {} should hold the float", i + 1);
+        assert!(
+            decorations[0] < floats[0],
+            "page {}: the .wrap decoration (box {}) must paint before the float (first box {})",
+            i + 1,
+            decorations[0],
+            floats[0]
+        );
+    }
+}
+
+#[test]
+fn an_opaque_parent_background_stays_below_a_float_continuing_onto_the_next_page() {
+    assert_parent_decoration_paints_below_a_continuing_float("background: white;");
+}
+
+#[test]
+fn a_parent_border_stays_below_a_float_continuing_onto_the_next_page() {
+    assert_parent_decoration_paints_below_a_continuing_float("border: 1px solid black;");
+}
+
+/// All the text a box holds, in order.
+fn box_text(b: &LaidOutBox) -> String {
+    match &b.content {
+        LaidOutContent::Inline(lines) => lines
+            .iter()
+            .flat_map(|l| l.runs.iter())
+            .map(|r| r.text.as_str())
+            .collect(),
+        LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+            children.iter().map(box_text).collect()
+        }
+        _ => String::new(),
+    }
+}

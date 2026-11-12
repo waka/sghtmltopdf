@@ -940,7 +940,15 @@ fn place_split<T>(
 
     struct Segment {
         page_index: usize,
+        /// The first box on the page that is this container's own content. What a float filled
+        /// the page with before the flow reached it comes first and is left out, so that the
+        /// fragment's extent covers only the flow.
         start_index: usize,
+        /// Where the decoration fragment is inserted. The background and borders paint under
+        /// everything the container holds, floats included, so on a page the flow reached
+        /// after a float had started it, this is before that float (index 0), not at
+        /// `start_index`.
+        insert_index: usize,
     }
 
     let mut current_page = state.current_index();
@@ -948,6 +956,7 @@ fn place_split<T>(
         vec![Segment {
             page_index: current_page,
             start_index: state.get(current_page).boxes.len(),
+            insert_index: state.get(current_page).boxes.len(),
         }]
     } else {
         Vec::new()
@@ -967,6 +976,7 @@ fn place_split<T>(
             segments.push(Segment {
                 page_index: *current_page,
                 start_index: state.flow_entry(*current_page),
+                insert_index: 0,
             });
         }
     };
@@ -1042,6 +1052,7 @@ fn place_split<T>(
                         segments.push(Segment {
                             page_index: p,
                             start_index: state.flow_entry(p),
+                            insert_index: 0,
                         });
                     }
                 }
@@ -1145,7 +1156,7 @@ fn place_split<T>(
                 marker,
                 link: container.link.clone(),
             };
-            Some((seg.page_index, seg.start_index, decoration))
+            Some((seg.page_index, seg.insert_index, decoration))
         })
         .collect();
 
