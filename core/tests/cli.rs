@@ -136,10 +136,12 @@ fn font_face_src_url_is_resolved_relative_to_the_html_file_and_embedded() {
     assert!(status.success(), "CLI should exit successfully");
 
     let bytes = std::fs::read(&output).expect("output PDF should exist");
+    // The DejaVu font from `--font` draws nothing here (issue #133: a font with no used
+    // glyphs is not embedded), so the @font-face font is the only one embedded.
     assert_eq!(
         count_occurrences(&bytes, b"/Subtype /CIDFontType2"),
-        2,
-        "both the --font fallback and the @font-face font should be embedded"
+        1,
+        "only the @font-face font draws anything and should be embedded"
     );
 
     std::fs::remove_dir_all(&dir).ok();
@@ -402,9 +404,10 @@ fn base_url_directory_resolves_relative_assets_for_stdin_input() {
     assert!(status.success());
 
     let bytes = std::fs::read(&output).expect("output PDF should exist");
+    // Only the @font-face font draws anything (issue #133: unused fonts are not embedded).
     assert_eq!(
         count_occurrences(&bytes, b"/Subtype /CIDFontType2"),
-        2,
+        1,
         "the @font-face font must be resolved relative to --base-url"
     );
 
@@ -1046,15 +1049,17 @@ fn mono_and_serif_fonts_resolve_the_matching_generic_family() {
     // through a generic family.
     let html = r#"<html><body><p style="font-family: monospace">日本語</p></body></html>"#;
     let bytes = run_cli_with(html, &["--mono-font", CJK_FONT_PATH], "mono-font");
+    // DejaVu draws nothing here (issue #133: unused fonts are not embedded), so the generic
+    // family's face is the only font embedded.
     assert_eq!(
         count_occurrences(&bytes, b"/Subtype /CIDFontType2"),
-        2,
+        1,
         "the --mono-font face must be embedded for font-family: monospace"
     );
 
     let html = r#"<html><body><p style="font-family: serif">日本語</p></body></html>"#;
     let bytes = run_cli_with(html, &["--serif-font", CJK_FONT_PATH], "serif-font");
-    assert_eq!(count_occurrences(&bytes, b"/Subtype /CIDFontType2"), 2);
+    assert_eq!(count_occurrences(&bytes, b"/Subtype /CIDFontType2"), 1);
 }
 
 #[test]

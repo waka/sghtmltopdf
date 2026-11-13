@@ -327,6 +327,15 @@ impl<S: Sink> StreamingPdfWriter<S> {
             );
         }
 
+        // Which fonts this page draws outline glyphs with. The page's `/Resources` lists only
+        // those: a font nothing draws with is never embedded (see `finish`), so listing it
+        // would leave a dangling reference, and would make preflight tools report it as used.
+        let outline_fonts_used: Vec<bool> = self
+            .usages
+            .iter_mut()
+            .map(FontUsage::take_outline_use)
+            .collect();
+
         // Unlike fonts, images need no cross-page usage tally (subsetting), so anything
         // appearing for the first time on this page is written out as an XObject right here.
         // Both `<img>` itself and `background-image` are collected together at this point.
@@ -583,6 +592,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
             write_resources(
                 p.resources(),
                 &self.font_plan,
+                Some(&outline_fonts_used),
                 &page_image_refs,
                 &form_refs,
                 &self.alpha_gs_names,
@@ -610,6 +620,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 write_resources(
                     form.resources(),
                     &self.font_plan,
+                    Some(&outline_fonts_used),
                     &page_image_refs,
                     &form_refs,
                     &self.alpha_gs_names,
@@ -649,6 +660,13 @@ impl<S: Sink> StreamingPdfWriter<S> {
                     collect_image_uses(b, &overlay.background_images, &mut images);
                 }
             }
+            // The fonts this form draws outline glyphs with, as in `write_page`: its
+            // `/Resources` must not list a font that ends up not embedded.
+            let outline_fonts_used: Vec<bool> = self
+                .usages
+                .iter_mut()
+                .map(FontUsage::take_outline_use)
+                .collect();
             let mut image_refs = Vec::new();
             for image in &images {
                 let Some((ids, is_new)) = ids_for_image(
@@ -720,6 +738,7 @@ impl<S: Sink> StreamingPdfWriter<S> {
                 write_resources(
                     form.resources(),
                     &self.font_plan,
+                    Some(&outline_fonts_used),
                     &image_refs,
                     &[],
                     &self.alpha_gs_names,
@@ -749,6 +768,12 @@ impl<S: Sink> StreamingPdfWriter<S> {
             let ids = simple.ids;
             let empty = FontUsage::default();
             let usage = usages.get(index).unwrap_or(&empty);
+            if !usage.has_outline_glyphs() {
+                // No page drew with this font (the pre-loaded CJK fallback in a document
+                // without CJK text, say), and no page's `/Resources` lists it, so there is
+                // nothing to embed.
+                continue;
+            }
             for (id, chunk) in embed_font_streaming_chunks(font, ids, usage, self.output.compress) {
                 self.write_chunk(id, &chunk)?;
             }
@@ -916,11 +941,32 @@ impl<S: Sink> StreamingPdfWriter<S> {
 
         self.offsets.sort_by_key(|(id, _)| id.get());
 
+        // Object numbers that were reserved but never written (the Type0 font objects of a font
+        // nothing drew with) are free entries. They form the chain the spec asks for: entry 0
+        // points at the first free object, each free entry at the next, and the last at 0.
+        let mut written = vec![false; size as usize];
+        for (id, _) in &self.offsets {
+            written[id.get() as usize] = true;
+        }
+        let free: Vec<usize> = (1..size as usize).filter(|&n| !written[n]).collect();
+        let next_free = |n: usize| {
+            free.iter()
+                .copied()
+                .find(|&candidate| candidate > n)
+                .unwrap_or(0)
+        };
+
         let mut buf = Vec::new();
         buf.extend_from_slice(format!("xref\n0 {size}\n").as_bytes());
-        buf.extend_from_slice(b"0000000000 65535 f \n");
-        for (_, offset) in &self.offsets {
-            buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+        buf.extend_from_slice(format!("{:010} 65535 f \n", next_free(0)).as_bytes());
+        let mut offsets = self.offsets.iter();
+        for (n, &is_written) in written.iter().enumerate().skip(1) {
+            if is_written {
+                let (_, offset) = offsets.next().expect("one offset per written object");
+                buf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+            } else {
+                buf.extend_from_slice(format!("{:010} 00001 f \n", next_free(n)).as_bytes());
+            }
         }
         // `/ID` (the file identifier) hashes the bytes written so far, as the batch writer does
         // with everything before its trailer. We write the trailer ourselves here rather than
@@ -1313,7 +1359,195 @@ mod tests {
             bytes.len(),
             cjk_font_size
         );
+        // Only the CJK font draws anything here; DejaVu (which has no glyph for this text) is
+        // not embedded (issue #133: a font with no used glyphs is not embedded).
+        assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 1);
+    }
+
+    /// Stream `src` (with the author stylesheet `css`) through a `StreamingPdfWriter` over
+    /// `fonts`, uncompressed so the page dictionaries can be read.
+    fn stream_uncompressed(src: &str, css: &str, fonts: &FontCollection) -> Vec<u8> {
+        let dom = html::parse(src.as_bytes());
+        let author = parse_stylesheet(css);
+        let styles = compute_styles(&dom, &user_agent_stylesheet(), &author);
+        let settings = PageSettings::default();
+        let pages = paginate_document(&dom, &styles, fonts, &settings);
+        let output = PdfOutputOptions {
+            compress: false,
+            ..PdfOutputOptions::default()
+        };
+        let mut writer = StreamingPdfWriter::with_options(
+            fonts,
+            settings,
+            MemorySink::new(),
+            author.page_rules.clone(),
+            LinkSettings::default(),
+            output,
+            HashMap::new(),
+        )
+        .expect("new should not fail");
+        for page in &pages {
+            writer
+                .write_page(page, &styles, &HashMap::new(), fonts, None)
+                .expect("write_page should not fail");
+        }
+        writer.finish(fonts).expect("finish should not fail")
+    }
+
+    /// The font resource names (`F0`, `F1`, ...) listed in each page's `/Resources /Font`.
+    fn page_font_names(pdf: &[u8]) -> Vec<Vec<String>> {
+        font_names_after(pdf, "/Type /Page\n")
+    }
+
+    /// The same for each Form XObject (the forward-referenced decorations), in file order.
+    fn form_font_names(pdf: &[u8]) -> Vec<Vec<String>> {
+        font_names_after(pdf, "/Subtype /Form")
+    }
+
+    /// For each occurrence of `marker`, the font resource names of the dictionary it starts.
+    fn font_names_after(pdf: &[u8], marker: &str) -> Vec<Vec<String>> {
+        let text = String::from_utf8_lossy(pdf);
+        text.split(marker)
+            .skip(1)
+            .map(|object| {
+                // Only this object's dictionary: stop at the next object.
+                let object = object.split("endobj").next().unwrap_or("");
+                let fonts = object
+                    .split_once("/Font <<")
+                    .and_then(|(_, rest)| rest.split_once(">>"))
+                    .map(|(dict, _)| dict)
+                    .unwrap_or("");
+                fonts
+                    .split_whitespace()
+                    .filter_map(|word| word.strip_prefix('/'))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Assert the cross-reference table is consistent with the objects (ISO 32000-1 7.5.4):
+    /// every `n` entry points at `<id> 0 obj`, every other entry is a free entry.
+    fn assert_xref_matches_objects(pdf: &[u8]) {
+        let text = String::from_utf8_lossy(pdf);
+        let xref = text.rfind("xref\n0 ").expect("an xref section");
+        let mut lines = text[xref..].lines().skip(1);
+        let count: usize = lines
+            .next()
+            .and_then(|l| l.strip_prefix("0 "))
+            .and_then(|n| n.parse().ok())
+            .expect("subsection header");
+        for id in 0..count {
+            let entry = lines.next().expect("one xref line per object");
+            let (offset, rest) = entry.split_once(' ').expect("offset field");
+            let kind = entry.trim_end().chars().last().expect("entry type");
+            match kind {
+                'n' => {
+                    let offset: usize = offset.parse().expect("numeric offset");
+                    let expected = format!("{id} 0 obj");
+                    assert!(
+                        pdf[offset..].starts_with(expected.as_bytes()),
+                        "object {id}: offset {offset} does not point at `{expected}` ({rest})"
+                    );
+                }
+                'f' => {}
+                other => panic!("object {id}: unknown xref entry type {other:?}"),
+            }
+        }
+        // Entry 0 and the free entries chain through the free objects, ending at 0.
+        let mut free_chain = Vec::new();
+        let mut entries = text[xref..].lines().skip(2);
+        let entry_lines: Vec<&str> = entries.by_ref().take(count).collect();
+        let mut next = entry_lines[0][..10].parse::<usize>().unwrap();
+        while next != 0 {
+            assert!(
+                entry_lines[next].trim_end().ends_with('f'),
+                "{next} is not free"
+            );
+            assert!(!free_chain.contains(&next), "free chain loops at {next}");
+            free_chain.push(next);
+            next = entry_lines[next][..10].parse::<usize>().unwrap();
+        }
+        let free_objects: Vec<usize> = (1..count)
+            .filter(|&id| entry_lines[id].trim_end().ends_with('f'))
+            .collect();
+        assert_eq!(
+            free_chain, free_objects,
+            "the free chain must reach every free object"
+        );
+    }
+
+    #[test]
+    fn streaming_writer_does_not_embed_or_list_a_font_that_draws_nothing() {
+        // Issue #133: the CJK font preloaded when no font is given must not end up in a
+        // document without CJK text, but must stay available in the collection.
+        let fonts = test_fonts_with_cjk();
+        let bytes = stream_uncompressed("<p>Hello</p>", "", &fonts);
+
+        assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 1);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 1);
+        assert_eq!(page_font_names(&bytes), vec![vec!["F0".to_string()]]);
+        assert_xref_matches_objects(&bytes);
+    }
+
+    #[test]
+    fn streaming_writer_embeds_the_preloaded_font_once_text_needs_it_on_a_later_page() {
+        // The fallback is preloaded precisely so CJK text arriving later in the stream can use
+        // it: page 1 is Latin only (so lists just F0), the last page has Japanese text.
+        let mut src = String::new();
+        for _ in 0..20 {
+            src.push_str(r#"<p class="item">Hello</p>"#);
+        }
+        src.push_str(r#"<p class="item">日本語のテスト</p>"#);
+        let fonts = test_fonts_with_cjk();
+        let bytes = stream_uncompressed(&src, ".item { height: 100px; margin: 0; }", &fonts);
+
+        let pages = page_font_names(&bytes);
+        assert!(pages.len() > 1, "expected multiple pages");
+        assert_eq!(pages[0], vec!["F0".to_string()]);
+        assert!(
+            pages.last().unwrap().contains(&"F1".to_string()),
+            "the page with Japanese text must list the CJK font: {pages:?}"
+        );
         assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 2);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 2);
+        assert_xref_matches_objects(&bytes);
+    }
+
+    #[test]
+    fn streaming_writer_embeds_no_font_for_a_document_without_text() {
+        let fonts = test_fonts_with_cjk();
+        let bytes = stream_uncompressed("<div></div>", "", &fonts);
+
+        assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 0);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 0);
+        assert_eq!(page_font_names(&bytes), vec![Vec::<String>::new()]);
+        assert_xref_matches_objects(&bytes);
+    }
+
+    #[test]
+    fn deferred_decoration_forms_list_only_the_fonts_they_draw_with() {
+        // Review of #147: `counter(pages)` in a margin box is drawn by a forward-referenced
+        // form written at the end. With Latin-only text and the CJK font preloaded, that form's
+        // `/Resources` must not list the CJK font either, since it is not embedded and the
+        // reference would point at a free object.
+        let fonts = test_fonts_with_cjk();
+        let bytes = stream_uncompressed(
+            "<p>Hello</p>",
+            "@page { @bottom-center { content: counter(pages); } }",
+            &fonts,
+        );
+
+        assert_eq!(
+            count_occurrences(&bytes, b"/Subtype /Form"),
+            1,
+            "the margin box is drawn by one deferred form"
+        );
+        assert_eq!(form_font_names(&bytes), vec![vec!["F0".to_string()]]);
+        assert_eq!(page_font_names(&bytes), vec![vec!["F0".to_string()]]);
+        assert_eq!(count_occurrences(&bytes, b"/FontFile2"), 1);
+        assert_eq!(count_occurrences(&bytes, b"/Subtype /Type0"), 1);
+        assert_xref_matches_objects(&bytes);
     }
 
     #[test]

@@ -79,6 +79,12 @@ pub struct FontUsage {
     color: BTreeMap<u16, ColorGlyphUse>,
     /// The number the next colour glyph will be assigned.
     next_color: usize,
+    /// Whether an outline glyph was recorded since the last [`take_outline_use`]. Streaming
+    /// reads it once per page to list in the page's `/Resources` only the fonts the page draws
+    /// with.
+    ///
+    /// [`take_outline_use`]: FontUsage::take_outline_use
+    outline_used_since_take: bool,
 }
 
 /// What one colour glyph was assigned.
@@ -113,7 +119,10 @@ impl FontUsage {
             return;
         }
         match self.glyphs.entry(glyph_id) {
-            Entry::Occupied(mut slot) => prefer_plain_space(&mut slot.get_mut().1, text),
+            Entry::Occupied(mut slot) => {
+                self.outline_used_since_take = true;
+                prefer_plain_space(&mut slot.get_mut().1, text)
+            }
             Entry::Vacant(slot) => {
                 // A glyph that can be drawn in colour goes to the Type 3
                 // side. Type 3 is a simple font, so codes are one byte and
@@ -140,8 +149,20 @@ impl FontUsage {
                 let advance = font.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
                 let width_1000 = advance * 1000.0 / font.units_per_em() as f32;
                 slot.insert((width_1000, text.to_string()));
+                self.outline_used_since_take = true;
             }
         }
+    }
+
+    /// Whether any glyph is drawn from the outline (Type0) side of this font, i.e. whether the
+    /// font program needs embedding at all.
+    pub(super) fn has_outline_glyphs(&self) -> bool {
+        !self.glyphs.is_empty()
+    }
+
+    /// Whether an outline glyph was recorded since the last call, resetting the flag.
+    pub(super) fn take_outline_use(&mut self) -> bool {
+        std::mem::take(&mut self.outline_used_since_take)
     }
 
     /// If `glyph_id` was recorded as a colour glyph, which Type 3 font it
