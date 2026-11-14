@@ -1859,15 +1859,20 @@ fn row_splits_through_cells(row: &LaidOutTableRow, page_height: f32) -> bool {
 ///
 /// Every cell is paginated on its own, as if it stood alone on the pages, from where it starts
 /// (`shift`, the translation from layout coordinates to the page the row starts on, says where
-/// that is). A cell's fragment on a page is a box holding what it placed there. A cell that
-/// cannot be split (one line, say, stretched to the height of the row) stays on the first
-/// page, cut at its foot. `head_offset` is the height of the head repeated at the top of the
-/// pages after the first, which the row's pieces there are placed below.
+/// that is). `head_offset` is the height of the head repeated at the top of the pages after
+/// the first, which the row's pieces there are placed below.
 ///
-/// The result has a piece per page the row reaches (a first page that no cell has anything
-/// on gives none). They are in the layout's coordinate space, placed one page height apart
-/// below one another so that `place_table`, placing them in turn, breaks the page before
-/// each but the first.
+/// A cell's content can land on later pages than the row starts on (a short cell, centred in
+/// the row's height), and the cell is as tall as the row whatever its content: so a cell has
+/// a fragment on every page the row reaches, whose geometry is worked out here rather than
+/// from where its content is. The cell's top padding and border belong to the first page,
+/// its bottom ones to the last, and a page without content of its own holds an empty
+/// fragment, which paints the cell's background and side borders. A cell whose content cannot
+/// be split (a flex container, say) stays on the first page, cut at its foot.
+///
+/// The result has a piece per page the row reaches. They are in the layout's coordinate space,
+/// placed one page height apart below one another so that `place_table`, placing them in
+/// turn, breaks the page before each but the first.
 fn split_tall_row(
     row: &mut LaidOutTableRow,
     shift: f32,
@@ -1876,9 +1881,18 @@ fn split_tall_row(
 ) -> Vec<LaidOutTableRow> {
     let height = page_height - head_offset;
 
-    // The fragments of each cell, per page.
-    let mut fragments: Vec<Vec<Option<LaidOutBox>>> = Vec::with_capacity(row.cells.len());
-    let mut shells: Vec<LaidOutBox> = Vec::with_capacity(row.cells.len());
+    /// What a cell placed on each page, with the bottom of its content box there when
+    /// `place_split` made a decoration fragment for it.
+    struct CellPages {
+        shell: LaidOutBox,
+        start: f32,
+        pages: Vec<(Vec<LaidOutBox>, Option<f32>)>,
+        /// A cell that cannot be split, placed whole on the first page (`whole`, which the
+        /// first piece takes).
+        unsplittable: bool,
+        whole: Option<LaidOutBox>,
+    }
+    let mut cells: Vec<CellPages> = Vec::with_capacity(row.cells.len());
     for cell in &mut row.cells {
         // The cell's own scalar information, which every fragment of it starts from.
         let shell = LaidOutBox {
@@ -1913,18 +1927,13 @@ fn split_tall_row(
                 cell.content = LaidOutContent::Blocks(vec![child]);
             }
         }
-        let mut on_pages: Vec<Option<LaidOutBox>> = Vec::new();
+        let mut pages: Vec<(Vec<LaidOutBox>, Option<f32>)> = Vec::new();
+        let mut placed_whole = None;
         if can_be_split(cell, height) {
-            let pages = paginate_cell(cell, start, height);
-            let used: Vec<usize> = (0..pages.len())
-                .filter(|&p| !pages[p].boxes.is_empty())
+            pages = paginate_cell(cell, start, height)
+                .into_iter()
+                .map(|page| take_decoration(&shell, page.boxes))
                 .collect();
-            for (p, page) in pages.into_iter().enumerate() {
-                let position = used.iter().position(|&u| u == p);
-                on_pages.push(position.map(|i| {
-                    cell_fragment(&shell, page.boxes, i == 0, i + 1 == used.len(), height)
-                }));
-            }
         } else {
             let mut whole = LaidOutBox {
                 content: std::mem::replace(&mut cell.content, LaidOutContent::Blocks(Vec::new())),
@@ -1938,30 +1947,67 @@ fn split_tall_row(
                 whole.layout =
                     fragment_layout(&whole.layout, whole.layout.content.y, height, true, false);
             }
-            on_pages.push(Some(whole));
+            placed_whole = Some(whole);
         }
-        fragments.push(on_pages);
-        shells.push(shell);
+        cells.push(CellPages {
+            shell,
+            start,
+            pages,
+            unsplittable: placed_whole.is_some(),
+            whole: placed_whole,
+        });
     }
 
-    let page_count = fragments.iter().map(Vec::len).max().unwrap_or(0);
+    let page_count = cells
+        .iter()
+        .map(|c| c.pages.len())
+        .max()
+        .unwrap_or(0)
+        .max(1);
+    // Where the row ends on its last page: the lowest bottom of what the cells that reach it
+    // hold there. Every cell is as tall as the row, so every cell ends there.
+    let row_end = cells
+        .iter()
+        .filter(|c| c.pages.len() == page_count)
+        .filter_map(|c| c.pages.last())
+        .flat_map(|(boxes, decoration_bottom)| {
+            let content_bottom = (!boxes.is_empty()).then(|| extent_of(boxes).1);
+            content_bottom.into_iter().chain(*decoration_bottom)
+        })
+        .fold(0.0, f32::max);
+
     let mut pieces: Vec<LaidOutTableRow> = Vec::new();
     for page in 0..page_count {
         let origin = shift + head_offset + page as f32 * page_height;
-        let cells: Vec<LaidOutBox> = fragments
+        let (is_first, is_last) = (page == 0, page + 1 == page_count);
+        let fragments: Vec<LaidOutBox> = cells
             .iter_mut()
-            .filter_map(|on_pages| on_pages.get_mut(page).and_then(Option::take))
+            .filter_map(|c| {
+                if c.unsplittable {
+                    return if is_first { c.whole.take() } else { None };
+                }
+                let children = c.pages.get_mut(page).map(|p| std::mem::take(&mut p.0));
+                let layout = &c.shell.layout;
+                let content_y = if is_first {
+                    c.start + layout.margin.top + layout.border.top + layout.padding.top
+                } else {
+                    0.0
+                };
+                let content_bottom = if is_last { row_end } else { height };
+                Some(LaidOutBox {
+                    layout: fragment_layout(layout, content_y, content_bottom, is_first, is_last),
+                    content: LaidOutContent::Blocks(children.unwrap_or_default()),
+                    ..c.shell.clone()
+                })
+            })
             .map(|mut fragment| {
                 shift_box_y_in_place(&mut fragment, -origin);
                 fragment
             })
             .collect();
-        if cells.is_empty() {
-            continue;
-        }
         pieces.push(LaidOutTableRow {
             node: row.node,
-            cells,
+            cells: fragments,
             section: row.section,
             group: row.group,
             fragmentation: row.fragmentation,
@@ -1970,13 +2016,6 @@ fn split_tall_row(
             boundary_above: row.boundary_above,
             break_above: None,
             break_below: None,
-        });
-    }
-    if pieces.is_empty() {
-        // Nothing was placed: keep the row, as the layout made it, whole.
-        pieces.push(LaidOutTableRow {
-            cells: shells,
-            ..without_cells(row)
         });
     }
 
@@ -2011,15 +2050,13 @@ fn paginate_cell(cell: &mut LaidOutBox, start: f32, height: f32) -> Vec<Page> {
     pages
 }
 
-/// The fragment of a table cell on one page: `boxes` is what [`place_split`] placed on the
-/// page, with the decoration fragment it made for the cell (if the cell has any) first.
-fn cell_fragment(
+/// What a table cell placed on one page: `boxes` is what [`place_split`] put there, with the
+/// decoration fragment it made for the cell (if the cell has any) first. Returns the rest, and
+/// the bottom of the cell's content box on the page according to that decoration fragment.
+fn take_decoration(
     shell: &LaidOutBox,
     mut boxes: Vec<LaidOutBox>,
-    is_first: bool,
-    is_last: bool,
-    height: f32,
-) -> LaidOutBox {
+) -> (Vec<LaidOutBox>, Option<f32>) {
     let is_decoration = |b: &LaidOutBox| {
         shell.node.is_some()
             && b.node == shell.node
@@ -2027,22 +2064,10 @@ fn cell_fragment(
     };
     if boxes.first().is_some_and(is_decoration) {
         let decoration = boxes.remove(0);
-        return LaidOutBox {
-            content: LaidOutContent::Blocks(boxes),
-            ..decoration
-        };
+        let bottom = decoration.layout.content.y + decoration.layout.content.height;
+        return (boxes, Some(bottom));
     }
-    // A cell with nothing to paint has no decoration fragment, so its extent is worked out
-    // here, as `place_split` does for one.
-    let (top, mut bottom) = extent_of(&boxes);
-    if !is_last {
-        bottom = bottom.max(height);
-    }
-    LaidOutBox {
-        layout: fragment_layout(&shell.layout, top, bottom, is_first, is_last),
-        content: LaidOutContent::Blocks(boxes),
-        ..shell.clone()
-    }
+    (boxes, None)
 }
 
 /// A copy of `row` without its cells, for a fragment to know the row across a break.

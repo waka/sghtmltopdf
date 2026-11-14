@@ -354,3 +354,172 @@ fn a_row_taller_than_a_page_also_splits_in_streaming_mode() {
 
     assert!(String::from_utf8_lossy(&bytes).contains("/Count 3"));
 }
+
+// ===== A short cell beside the tall one, padded (the usual shape of an HTML email) =====
+
+const SMALL_PAGE_HEIGHT: f32 = 300.0;
+
+/// A 400x300 page with no margins, and a 20px line.
+const SMALL_PAGE_CSS: &str = "body { margin: 0; font-size: 12px; line-height: 20px }
+     p { margin: 0; height: 20px }";
+
+fn paginate_small_page(html_src: &str, css: &str) -> Vec<Page> {
+    let dom = html::parse(html_src.as_bytes());
+    let author = format!("{SMALL_PAGE_CSS} {css}");
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&author));
+    let fonts = FontCollection::new(vec![
+        Font::load(FONT_PATH).expect("should load bundled test font")
+    ]);
+    let mut settings = PageSettings::default();
+    settings.size = sghtmltopdf::layout::PageSize {
+        width: 400.0,
+        height: SMALL_PAGE_HEIGHT,
+    };
+    settings.margin = sghtmltopdf::layout::EdgeSizes::default();
+    paginate_document(&dom, &styles, &fonts, &settings)
+}
+
+fn tall_cell_beside_short_one() -> String {
+    format!(
+        "<p>HEAD</p><table><tr><td>{}</td><td>SHORT</td></tr></table>",
+        (1..=30).map(|i| format!("<p>L{i}</p>")).collect::<String>()
+    )
+}
+
+/// Every box of the page (cells and what they hold) whose border box sticks out of the page.
+fn boxes_sticking_out(pages: &[Page]) -> Vec<(usize, f32, f32)> {
+    fn walk(page: usize, b: &LaidOutBox, out: &mut Vec<(usize, f32, f32)>) {
+        let rect = b.layout.border_box();
+        if rect.y < -0.01 || rect.y + rect.height > SMALL_PAGE_HEIGHT + 0.01 {
+            out.push((page, rect.y, rect.y + rect.height));
+        }
+        match &b.content {
+            LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+                children.iter().for_each(|c| walk(page, c, out));
+            }
+            LaidOutContent::Table(table) => {
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    walk(page, cell, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        for b in &page.boxes {
+            walk(i, b, &mut out);
+        }
+    }
+    out
+}
+
+/// The lines `L1`..`L30` of the tall cell: each is drawn once, in order, within its page.
+fn assert_tall_cell_intact(pages: &[Page]) {
+    let mut seen = Vec::new();
+    for (i, page) in pages.iter().enumerate() {
+        for (text, top) in lines_of(page) {
+            assert!(
+                top >= 0.0 && top + 20.0 <= SMALL_PAGE_HEIGHT + 0.01,
+                "page {i}: {text:?} at {top}..{} is outside the page (height {SMALL_PAGE_HEIGHT})",
+                top + 20.0
+            );
+            if text.starts_with('L') {
+                seen.push(text);
+            }
+        }
+    }
+    let expected: Vec<String> = (1..=30).map(|i| format!("L{i}")).collect();
+    assert_eq!(
+        seen, expected,
+        "every line of the tall cell, once, in order"
+    );
+}
+
+#[test]
+fn padding_on_a_short_cell_does_not_push_the_tall_cells_lines_past_the_page_foot() {
+    let pages = paginate_small_page(
+        &tall_cell_beside_short_one(),
+        "td { padding: 10px } /* vertical-align: middle, the default */",
+    );
+    assert_tall_cell_intact(&pages);
+    assert_eq!(
+        pages_with(&pages, "L1"),
+        vec![0],
+        "the row starts on page 1"
+    );
+    assert_eq!(boxes_sticking_out(&pages), vec![]);
+}
+
+#[test]
+fn padding_and_a_border_on_a_short_cell_keep_every_fragment_within_its_page() {
+    let pages = paginate_small_page(
+        &tall_cell_beside_short_one(),
+        "td { padding: 10px; border: 2px solid red; background: #eee }",
+    );
+    assert_tall_cell_intact(&pages);
+    assert_eq!(
+        pages_with(&pages, "L1"),
+        vec![0],
+        "the row starts on page 1"
+    );
+    assert_eq!(boxes_sticking_out(&pages), vec![]);
+}
+
+#[test]
+fn a_top_aligned_short_cell_with_padding_and_a_border_does_not_move_the_row() {
+    let pages = paginate_small_page(
+        &tall_cell_beside_short_one(),
+        "td { vertical-align: top; padding: 10px; border: 2px solid red; background: #eee }",
+    );
+    assert_tall_cell_intact(&pages);
+    assert_eq!(pages_with(&pages, "HEAD"), vec![0]);
+    assert_eq!(
+        pages_with(&pages, "L1"),
+        vec![0],
+        "the row starts on page 1"
+    );
+    assert_eq!(pages_with(&pages, "SHORT"), vec![0]);
+    assert_eq!(boxes_sticking_out(&pages), vec![]);
+}
+
+#[test]
+fn every_cell_of_a_split_row_spans_the_pages_the_row_reaches_and_ends_with_it() {
+    // CSS 2.1 17.5.3: a cell is as tall as its row, so the short cell's box goes on through
+    // every page the row reaches, and all the cells end at the same place.
+    let pages = paginate_small_page(
+        &tall_cell_beside_short_one(),
+        "td { vertical-align: top; padding: 10px; border: 2px solid red; background: #eee }",
+    );
+    let cell_boxes: Vec<Vec<(f32, f32)>> = pages
+        .iter()
+        .map(|page| {
+            page.boxes
+                .iter()
+                .filter_map(|b| match &b.content {
+                    LaidOutContent::Table(table) => Some(table),
+                    _ => None,
+                })
+                .flat_map(|table| &table.rows)
+                .flat_map(|row| &row.cells)
+                .map(|cell| {
+                    let r = cell.layout.border_box();
+                    (r.y, r.y + r.height)
+                })
+                .collect()
+        })
+        .collect();
+
+    assert_eq!(cell_boxes.len(), 3, "{cell_boxes:?}");
+    for (i, boxes) in cell_boxes.iter().enumerate() {
+        assert_eq!(boxes.len(), 2, "page {i}: both cells have a box: {boxes:?}");
+        assert!(
+            (boxes[0].0 - boxes[1].0).abs() < 0.01 && (boxes[0].1 - boxes[1].1).abs() < 0.01,
+            "page {i}: the cells share their top and bottom: {boxes:?}"
+        );
+    }
+    // The first page starts below HEAD, and every page but the last runs to the page foot.
+    assert_eq!(cell_boxes[0][0].0, 20.0);
+    assert_eq!(cell_boxes[0][0].1, SMALL_PAGE_HEIGHT);
+    assert_eq!(cell_boxes[1][0], (0.0, SMALL_PAGE_HEIGHT));
+}
