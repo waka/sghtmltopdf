@@ -573,3 +573,53 @@ fn box_text(b: &LaidOutBox) -> String {
         _ => String::new(),
     }
 }
+
+/// Issue #159: an enclosing container's fragment on the page a float continues onto is sized
+/// by the flow alone, not by the float. The inner `.wrap` is 170px tall and its float (six
+/// 50px paragraphs) overflows it, so `section` (whose only child is `.wrap`) ends where
+/// `.wrap` ends plus its own border, not at the bottom of the float.
+#[test]
+fn an_enclosing_fragment_is_not_stretched_to_a_float_continuing_inside_a_nested_parent() {
+    let html_src = "<header></header><section><div class=\"wrap\">\
+        <aside><p>F1</p><p>F2</p><p>F3</p><p>F4</p><p>F5</p><p>F6</p></aside>\
+        <main><p>M1</p><p>M2</p><p>M3</p></main>\
+        </div></section><footer><p>X</p></footer>";
+    let css = "* { box-sizing: border-box; } \
+         body { margin: 0; font-size: 12px; line-height: 20px; } \
+         header { height: 480px; } \
+         aside { float: right; width: 100px; } \
+         main { width: 300px; margin-right: 100px; } \
+         p { height: 50px; margin: 0; } \
+         section { border: 2px solid red; } \
+         .wrap { background: white; height: 170px; }";
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    let fonts = test_fonts();
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &fonts, &settings);
+
+    let root = dom.document();
+    let section = find_tag(&dom, root, "section").expect("the section");
+    let wrap = find_tag(&dom, root, "div").expect("the .wrap div");
+    let page = &pages[1];
+    let fragment = |node: NodeId| {
+        let mut found = page
+            .boxes
+            .iter()
+            .filter(|b| b.node == Some(node) && b.has_visible_decoration);
+        let first = found.next().expect("a fragment on page 2");
+        assert!(found.next().is_none(), "only one fragment on page 2");
+        first.layout.border_box()
+    };
+    let (section_box, wrap_box) = (fragment(section), fragment(wrap));
+    let section_bottom = section_box.y + section_box.height;
+    let wrap_bottom = wrap_box.y + wrap_box.height;
+    assert!(
+        (section_bottom - (wrap_bottom + 2.0)).abs() < 0.5,
+        "the section should end at the .wrap fragment's bottom plus its 2px border \
+         ({wrap_bottom} + 2), not at the float's bottom: {section_bottom}"
+    );
+}

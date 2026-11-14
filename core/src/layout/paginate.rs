@@ -190,6 +190,17 @@ impl<'a> PaginationState<'a> {
         self.inner.flow_entry[absolute - self.inner.flushed]
     }
 
+    /// A box was inserted at `index` on page `absolute`. Whatever sat at or after `index` moved
+    /// up by one, so if that included the flow's own first box, the flow's entry moves too:
+    /// an enclosing container sizes its fragment from the boxes after it, and must keep
+    /// leaving out the floats before it.
+    fn shift_flow_entry(&mut self, absolute: usize, index: usize) {
+        let entry = &mut self.inner.flow_entry[absolute - self.inner.flushed];
+        if index < *entry {
+            *entry += 1;
+        }
+    }
+
     /// Place a float, whose pages run independently of the flow beside it: the flow comes
     /// back to the page it was on afterwards, and that page is kept from being flushed while
     /// the float moves on past it.
@@ -1165,6 +1176,7 @@ fn place_split<T>(
             .get_mut(page_index)
             .boxes
             .insert(insert_index, decoration);
+        state.shift_flow_entry(page_index, insert_index);
     }
 
     // Every decoration fragment of this container is in place, so drop the
