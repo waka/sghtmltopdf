@@ -121,89 +121,100 @@ struct TableAttributes {
     row_span: i32,
 }
 
+fn span(attrs: &[html5ever::Attribute], name: &str) -> i32 {
+    attrs
+        .iter()
+        .find(|a| &*a.name.local == name)
+        .and_then(|a| a.value.trim().parse::<i32>().ok())
+        .filter(|&n| n > 1)
+        .unwrap_or(1)
+}
+
+fn role_of(name: &str, attrs: &[html5ever::Attribute], in_head: bool) -> Option<TagRole> {
+    Some(match name {
+        "h1" => TagRole::Heading(1),
+        "h2" => TagRole::Heading(2),
+        "h3" => TagRole::Heading(3),
+        "h4" => TagRole::Heading(4),
+        "h5" => TagRole::Heading(5),
+        "h6" => TagRole::Heading(6),
+        "p" | "pre" => TagRole::Paragraph,
+        "div" => TagRole::Division,
+        "section" => TagRole::Section,
+        "article" => TagRole::Article,
+        "blockquote" => TagRole::BlockQuote,
+        "ul" | "ol" => TagRole::List,
+        "li" => TagRole::ListItem,
+        "table" => TagRole::Table,
+        "caption" => TagRole::Caption,
+        "thead" => TagRole::TableHead,
+        "tbody" => TagRole::TableBody,
+        "tfoot" => TagRole::TableFoot,
+        "tr" => TagRole::TableRow,
+        "td" | "th" => {
+            let header = name == "th";
+            let scope = attrs
+                .iter()
+                .find(|a| &*a.name.local == "scope")
+                .and_then(|a| match a.value.trim().to_ascii_lowercase().as_str() {
+                    "col" | "colgroup" => Some(CellScope::Column),
+                    "row" | "rowgroup" => Some(CellScope::Row),
+                    _ => None,
+                })
+                // A header in `<thead>` labels its column unless it says otherwise.
+                .or(in_head.then_some(CellScope::Column));
+            TagRole::TableCell {
+                header,
+                scope,
+                col_span: span(attrs, "colspan"),
+                row_span: span(attrs, "rowspan"),
+            }
+        }
+        "img" => {
+            let alt = attrs.iter().find(|a| &*a.name.local == "alt")?;
+            let alt = alt.value.trim();
+            if alt.is_empty() {
+                return None;
+            }
+            TagRole::Figure {
+                alt: alt.to_string(),
+            }
+        }
+        _ => return None,
+    })
+}
+
+fn walk(dom: &Dom, node: NodeId, in_head: bool, out: &mut HashMap<NodeId, TagRole>) {
+    let mut in_head = in_head;
+    if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
+        if let Some(role) = role_of(&name.local, attrs, in_head) {
+            out.insert(node, role);
+        }
+        if &*name.local == "thead" {
+            in_head = true;
+        } else if matches!(&*name.local, "tbody" | "tfoot" | "table") {
+            in_head = false;
+        }
+    }
+    for child in dom.children(node) {
+        walk(dom, child, in_head, out);
+    }
+}
 /// Map the elements of `dom` that become structure elements to their [`TagRole`].
 pub fn collect_tag_roles(dom: &Dom) -> HashMap<NodeId, TagRole> {
-    fn span(attrs: &[html5ever::Attribute], name: &str) -> i32 {
-        attrs
-            .iter()
-            .find(|a| &*a.name.local == name)
-            .and_then(|a| a.value.trim().parse::<i32>().ok())
-            .filter(|&n| n > 1)
-            .unwrap_or(1)
-    }
-
-    fn role_of(name: &str, attrs: &[html5ever::Attribute], in_head: bool) -> Option<TagRole> {
-        Some(match name {
-            "h1" => TagRole::Heading(1),
-            "h2" => TagRole::Heading(2),
-            "h3" => TagRole::Heading(3),
-            "h4" => TagRole::Heading(4),
-            "h5" => TagRole::Heading(5),
-            "h6" => TagRole::Heading(6),
-            "p" | "pre" => TagRole::Paragraph,
-            "div" => TagRole::Division,
-            "section" => TagRole::Section,
-            "article" => TagRole::Article,
-            "blockquote" => TagRole::BlockQuote,
-            "ul" | "ol" => TagRole::List,
-            "li" => TagRole::ListItem,
-            "table" => TagRole::Table,
-            "caption" => TagRole::Caption,
-            "thead" => TagRole::TableHead,
-            "tbody" => TagRole::TableBody,
-            "tfoot" => TagRole::TableFoot,
-            "tr" => TagRole::TableRow,
-            "td" | "th" => {
-                let header = name == "th";
-                let scope = attrs
-                    .iter()
-                    .find(|a| &*a.name.local == "scope")
-                    .and_then(|a| match a.value.trim().to_ascii_lowercase().as_str() {
-                        "col" | "colgroup" => Some(CellScope::Column),
-                        "row" | "rowgroup" => Some(CellScope::Row),
-                        _ => None,
-                    })
-                    // A header in `<thead>` labels its column unless it says otherwise.
-                    .or(in_head.then_some(CellScope::Column));
-                TagRole::TableCell {
-                    header,
-                    scope,
-                    col_span: span(attrs, "colspan"),
-                    row_span: span(attrs, "rowspan"),
-                }
-            }
-            "img" => {
-                let alt = attrs.iter().find(|a| &*a.name.local == "alt")?;
-                let alt = alt.value.trim();
-                if alt.is_empty() {
-                    return None;
-                }
-                TagRole::Figure {
-                    alt: alt.to_string(),
-                }
-            }
-            _ => return None,
-        })
-    }
-
-    fn walk(dom: &Dom, node: NodeId, in_head: bool, out: &mut HashMap<NodeId, TagRole>) {
-        let mut in_head = in_head;
-        if let NodeData::Element { name, attrs, .. } = &dom.node(node).data {
-            if let Some(role) = role_of(&name.local, attrs, in_head) {
-                out.insert(node, role);
-            }
-            if &*name.local == "thead" {
-                in_head = true;
-            } else if matches!(&*name.local, "tbody" | "tfoot" | "table") {
-                in_head = false;
-            }
-        }
-        for child in dom.children(node) {
-            walk(dom, child, in_head, out);
-        }
-    }
     let mut out = HashMap::new();
     walk(dom, dom.document(), false, &mut out);
+    out
+}
+
+/// Like [`collect_tag_roles`], but only for `root` and its descendants.
+///
+/// Streaming mode collects the roles of each top-level element while its
+/// subtree is still in the DOM, then frees the subtree. `root` is a child of
+/// `<body>`, so no `<thead>` ancestor can be missed by starting outside one.
+pub fn collect_tag_roles_in_subtree(dom: &Dom, root: NodeId) -> HashMap<NodeId, TagRole> {
+    let mut out = HashMap::new();
+    walk(dom, root, false, &mut out);
     out
 }
 
@@ -330,6 +341,13 @@ impl Tagger {
             links: HashMap::new(),
             suspended: 0,
         }
+    }
+
+    /// Add roles collected after this tagger was created. Streaming mode
+    /// collects them one top-level element at a time, before that element's
+    /// subtree is freed.
+    pub(super) fn add_roles(&mut self, roles: HashMap<NodeId, TagRole>) {
+        self.roles.extend(roles);
     }
 
     fn new_stream(&mut self, page: Ref, stm: Option<Ref>) -> usize {
@@ -724,6 +742,54 @@ pub(super) fn strip_empty_artifacts(content: Vec<u8>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::html::parse;
+
+    fn body_children(dom: &Dom) -> Vec<NodeId> {
+        fn find_body(dom: &Dom, node: NodeId) -> Option<NodeId> {
+            if let NodeData::Element { name, .. } = &dom.node(node).data {
+                if &*name.local == "body" {
+                    return Some(node);
+                }
+            }
+            dom.children(node).find_map(|child| find_body(dom, child))
+        }
+        let body = find_body(dom, dom.document()).expect("the document has a body");
+        dom.children(body).collect()
+    }
+
+    #[test]
+    fn subtree_collection_unions_to_the_whole_document_collection() {
+        let dom = parse(
+            br#"<h1>Title</h1>
+                <div><p>para</p><img src="x.png" alt="a pixel"><img src="y.png"></div>
+                <table><thead><tr><th>Head</th></tr></thead>
+                <tbody><tr><td colspan="2">cell</td></tr></tbody></table>
+                <ul><li>one</li></ul>"#,
+        );
+        let whole = collect_tag_roles(&dom);
+        let mut union = HashMap::new();
+        for child in body_children(&dom) {
+            union.extend(collect_tag_roles_in_subtree(&dom, child));
+        }
+        assert_eq!(union, whole);
+        // The `<th>` in `<thead>` labels its column, also when collected per subtree.
+        assert!(whole.values().any(|r| matches!(
+            r,
+            TagRole::TableCell {
+                header: true,
+                scope: Some(CellScope::Column),
+                ..
+            }
+        )));
+        // Only the image with a non-empty `alt` is a figure.
+        assert_eq!(
+            whole
+                .values()
+                .filter(|r| matches!(r, TagRole::Figure { .. }))
+                .count(),
+            1
+        );
+    }
 
     #[test]
     fn empty_artifact_sequences_are_removed_and_filled_ones_kept() {

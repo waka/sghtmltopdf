@@ -197,13 +197,55 @@ fn decoration_is_an_artifact_and_empty_artifacts_are_not_written() {
 }
 
 #[test]
-fn a_tagged_pdf_cannot_be_written_in_streaming_mode() {
-    match try_build("<p>text</p>", true, Mode::Streaming) {
-        Err(EngineError::UnsupportedInStreamingMode(message)) => {
-            assert!(message.contains("tagged"), "{message}");
-        }
-        other => panic!("expected UnsupportedInStreamingMode, got {other:?}"),
+fn a_tagged_pdf_can_be_written_in_streaming_mode() {
+    let bytes = try_build("<h1>Title</h1><p>Text</p>", true, Mode::Streaming).unwrap();
+    assert_eq!(count(&bytes, "/Type /StructTreeRoot"), 1);
+    assert_eq!(count(&bytes, "/S /H1"), 1);
+    assert_eq!(count(&bytes, "/S /P\n"), 1);
+}
+
+#[test]
+fn streaming_and_batch_tagged_pdfs_have_the_same_structure() {
+    let html = format!(
+        r#"<h1>Title</h1><p>see <a href="https://example.com/">the docs</a></p>
+           <ul><li>one</li><li>two</li></ul>
+           <table><thead><tr><th>Head</th></tr></thead><tbody><tr><td>cell</td></tr></tbody></table>
+           <img src="{PIXEL}" alt="a pixel" width="10" height="10">"#
+    );
+    let batch = build(&html, true);
+    let streaming = try_build(&html, true, Mode::Streaming).unwrap();
+    for needle in [
+        "/S /H1",
+        "/S /P\n",
+        "/S /L\n",
+        "/S /LI",
+        "/S /Link",
+        "/S /Table",
+        "/S /TH\n",
+        "/S /TD\n",
+        "/S /Figure",
+        "/Type /MCR",
+        "/Type /OBJR",
+    ] {
+        assert_eq!(
+            count(&streaming, needle),
+            count(&batch, needle),
+            "streaming and batch disagree on {needle}"
+        );
     }
+    // Marked content stays complete and unique in streaming too.
+    let ids = mcids(&streaming);
+    let mut sorted = ids.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(ids.len(), sorted.len() * 2);
+}
+
+#[test]
+fn streaming_tagging_survives_many_freed_top_level_elements() {
+    let html = "<p>para</p>".repeat(50);
+    let bytes = try_build(&html, true, Mode::Streaming).unwrap();
+    assert_eq!(count(&bytes, "/S /P\n"), 50);
 }
 
 // ISO 32000-1 14.8.4.3.4: a table is Table > (THead | TBody | TFoot) > TR > (TH | TD), and a
