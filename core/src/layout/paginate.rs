@@ -190,6 +190,17 @@ impl<'a> PaginationState<'a> {
         self.inner.flow_entry[absolute - self.inner.flushed]
     }
 
+    /// A box was inserted at `index` on page `absolute`. Whatever sat at or after `index` moved
+    /// up by one, so if that included the flow's own first box, the flow's entry moves too:
+    /// an enclosing container sizes its fragment from the boxes after it, and must keep
+    /// leaving out the floats before it.
+    fn shift_flow_entry(&mut self, absolute: usize, index: usize) {
+        let entry = &mut self.inner.flow_entry[absolute - self.inner.flushed];
+        if index < *entry {
+            *entry += 1;
+        }
+    }
+
     /// Place a float, whose pages run independently of the flow beside it: the flow comes
     /// back to the page it was on afterwards, and that page is kept from being flushed while
     /// the float moves on past it.
@@ -940,7 +951,15 @@ fn place_split<T>(
 
     struct Segment {
         page_index: usize,
+        /// The first box on the page that is this container's own content. What a float filled
+        /// the page with before the flow reached it comes first and is left out, so that the
+        /// fragment's extent covers only the flow.
         start_index: usize,
+        /// Where the decoration fragment is inserted. The background and borders paint under
+        /// everything the container holds, floats included, so on a page the flow reached
+        /// after a float had started it, this is before that float (index 0), not at
+        /// `start_index`.
+        insert_index: usize,
     }
 
     let mut current_page = state.current_index();
@@ -948,6 +967,7 @@ fn place_split<T>(
         vec![Segment {
             page_index: current_page,
             start_index: state.get(current_page).boxes.len(),
+            insert_index: state.get(current_page).boxes.len(),
         }]
     } else {
         Vec::new()
@@ -967,6 +987,7 @@ fn place_split<T>(
             segments.push(Segment {
                 page_index: *current_page,
                 start_index: state.flow_entry(*current_page),
+                insert_index: 0,
             });
         }
     };
@@ -1042,6 +1063,7 @@ fn place_split<T>(
                         segments.push(Segment {
                             page_index: p,
                             start_index: state.flow_entry(p),
+                            insert_index: 0,
                         });
                     }
                 }
@@ -1145,7 +1167,7 @@ fn place_split<T>(
                 marker,
                 link: container.link.clone(),
             };
-            Some((seg.page_index, seg.start_index, decoration))
+            Some((seg.page_index, seg.insert_index, decoration))
         })
         .collect();
 
@@ -1154,6 +1176,7 @@ fn place_split<T>(
             .get_mut(page_index)
             .boxes
             .insert(insert_index, decoration);
+        state.shift_flow_entry(page_index, insert_index);
     }
 
     // Every decoration fragment of this container is in place, so drop the
