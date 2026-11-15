@@ -483,3 +483,143 @@ fn a_float_crossing_a_page_does_not_push_the_following_flow_to_the_next_page() {
 fn a_float_crossing_a_page_inside_a_bordered_parent_keeps_the_flow_alongside() {
     assert_float_column_paginates_in_parallel("border: 1px solid black;");
 }
+
+/// Issue #159: a parent's background (or border) is painted under everything it holds, so on
+/// each page its decoration fragment has to come before the float in the page's paint order.
+/// A float that starts on page 1 and continues on page 2 is already on page 2 when the flow
+/// reaches it; the parent's fragment there must still go below it, or an opaque background
+/// hides the float's continuation.
+fn assert_parent_decoration_paints_below_a_continuing_float(parent_css: &str) {
+    let html_src = "<header></header><div class=\"wrap\">\
+        <aside><p>FLOAT_ONE</p><p>FLOAT_TWO</p><p>FLOAT_THREE</p><p>FLOAT_FOUR</p></aside>\
+        <main><p>MAIN_ONE</p><p>MAIN_TWO</p><p>MAIN_THREE</p><p>MAIN_FOUR</p>\
+        <p>MAIN_FIVE</p><p>MAIN_SIX</p></main>\
+        </div>";
+    let css = format!(
+        "* {{ box-sizing: border-box; }} \
+         body {{ margin: 0; font-size: 12px; line-height: 20px; }} \
+         header {{ height: 480px; }} \
+         aside {{ float: right; width: 100px; }} \
+         main {{ width: 300px; margin-right: 100px; }} \
+         p {{ height: 50px; margin: 0; }} \
+         .wrap {{ {parent_css} }}"
+    );
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(&css));
+    let fonts = test_fonts();
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &fonts, &settings);
+    assert_eq!(pages.len(), 2);
+
+    let root = dom.document();
+    let wrap = find_tag(&dom, root, "div").expect("the .wrap div");
+
+    for (i, page) in pages.iter().enumerate() {
+        let decorations: Vec<usize> = page
+            .boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.node == Some(wrap) && b.has_visible_decoration)
+            .map(|(idx, _)| idx)
+            .collect();
+        let floats: Vec<usize> = page
+            .boxes
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| box_text(b).contains("FLOAT_"))
+            .map(|(idx, _)| idx)
+            .collect();
+        assert_eq!(
+            decorations.len(),
+            1,
+            "page {} should hold one .wrap fragment",
+            i + 1
+        );
+        assert!(!floats.is_empty(), "page {} should hold the float", i + 1);
+        assert!(
+            decorations[0] < floats[0],
+            "page {}: the .wrap decoration (box {}) must paint before the float (first box {})",
+            i + 1,
+            decorations[0],
+            floats[0]
+        );
+    }
+}
+
+#[test]
+fn an_opaque_parent_background_stays_below_a_float_continuing_onto_the_next_page() {
+    assert_parent_decoration_paints_below_a_continuing_float("background: white;");
+}
+
+#[test]
+fn a_parent_border_stays_below_a_float_continuing_onto_the_next_page() {
+    assert_parent_decoration_paints_below_a_continuing_float("border: 1px solid black;");
+}
+
+/// All the text a box holds, in order.
+fn box_text(b: &LaidOutBox) -> String {
+    match &b.content {
+        LaidOutContent::Inline(lines) => lines
+            .iter()
+            .flat_map(|l| l.runs.iter())
+            .map(|r| r.text.as_str())
+            .collect(),
+        LaidOutContent::Blocks(children) | LaidOutContent::Flex(children) => {
+            children.iter().map(box_text).collect()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Issue #159: an enclosing container's fragment on the page a float continues onto is sized
+/// by the flow alone, not by the float. The inner `.wrap` is 170px tall and its float (six
+/// 50px paragraphs) overflows it, so `section` (whose only child is `.wrap`) ends where
+/// `.wrap` ends plus its own border, not at the bottom of the float.
+#[test]
+fn an_enclosing_fragment_is_not_stretched_to_a_float_continuing_inside_a_nested_parent() {
+    let html_src = "<header></header><section><div class=\"wrap\">\
+        <aside><p>F1</p><p>F2</p><p>F3</p><p>F4</p><p>F5</p><p>F6</p></aside>\
+        <main><p>M1</p><p>M2</p><p>M3</p></main>\
+        </div></section><footer><p>X</p></footer>";
+    let css = "* { box-sizing: border-box; } \
+         body { margin: 0; font-size: 12px; line-height: 20px; } \
+         header { height: 480px; } \
+         aside { float: right; width: 100px; } \
+         main { width: 300px; margin-right: 100px; } \
+         p { height: 50px; margin: 0; } \
+         section { border: 2px solid red; } \
+         .wrap { background: white; height: 170px; }";
+    let dom = html::parse(html_src.as_bytes());
+    let styles = compute_styles(&dom, &user_agent_stylesheet(), &parse_stylesheet(css));
+    let fonts = test_fonts();
+    let mut settings = PageSettings::default();
+    settings.size.width = 400.0;
+    settings.size.height = 600.0;
+    settings.margin = Default::default();
+    let pages = paginate_document(&dom, &styles, &fonts, &settings);
+
+    let root = dom.document();
+    let section = find_tag(&dom, root, "section").expect("the section");
+    let wrap = find_tag(&dom, root, "div").expect("the .wrap div");
+    let page = &pages[1];
+    let fragment = |node: NodeId| {
+        let mut found = page
+            .boxes
+            .iter()
+            .filter(|b| b.node == Some(node) && b.has_visible_decoration);
+        let first = found.next().expect("a fragment on page 2");
+        assert!(found.next().is_none(), "only one fragment on page 2");
+        first.layout.border_box()
+    };
+    let (section_box, wrap_box) = (fragment(section), fragment(wrap));
+    let section_bottom = section_box.y + section_box.height;
+    let wrap_bottom = wrap_box.y + wrap_box.height;
+    assert!(
+        (section_bottom - (wrap_bottom + 2.0)).abs() < 0.5,
+        "the section should end at the .wrap fragment's bottom plus its 2px border \
+         ({wrap_bottom} + 2), not at the float's bottom: {section_bottom}"
+    );
+}
