@@ -200,6 +200,10 @@ impl FontCollection {
     /// Between equally good fonts the first in scan order (= registration order = CSS source
     /// order) is taken, so overlapping ranges within the same family/weight/style naturally
     /// resolve as "declaration order wins".
+    ///
+    /// This runs once per character of the text, so the scan stops at the first face of the
+    /// requested style and exactly the requested weight: nothing after it can rank higher,
+    /// and the first among equals wins anyway.
     fn best_match(
         &self,
         weight: FontWeight,
@@ -208,17 +212,25 @@ impl FontCollection {
         mut eligible: impl FnMut(usize, &Font) -> bool,
     ) -> Option<usize> {
         let wants_italic = style == FontStyle::Italic;
-        self.fonts
-            .iter()
-            .enumerate()
-            .filter(|&(i, f)| eligible(i, f) && self.in_unicode_range(i, c) && f.has_glyph(c))
-            .min_by_key(|&(i, _)| {
-                (
-                    self.is_italic(i) != wants_italic,
-                    weight_preference(weight, self.weight(i)),
-                )
-            })
-            .map(|(i, _)| i)
+        // (not the requested style, weight preference): the lower, the better.
+        type Rank = (bool, (u8, u16));
+        let mut best: Option<(usize, Rank)> = None;
+        for (i, f) in self.fonts.iter().enumerate() {
+            if !eligible(i, f) || !self.in_unicode_range(i, c) || !f.has_glyph(c) {
+                continue;
+            }
+            let rank = (
+                self.is_italic(i) != wants_italic,
+                weight_preference(weight, self.weight(i)),
+            );
+            if rank == (false, (0, 0)) {
+                return Some(i);
+            }
+            if best.is_none_or(|(_, best_rank)| rank < best_rank) {
+                best = Some((i, rank));
+            }
+        }
+        best.map(|(i, _)| i)
     }
 
     /// Whether font `index`'s declared `unicode-range` (if any) contains `c`.
@@ -337,8 +349,7 @@ impl FontCollection {
         match &self.declared_families[index] {
             Some(declared) => declared.eq_ignore_ascii_case(family),
             None => font
-                .family_name()
-                .as_deref()
+                .family_name_str()
                 .is_some_and(|name| name.eq_ignore_ascii_case(family)),
         }
     }
