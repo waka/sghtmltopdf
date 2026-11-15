@@ -1981,23 +1981,38 @@ fn split_tall_row(
         });
     }
 
-    let page_count = cells
-        .iter()
-        .map(|c| c.pages.len())
-        .max()
-        .unwrap_or(0)
-        .max(1);
-    // Where the row ends on its last page: the lowest bottom of what the cells that reach it
-    // hold there. Every cell is as tall as the row, so every cell ends there.
+    // Where the row ends, counted down the pages laid one below another (`p * height` plus the
+    // in-page Y on page `p`). Every cell is as tall as the row, so the row ends where the
+    // lowest cell's margin box ends: at least where the layout put it, and lower when breaks
+    // pushed the cell's content down. Taking the cells' margin boxes, not their content, lines
+    // up the bottom borders of cells with different bottom padding, and an explicit height
+    // that runs past the content still counts.
     let row_end = cells
         .iter()
-        .filter(|c| c.pages.len() == page_count)
-        .filter_map(|c| c.pages.last())
-        .flat_map(|(boxes, decoration_bottom)| {
-            let content_bottom = (!boxes.is_empty()).then(|| extent_of(boxes).1);
-            content_bottom.into_iter().chain(*decoration_bottom)
+        .map(|c| {
+            let layout = &c.shell.layout;
+            let below = layout.padding.bottom + layout.border.bottom + layout.margin.bottom;
+            let laid_out = c.start + layout.margin_box_height();
+            let paginated =
+                c.pages
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .find_map(|(p, (boxes, decoration_bottom))| {
+                        let content_bottom = (!boxes.is_empty()).then(|| extent_of(boxes).1);
+                        content_bottom
+                            .into_iter()
+                            .chain(*decoration_bottom)
+                            .reduce(f32::max)
+                            .map(|bottom| p as f32 * height + bottom + below)
+                    });
+            paginated.map_or(laid_out, |bottom| bottom.max(laid_out))
         })
         .fold(0.0, f32::max);
+    // A row ending exactly at a page foot does not reach the next page.
+    let page_count = (((row_end - 0.01) / height).ceil() as usize).max(1);
+    // The bottom of every cell's margin box on the last page.
+    let last_page_end = row_end - (page_count - 1) as f32 * height;
 
     let mut pieces: Vec<LaidOutTableRow> = Vec::new();
     for page in 0..page_count {
@@ -2016,7 +2031,14 @@ fn split_tall_row(
                 } else {
                     0.0
                 };
-                let content_bottom = if is_last { row_end } else { height };
+                let content_bottom = if is_last {
+                    last_page_end
+                        - layout.padding.bottom
+                        - layout.border.bottom
+                        - layout.margin.bottom
+                } else {
+                    height
+                };
                 Some(LaidOutBox {
                     layout: fragment_layout(layout, content_y, content_bottom, is_first, is_last),
                     content: LaidOutContent::Blocks(children.unwrap_or_default()),

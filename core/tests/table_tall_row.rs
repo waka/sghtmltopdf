@@ -491,7 +491,25 @@ fn every_cell_of_a_split_row_spans_the_pages_the_row_reaches_and_ends_with_it() 
         &tall_cell_beside_short_one(),
         "td { vertical-align: top; padding: 10px; border: 2px solid red; background: #eee }",
     );
-    let cell_boxes: Vec<Vec<(f32, f32)>> = pages
+    let cell_boxes = cell_border_boxes(&pages);
+
+    assert_eq!(cell_boxes.len(), 3, "{cell_boxes:?}");
+    for (i, boxes) in cell_boxes.iter().enumerate() {
+        assert_eq!(boxes.len(), 2, "page {i}: both cells have a box: {boxes:?}");
+        assert!(
+            (boxes[0].0 - boxes[1].0).abs() < 0.01 && (boxes[0].1 - boxes[1].1).abs() < 0.01,
+            "page {i}: the cells share their top and bottom: {boxes:?}"
+        );
+    }
+    // The first page starts below HEAD, and every page but the last runs to the page foot.
+    assert_eq!(cell_boxes[0][0].0, 20.0);
+    assert_eq!(cell_boxes[0][0].1, SMALL_PAGE_HEIGHT);
+    assert_eq!(cell_boxes[1][0], (0.0, SMALL_PAGE_HEIGHT));
+}
+
+/// The top and bottom of each table cell's border box, per page.
+fn cell_border_boxes(pages: &[Page]) -> Vec<Vec<(f32, f32)>> {
+    pages
         .iter()
         .map(|page| {
             page.boxes
@@ -508,18 +526,48 @@ fn every_cell_of_a_split_row_spans_the_pages_the_row_reaches_and_ends_with_it() 
                 })
                 .collect()
         })
-        .collect();
+        .collect()
+}
 
-    assert_eq!(cell_boxes.len(), 3, "{cell_boxes:?}");
-    for (i, boxes) in cell_boxes.iter().enumerate() {
-        assert_eq!(boxes.len(), 2, "page {i}: both cells have a box: {boxes:?}");
-        assert!(
-            (boxes[0].0 - boxes[1].0).abs() < 0.01 && (boxes[0].1 - boxes[1].1).abs() < 0.01,
-            "page {i}: the cells share their top and bottom: {boxes:?}"
+#[test]
+fn cells_with_different_bottom_padding_end_together_on_the_last_page() {
+    // CSS 2.1 17.5.3: the cells of a row share its height whatever their padding, so the
+    // short cell's larger bottom padding moves the bottom of both, not of itself alone.
+    for align in ["top", "middle"] {
+        let pages = paginate_small_page(
+            &tall_cell_beside_short_one(),
+            &format!(
+                "td {{ vertical-align: {align}; border: 2px solid red; background: #eee }}
+                 td:first-child {{ padding: 0 }} td:last-child {{ padding: 20px }}"
+            ),
         );
+        assert_tall_cell_intact(&pages);
+        assert!(boxes_sticking_out(&pages).is_empty(), "{align}");
+        let cell_boxes = cell_border_boxes(&pages);
+        let last = cell_boxes.last().expect("a page");
+        assert_eq!(last.len(), 2, "{align}: {cell_boxes:?}");
+        assert!(
+            (last[0].1 - last[1].1).abs() < 0.01,
+            "{align}: the cells end together on the last page: {cell_boxes:?}"
+        );
+        // The tall cell's last line ends at 20 on page 3; the short cell's 20px padding and
+        // 2px border go below it.
+        assert!((last[0].1 - 42.0).abs() < 0.01, "{align}: {cell_boxes:?}");
     }
-    // The first page starts below HEAD, and every page but the last runs to the page foot.
-    assert_eq!(cell_boxes[0][0].0, 20.0);
-    assert_eq!(cell_boxes[0][0].1, SMALL_PAGE_HEIGHT);
-    assert_eq!(cell_boxes[1][0], (0.0, SMALL_PAGE_HEIGHT));
+}
+
+#[test]
+fn an_explicit_cell_height_past_the_content_goes_on_to_another_page() {
+    // HEAD (20) plus a 900px cell is 920: three full pages of 300 and 20 on a fourth. The
+    // cell's height carries the row there instead of running past the third page's foot.
+    let pages = paginate_small_page(
+        &tall_cell_beside_short_one(),
+        "td { vertical-align: top; background: #eee } td:last-child { height: 900px }",
+    );
+    assert_tall_cell_intact(&pages);
+    assert!(boxes_sticking_out(&pages).is_empty());
+    let cell_boxes = cell_border_boxes(&pages);
+    assert_eq!(cell_boxes.len(), 4, "{cell_boxes:?}");
+    assert_eq!(cell_boxes[2], vec![(0.0, SMALL_PAGE_HEIGHT); 2]);
+    assert_eq!(cell_boxes[3], vec![(0.0, 20.0); 2]);
 }
