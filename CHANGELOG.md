@@ -8,6 +8,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- New entries go in changelog.d/ as one file per change, not here (see changelog.d/README.md).
      `cargo xtask changelog release <version>` moves them into this file when releasing. -->
 
+## 0.8.0 - 2026-11-15
+
+### Added
+
+- Streaming mode now supports `--toc`, `counter(pages)` in `@page` margin boxes, and `[topage]`
+  in HTML headers and footers (#116). Decoration that needs the total page count is written at
+  the end as Form XObjects the body pages already refer to, so body pages are still written and
+  released as they settle. The table of contents is written last but ordered before the body.
+  `--page-offset` now applies to the page numbers in streaming mode as well.
+- `::before` and `::after` are boxes of their own (#152). Declarations on the pseudo-element
+  now apply to its generated content: `font-size`, `color`, `font-family`, `display`, `margin`,
+  `padding`, `background`, `position`, `transform` and the rest, with anything not set inherited
+  from the element, as for a first or last child. Before, the content was drawn with the
+  element's own style, glued to its text. They are also generated on an element with block
+  children, which used to get none, and `display: none` on them generates nothing.
+
+### Changed
+
+- Footer content (`--footer-html`) that reaches above the bottom margin is now drawn over the
+  content area instead of being clipped (#139). The footer is still laid out in the bottom margin,
+  but it is clipped to everything below the header's margin, never over the header's margin.
+  Normal-flow footer content never goes above the margin, so only what already reached above it
+  (a negative margin, a tall `position: absolute; bottom: 0` box, an upward `box-shadow` or
+  `outline`) newly shows. With `[page]`/`[topage]`, a footer can show a block such as signatures
+  above the margin on the last page only, while the body reserves that room only where it ends.
+- The `Mode::Streaming` pipeline moved out of `engine.rs` and `layout/paginate.rs` into the
+  `engine::streaming` and `layout::paginate::streaming` submodules (#144). This is internal
+  only: `Engine`'s public API and the output are unchanged.
+- Streaming PDF output reuses one zlib compressor for page and decoration streams instead of
+  starting a fresh one per page. Compressed bytes are unchanged; documents with many pages
+  allocate substantially fewer bytes in total (peak live memory is unchanged).
+
+### Fixed
+
+- With `--toc` or `--cover`, internal links to headings and other anchors could point at a page
+  of the table of contents or the cover instead of the body (#116). Those pages are separate
+  documents whose element IDs collided with the body's anchors. In streaming mode, anchors in
+  the part of the document read after the first top-level element now get link destinations too.
+- A font that draws no text is no longer embedded in the PDF or listed in its page resources (#133).
+  In `--streaming` mode with no `--font` or `@font-face`, the CJK fallback font that is loaded up
+  front for CJK text arriving later in the stream was embedded even when the document had none, and
+  a document without text embedded the default font. Each page now lists only the fonts it draws
+  with. The same applies without `--streaming`: a `--font` that draws nothing (DejaVu Sans on a page
+  of only Japanese text, say) is no longer embedded either.
+- A table's head is no longer left alone at the bottom of a page, and `break-after: avoid` /
+  `break-before: avoid` on table rows are now honored (#138). When the head fit in what was left
+  of the page but the first body row did not, the head stayed alone at the foot of the page; now
+  the whole table starts on the next page. At a break inside a table, rows the page should not
+  break between move to the next page together, so a group header row is no longer separated
+  from the row below it.
+- `border-radius` now clips images, not just the background colour (#150). An `<img>` is
+  trimmed to its content edge curve (the radius less its border and padding), a box with
+  `overflow: hidden` clips its children to its padding edge curve, and a `background-image`
+  is clipped to the border edge curve, as CSS Backgrounds 3 § 5.3 asks. A round avatar
+  (`rounded-full border-2`) used to print as a square whose corners covered the border ring.
+- `@font-face` faces of one family are now chosen by weight as in CSS Fonts 4 (§ 5.2), not by
+  the order the rules are declared in (#151). `font-weight` keeps its number instead of being
+  reduced to normal or bold, so a 500 face is used for `font-weight: 500` even after a 400 one,
+  and a 300 face declared first no longer turns body text Light. A bold weight with no face of
+  600 or more is still drawn with synthetic bold. System fonts are still looked up as Regular or
+  Bold.
+- An opaque background on a parent no longer hides a float that continues onto the next page
+  (#159). The parent's background and borders on that page were drawn after the float and
+  covered it, leaving its text in the PDF but invisible. They are now drawn underneath.
+- A table row taller than a page now starts where it is and splits through the content of its cells (#163).
+  Before, the row was moved to a fresh page, leaving the page before it nearly empty, and whatever its cell held past one page was lost. This is the usual shape of an HTML email, whose whole body sits in one `<table><tr><td>`.
+- The Ruby `sghtmltopdf_stylesheet_link_tag` helper uses Sprockets' compiled CSS
+  instead of rereading the SCSS source, so Sass imports, variables and nesting work
+  without precompiling assets. Digested URLs in the compiled CSS are resolved back
+  to local assets in development too.
+  CSS imports are expanded even when compression removes the whitespace after
+  `@import`.
+
 ## 0.7.0 - 2026-11-01
 
 ### Added
