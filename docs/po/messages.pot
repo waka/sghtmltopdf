@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-11-07T15:59:57+09:00\n"
+"POT-Creation-Date: 2026-11-15T17:27:21+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -1534,7 +1534,8 @@ msgid ""
 msgstr ""
 
 #: src/usage/cli/reference.md:180
-msgid "余白に入りきらない分はクリップされます(マージンは自動で広がりません)"
+msgid ""
+"余白に入りきらない分はクリップされます(マージンは自動で広がりません)。ただしフッターは上余白より下の全体でクリップされるため、負のマージンなどで下余白より上に引き上げた部分は本文領域の上に描かれます(ヘッダーの余白には描かれません)。`[page]`/`[topage]`と組み合わせると、最終ページだけ署名欄などを本文の下に表示できます"
 msgstr ""
 
 #: src/usage/cli/reference.md:181
@@ -2665,7 +2666,7 @@ msgid "CLIのロングオプションから`--`を取り、`-`を`_`にした名
 msgstr ""
 
 #: src/usage/ruby_rails.md:49 src/usage/ruby_rails.md:94
-#: src/usage/ruby_rails.md:149 src/usage/ruby_rails.md:237 src/usage/rust.md:19
+#: src/usage/ruby_rails.md:149 src/usage/ruby_rails.md:238 src/usage/rust.md:19
 #: src/usage/rust.md:81 src/migration/wicked-pdf.md:34
 msgid "\"A4\""
 msgstr ""
@@ -2943,14 +2944,14 @@ msgstr ""
 msgid "# ファイル名(.pdfは自動で付く)\n"
 msgstr ""
 
-#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:308
+#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:309
 #: src/migration/wicked-pdf.md:22 src/migration/wicked-pdf.md:89
 #: src/migration/wicked-pdf.md:103
 msgid "\"invoices/show\""
 msgstr ""
 
 #: src/usage/ruby_rails.md:148 src/usage/ruby_rails.md:185
-#: src/usage/ruby_rails.md:308 src/migration/wicked-pdf.md:22
+#: src/usage/ruby_rails.md:309 src/migration/wicked-pdf.md:22
 #: src/migration/wicked-pdf.md:135
 msgid "\"pdf\""
 msgstr ""
@@ -3067,10 +3068,11 @@ msgstr ""
 #: src/usage/ruby_rails.md:194
 msgid ""
 "`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。 "
-"このとき中身をそのまま写すのではなく、`url()`の参照先をエンジンが読める形へ指し直し、`@import`を再帰的に取り込みます。"
+"このとき中身をそのまま写すのではなく、`url()`の参照先をエンジンが読める形へ指し直し、`@import`を再帰的に取り込みます。 "
+"Sprocketsではコンパイル済みのCSSを使うため、SCSSの`@import`、変数、ネストはアプリケーション側のSassプロセッサで解決してから埋め込みます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:197
+#: src/usage/ruby_rails.md:198
 msgid ""
 "指し直しが必要なのは、アセットパイプラインがprecompile時に`url()`を`asset_path`で書き換えるためです。 "
 "`asset_host`を設定していればHTTPSの絶対URLになり(Sprocketsの場合)、そうでなければダイジェスト付きの`/assets/…`になります。 "
@@ -3078,232 +3080,232 @@ msgid ""
 "`@font-face`の取得に失敗しても`font-family`の次の候補には進まず、エンジン既定のフォントに落ちるだけなので、気づきにくい形で見た目が変わります。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:202
+#: src/usage/ruby_rails.md:203
 msgid "CSS中の`url()`"
 msgstr ""
 
-#: src/usage/ruby_rails.md:202
+#: src/usage/ruby_rails.md:203
 msgid "指し直し先"
 msgstr ""
 
-#: src/usage/ruby_rails.md:204
+#: src/usage/ruby_rails.md:205
 msgid "`https://cdn.example.com/assets/x-<digest>.otf`"
 msgstr ""
 
-#: src/usage/ruby_rails.md:204
+#: src/usage/ruby_rails.md:205
 msgid "パス部分をローカルのファイルに対応付ける"
 msgstr ""
 
-#: src/usage/ruby_rails.md:205
+#: src/usage/ruby_rails.md:206
 msgid "`/assets/x-<digest>.otf`"
 msgstr ""
 
-#: src/usage/ruby_rails.md:205
+#: src/usage/ruby_rails.md:206
 msgid "`public/`、次にパイプラインのロードパス"
 msgstr ""
 
-#: src/usage/ruby_rails.md:206
+#: src/usage/ruby_rails.md:207
 msgid "`fonts/x.otf`"
 msgstr ""
 
-#: src/usage/ruby_rails.md:206
+#: src/usage/ruby_rails.md:207
 msgid "まずCSSファイル自身のディレクトリ、次にパイプラインのロードパス"
 msgstr ""
 
-#: src/usage/ruby_rails.md:207
+#: src/usage/ruby_rails.md:208
 msgid "`data:`、`#fragment`のみ"
 msgstr ""
 
-#: src/usage/ruby_rails.md:207
+#: src/usage/ruby_rails.md:208
 msgid "そのまま"
 msgstr ""
 
-#: src/usage/ruby_rails.md:208
+#: src/usage/ruby_rails.md:209
 msgid "ローカルに見つからないURL"
 msgstr ""
 
-#: src/usage/ruby_rails.md:208
+#: src/usage/ruby_rails.md:209
 msgid "そのまま(CDNのフォントなど本物のリモート参照)"
 msgstr ""
 
-#: src/usage/ruby_rails.md:210
+#: src/usage/ruby_rails.md:211
 msgid ""
 "絶対URLはホスト名を`asset_host`と突き合わせません。 "
 "`asset_host`はProcや`%d`を含む文字列も取れるため、逆引きの一般解がないからです。 "
 "代わりにパス部分がディスク上に実在するかどうかで判定します。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:214
+#: src/usage/ruby_rails.md:215
 msgid ""
 "指し直したあとの形は`sghtmltopdf_image_tag`と同じで、`base_url`の下なら相対パス、読める場所にあれば絶対パス、読めなければ`data:`URIです。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:216
+#: src/usage/ruby_rails.md:217
 msgid ""
 "`sghtmltopdf_image_tag`は画像をパスで指します。 `base_url`の下にあれば相対パス、そうでなければ絶対パスです。 "
 "エンジンは`base_url`から解決できない絶対パスをファイルシステムのパスとして読むので、開発環境で`app/assets`にあるファイルもそのまま指せます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:220
+#: src/usage/ruby_rails.md:221
 msgid ""
 "パスで指せるのはエンジンがそこを読める場合だけなので、`allow_path`(未設定なら`base_url`)の外にあるファイルは`data:`URIとして埋め込みます。 "
 "取得の失敗は既定で無視されるため、パスで指したまま読めないと画像が無言で消えてしまうからです。 "
 "同じ理由で、`server_url`を設定して別プロセスへ委譲する場合も埋め込みます。委譲先が同じファイルシステムを見ているとは限りません。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:224
+#: src/usage/ruby_rails.md:225
 msgid "`inline: true`を渡すと常に埋め込みます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:226
+#: src/usage/ruby_rails.md:227
 msgid "サーバへ委譲する"
 msgstr ""
 
-#: src/usage/ruby_rails.md:228
+#: src/usage/ruby_rails.md:229
 msgid ""
 "`server_url`を指定すると、変換を[HTTPサーバモード](../server/index.md)で動く 別プロセスへ投げます。 "
 "アプリのCPUを使いたくない場合や、gemの対応プラットフォーム外で動かす場合に使います。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:234 src/migration/wicked-pdf.md:165
+#: src/usage/ruby_rails.md:235 src/migration/wicked-pdf.md:165
 msgid "\"http://pdf.internal:8080\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:237
+#: src/usage/ruby_rails.md:238
 msgid "# 委譲される\n"
 msgstr ""
 
-#: src/usage/ruby_rails.md:240
+#: src/usage/ruby_rails.md:241
 msgid "URLは1つだけです。負荷分散はLB(nginx・k8s Service)を前段に置く前提です"
 msgstr ""
 
-#: src/usage/ruby_rails.md:241
+#: src/usage/ruby_rails.md:242
 msgid ""
 "到達できないときはローカルへフォールバックしません(`ServerError`)。 "
 "サーバ起動時にだけ指定できるフォントが効かず、出力が変わってしまうためです"
 msgstr ""
 
-#: src/usage/ruby_rails.md:243
+#: src/usage/ruby_rails.md:244
 msgid ""
 "HTTPのステータスは上のエラー分類へ対応します(400→`UsageError`、413→`InputError`、500→`RenderError`、その他→`ServerError`)"
 msgstr ""
 
-#: src/usage/ruby_rails.md:245
+#: src/usage/ruby_rails.md:246
 msgid "サーバでは指定できないオプション"
 msgstr ""
 
-#: src/usage/ruby_rails.md:247
+#: src/usage/ruby_rails.md:248
 msgid "ローカルパスを取るものと出力先・アクセス制御はサーバ起動時にしか設定できません(指定すると`UsageError`)。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:257
+#: src/usage/ruby_rails.md:258
 msgid ""
 "Railtieが入れる`base_url`/`allow_path`の既定値は自動的に外れるので、Railsでそのまま`server_url`を足しても400にはなりません。 "
 "`configure`で明示的に設定している場合は、サーバ側の起動オプションへ移してください。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:260
+#: src/usage/ruby_rails.md:261
 msgid "チャンクごとに受け取る"
 msgstr ""
 
-#: src/usage/ruby_rails.md:262
+#: src/usage/ruby_rails.md:263
 msgid ""
 "ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとにブロックが呼ばれます(返り値は`nil`)。 "
 "Rackの`response.stream`へ流したり、S3のマルチパートアップロードへ繋いだりするための口です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:269
+#: src/usage/ruby_rails.md:270
 msgid ""
 "ローカル変換でもサーバ委譲でも、PDF全体が組み上がるのを待たずに書き出せます。 "
 "ローカルは確定したページから順に、サーバはその`?stream=1`(chunked transfer encoding)をそのまま流します。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:272
+#: src/usage/ruby_rails.md:273
 msgid ""
 "ただし逐次になるのはPDFの書き出しだけで、HTMLのパースとレイアウトは文書全体に対して先に行います。 "
 "そのため最初のチャンクが届くのは変換の終盤で、ピークメモリもブロックを渡さない場合と変わりません。 "
 "HTMLを読みながらページを確定させたい場合は[ストリーミングモード](#メモリを抑えたいとき)と併せて使ってください。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:276
+#: src/usage/ruby_rails.md:277
 msgid ""
 "1回に渡すバイト数の目安は`chunk_size:`で変えられます(既定64KiB、ローカル変換のみ)。 "
 "小さくすると細かく届きますが、そのたびにGVLを取り直すのでレンダリングは遅くなります。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:283
+#: src/usage/ruby_rails.md:284
 msgid "`Thread#kill`とタイムアウトが効く"
 msgstr ""
 
-#: src/usage/ruby_rails.md:285
+#: src/usage/ruby_rails.md:286
 msgid ""
 "ブロックの呼び出しはRubyのメソッド呼び出しなので、その時点で保留中の割り込みが処理されます。 "
 "ブロック付きで呼んでいる限り、`Thread#kill`や`Timeout.timeout`・`Rack::Timeout`がチャンク境界で効きます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:290
+#: src/usage/ruby_rails.md:291
 msgid "# 10秒で中断できる\n"
 msgstr ""
 
-#: src/usage/ruby_rails.md:294
+#: src/usage/ruby_rails.md:295
 msgid ""
 "ブロックを渡さない`render`/`render_to_file`は変換の間まったくRubyへ戻らないため、途中で止められません。 "
 "長い変換に上限をかけたい場合はブロック付きで呼んでください。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:297
+#: src/usage/ruby_rails.md:298
 msgid "Railsで逐次返却する"
 msgstr ""
 
-#: src/usage/ruby_rails.md:299
+#: src/usage/ruby_rails.md:300
 msgid ""
 "`render pdf:`のレンダラは、組み上がったPDFを`send_data`で一括返却します。 "
 "確定したページから順に返したい場合は`ActionController::Live`と組み合わせます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:307
+#: src/usage/ruby_rails.md:308
 msgid "\"Content-Type\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:307 src/usage/ruby_rails.md:326
+#: src/usage/ruby_rails.md:308 src/usage/ruby_rails.md:327
 msgid "\"application/pdf\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:316
+#: src/usage/ruby_rails.md:317
 msgid ""
 "途中まで書き出したあとに失敗すると、クライアントには壊れたPDFが届きます(ヘッダは既に送信済みなのでステータスを変えられません)。 "
 "サーバモードの`?stream=1`と同じ性質です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:319
+#: src/usage/ruby_rails.md:320
 msgid "S3へ直接上げる"
 msgstr ""
 
-#: src/usage/ruby_rails.md:321
+#: src/usage/ruby_rails.md:322
 msgid ""
 "gemはS3向けの実装を持ちません(依存を増やさず、書き方も短いためです)。 "
 "マルチパートアップロードは最後のパート以外は5MB以上という制約があるので、溜めてから上げます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:327
+#: src/usage/ruby_rails.md:328
 msgid "\"\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:350
+#: src/usage/ruby_rails.md:351
 msgid "小さいPDFなら`put_object(body: Sghtmltopdf.render(html))`で十分です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:352
+#: src/usage/ruby_rails.md:353
 msgid "メモリを抑えたいとき"
 msgstr ""
 
-#: src/usage/ruby_rails.md:354
+#: src/usage/ruby_rails.md:355
 msgid ""
 "数万要素規模のHTMLでは、エンジンの[ストリーミングモード](./cli/streaming.md)を使うとメモリが大きく減ります(実測: "
 "60,000要素で 228MB → 28MB。[メモリと処理時間](./cli/streaming.md#メモリと処理時間))。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:360
+#: src/usage/ruby_rails.md:361
 msgid ""
 "その代わり、`<body>`より後の`<style>`などが使えません。 "
 "`toc`・`counter(pages)`・`[topage]`は、総ページ数が確定してから目次と装飾を描画することで対応しています。 "

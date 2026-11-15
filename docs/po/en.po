@@ -1,7 +1,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-11-07T15:59:57+09:00\n"
+"POT-Creation-Date: 2026-11-15T17:27:21+09:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -1961,10 +1961,19 @@ msgstr ""
 "Placeholders are substituted in the HTML as text; JavaScript is not executed."
 
 #: src/usage/cli/reference.md:180
-msgid "余白に入りきらない分はクリップされます(マージンは自動で広がりません)"
+msgid ""
+"余白に入りきらない分はクリップされます(マージンは自動で広がりません)。ただし"
+"フッターは上余白より下の全体でクリップされるため、負のマージンなどで下余白よ"
+"り上に引き上げた部分は本文領域の上に描かれます(ヘッダーの余白には描かれませ"
+"ん)。`[page]`/`[topage]`と組み合わせると、最終ページだけ署名欄などを本文の下"
+"に表示できます"
 msgstr ""
-"Anything that does not fit in the margin is clipped; the margin does not "
-"grow to accommodate it"
+"Whatever does not fit in the margin is clipped (the margin does not grow to "
+"fit). The footer, however, is clipped to everything below the top margin, so "
+"a part pulled up above the bottom margin, by a negative margin for example, "
+"is drawn over the content area (never over the header's margin). Combined "
+"with `[page]`/`[topage]`, this can show a block such as signatures below the "
+"body on the last page only"
 
 #: src/usage/cli/reference.md:181
 msgid ""
@@ -3399,7 +3408,7 @@ msgstr ""
 "the same parser."
 
 #: src/usage/ruby_rails.md:49 src/usage/ruby_rails.md:94
-#: src/usage/ruby_rails.md:149 src/usage/ruby_rails.md:237 src/usage/rust.md:19
+#: src/usage/ruby_rails.md:149 src/usage/ruby_rails.md:238 src/usage/rust.md:19
 #: src/usage/rust.md:81 src/migration/wicked-pdf.md:34
 msgid "\"A4\""
 msgstr "\"A4\""
@@ -3723,14 +3732,14 @@ msgstr "\"invoice\""
 msgid "# ファイル名(.pdfは自動で付く)\n"
 msgstr "# the file name; .pdf is appended for you\n"
 
-#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:308
+#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:309
 #: src/migration/wicked-pdf.md:22 src/migration/wicked-pdf.md:89
 #: src/migration/wicked-pdf.md:103
 msgid "\"invoices/show\""
 msgstr "\"invoices/show\""
 
 #: src/usage/ruby_rails.md:148 src/usage/ruby_rails.md:185
-#: src/usage/ruby_rails.md:308 src/migration/wicked-pdf.md:22
+#: src/usage/ruby_rails.md:309 src/migration/wicked-pdf.md:22
 #: src/migration/wicked-pdf.md:135
 msgid "\"pdf\""
 msgstr "\"pdf\""
@@ -3882,13 +3891,17 @@ msgstr ""
 msgid ""
 "`sghtmltopdf_stylesheet_link_tag`はCSSの中身を`<style>`へ展開します。 このと"
 "き中身をそのまま写すのではなく、`url()`の参照先をエンジンが読める形へ指し直"
-"し、`@import`を再帰的に取り込みます。"
+"し、`@import`を再帰的に取り込みます。 Sprocketsではコンパイル済みのCSSを使う"
+"ため、SCSSの`@import`、変数、ネストはアプリケーション側のSassプロセッサで解決"
+"してから埋め込みます。"
 msgstr ""
 "`sghtmltopdf_stylesheet_link_tag` expands the CSS itself into a `<style>`. "
 "It does not copy the file verbatim: every `url()` is pointed at something "
-"the engine can read, and every `@import` is spliced in."
+"the engine can read, and every `@import` is spliced in. With Sprockets it "
+"uses the compiled CSS, so SCSS `@import`s, variables, and nesting are "
+"resolved by the application's Sass processor before the CSS is embedded."
 
-#: src/usage/ruby_rails.md:197
+#: src/usage/ruby_rails.md:198
 msgid ""
 "指し直しが必要なのは、アセットパイプラインがprecompile時に`url()`を"
 "`asset_path`で書き換えるためです。 `asset_host`を設定していればHTTPSの絶対URL"
@@ -3906,57 +3919,57 @@ msgstr ""
 "next `font-family` candidate either: it falls back to the engine's default "
 "font, so the appearance changes in a way that is easy to miss."
 
-#: src/usage/ruby_rails.md:202
+#: src/usage/ruby_rails.md:203
 msgid "CSS中の`url()`"
 msgstr "`url()` in the CSS"
 
-#: src/usage/ruby_rails.md:202
+#: src/usage/ruby_rails.md:203
 msgid "指し直し先"
 msgstr "Pointed at"
 
-#: src/usage/ruby_rails.md:204
+#: src/usage/ruby_rails.md:205
 msgid "`https://cdn.example.com/assets/x-<digest>.otf`"
 msgstr "`https://cdn.example.com/assets/x-<digest>.otf`"
 
-#: src/usage/ruby_rails.md:204
+#: src/usage/ruby_rails.md:205
 msgid "パス部分をローカルのファイルに対応付ける"
 msgstr "The path part is mapped onto a local file"
 
-#: src/usage/ruby_rails.md:205
+#: src/usage/ruby_rails.md:206
 msgid "`/assets/x-<digest>.otf`"
 msgstr "`/assets/x-<digest>.otf`"
 
-#: src/usage/ruby_rails.md:205
+#: src/usage/ruby_rails.md:206
 msgid "`public/`、次にパイプラインのロードパス"
 msgstr "`public/`, then the asset pipeline load path"
 
-#: src/usage/ruby_rails.md:206
+#: src/usage/ruby_rails.md:207
 msgid "`fonts/x.otf`"
 msgstr "`fonts/x.otf`"
 
-#: src/usage/ruby_rails.md:206
+#: src/usage/ruby_rails.md:207
 msgid "まずCSSファイル自身のディレクトリ、次にパイプラインのロードパス"
 msgstr ""
 "The stylesheet's own directory first, then the asset pipeline load path"
 
-#: src/usage/ruby_rails.md:207
+#: src/usage/ruby_rails.md:208
 msgid "`data:`、`#fragment`のみ"
 msgstr "`data:`, a bare `#fragment`"
 
-#: src/usage/ruby_rails.md:207
+#: src/usage/ruby_rails.md:208
 msgid "そのまま"
 msgstr "Left alone"
 
-#: src/usage/ruby_rails.md:208
+#: src/usage/ruby_rails.md:209
 msgid "ローカルに見つからないURL"
 msgstr "A URL that names no local file"
 
-#: src/usage/ruby_rails.md:208
+#: src/usage/ruby_rails.md:209
 msgid "そのまま(CDNのフォントなど本物のリモート参照)"
 msgstr ""
 "Left alone (a genuine remote reference, such as a font served by a CDN)"
 
-#: src/usage/ruby_rails.md:210
+#: src/usage/ruby_rails.md:211
 msgid ""
 "絶対URLはホスト名を`asset_host`と突き合わせません。 `asset_host`はProcや`%d`"
 "を含む文字列も取れるため、逆引きの一般解がないからです。 代わりにパス部分が"
@@ -3966,7 +3979,7 @@ msgstr ""
 "a Proc, or a string holding `%d`, so there is no general way to recognise "
 "one in reverse. Whether the path part exists on disk decides instead."
 
-#: src/usage/ruby_rails.md:214
+#: src/usage/ruby_rails.md:215
 msgid ""
 "指し直したあとの形は`sghtmltopdf_image_tag`と同じで、`base_url`の下なら相対パ"
 "ス、読める場所にあれば絶対パス、読めなければ`data:`URIです。"
@@ -3975,7 +3988,7 @@ msgstr ""
 "relative to `base_url` when the file sits under it, an absolute path when "
 "the engine may read it elsewhere, and a `data:` URI when it may not."
 
-#: src/usage/ruby_rails.md:216
+#: src/usage/ruby_rails.md:217
 msgid ""
 "`sghtmltopdf_image_tag`は画像をパスで指します。 `base_url`の下にあれば相対パ"
 "ス、そうでなければ絶対パスです。 エンジンは`base_url`から解決できない絶対パス"
@@ -3988,7 +4001,7 @@ msgstr ""
 "`base_url`, so a file in `app/assets` in development can be pointed at as it "
 "is."
 
-#: src/usage/ruby_rails.md:220
+#: src/usage/ruby_rails.md:221
 msgid ""
 "パスで指せるのはエンジンがそこを読める場合だけなので、`allow_path`(未設定なら"
 "`base_url`)の外にあるファイルは`data:`URIとして埋め込みます。 取得の失敗は既"
@@ -4003,15 +4016,15 @@ msgstr ""
 "The same goes for delegating to another process with `server_url`, which may "
 "not be looking at this filesystem."
 
-#: src/usage/ruby_rails.md:224
+#: src/usage/ruby_rails.md:225
 msgid "`inline: true`を渡すと常に埋め込みます。"
 msgstr "Pass `inline: true` to embed unconditionally."
 
-#: src/usage/ruby_rails.md:226
+#: src/usage/ruby_rails.md:227
 msgid "サーバへ委譲する"
 msgstr "Delegating to a server"
 
-#: src/usage/ruby_rails.md:228
+#: src/usage/ruby_rails.md:229
 msgid ""
 "`server_url`を指定すると、変換を[HTTPサーバモード](../server/index.md)で動く "
 "別プロセスへ投げます。 アプリのCPUを使いたくない場合や、gemの対応プラット"
@@ -4022,21 +4035,21 @@ msgstr ""
 "the application's CPU on rendering, or when you run somewhere the gem does "
 "not support."
 
-#: src/usage/ruby_rails.md:234 src/migration/wicked-pdf.md:165
+#: src/usage/ruby_rails.md:235 src/migration/wicked-pdf.md:165
 msgid "\"http://pdf.internal:8080\""
 msgstr "\"http://pdf.internal:8080\""
 
-#: src/usage/ruby_rails.md:237
+#: src/usage/ruby_rails.md:238
 msgid "# 委譲される\n"
 msgstr "# delegated\n"
 
-#: src/usage/ruby_rails.md:240
+#: src/usage/ruby_rails.md:241
 msgid "URLは1つだけです。負荷分散はLB(nginx・k8s Service)を前段に置く前提です"
 msgstr ""
 "Only one URL is accepted. Load balancing is expected to be handled by "
 "something in front, such as nginx or a Kubernetes Service"
 
-#: src/usage/ruby_rails.md:241
+#: src/usage/ruby_rails.md:242
 msgid ""
 "到達できないときはローカルへフォールバックしません(`ServerError`)。 サーバ起"
 "動時にだけ指定できるフォントが効かず、出力が変わってしまうためです"
@@ -4045,7 +4058,7 @@ msgstr ""
 "it raises `ServerError`. Fonts can only be set when the server starts, so "
 "falling back would silently change the output"
 
-#: src/usage/ruby_rails.md:243
+#: src/usage/ruby_rails.md:244
 msgid ""
 "HTTPのステータスは上のエラー分類へ対応します(400→`UsageError`、"
 "413→`InputError`、500→`RenderError`、その他→`ServerError`)"
@@ -4053,11 +4066,11 @@ msgstr ""
 "The HTTP statuses map onto the error classes above: 400 to `UsageError`, 413 "
 "to `InputError`, 500 to `RenderError`, and anything else to `ServerError`"
 
-#: src/usage/ruby_rails.md:245
+#: src/usage/ruby_rails.md:246
 msgid "サーバでは指定できないオプション"
 msgstr "Options that cannot be set against a server"
 
-#: src/usage/ruby_rails.md:247
+#: src/usage/ruby_rails.md:248
 msgid ""
 "ローカルパスを取るものと出力先・アクセス制御はサーバ起動時にしか設定できませ"
 "ん(指定すると`UsageError`)。"
@@ -4066,7 +4079,7 @@ msgstr ""
 "controls can only be set when the server starts; passing them raises "
 "`UsageError`."
 
-#: src/usage/ruby_rails.md:257
+#: src/usage/ruby_rails.md:258
 msgid ""
 "Railtieが入れる`base_url`/`allow_path`の既定値は自動的に外れるので、Railsでそ"
 "のまま`server_url`を足しても400にはなりません。 `configure`で明示的に設定して"
@@ -4077,11 +4090,11 @@ msgstr ""
 "a 400. If you set them explicitly with `configure`, move them to the "
 "server's startup options."
 
-#: src/usage/ruby_rails.md:260
+#: src/usage/ruby_rails.md:261
 msgid "チャンクごとに受け取る"
 msgstr "Receiving the PDF in chunks"
 
-#: src/usage/ruby_rails.md:262
+#: src/usage/ruby_rails.md:263
 msgid ""
 "ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとにブロックが"
 "呼ばれます(返り値は`nil`)。 Rackの`response.stream`へ流したり、S3のマルチパー"
@@ -4091,7 +4104,7 @@ msgstr ""
 "assembled and returned; the return value is `nil`. This is the hook for "
 "writing into Rack's `response.stream` or feeding an S3 multipart upload."
 
-#: src/usage/ruby_rails.md:269
+#: src/usage/ruby_rails.md:270
 msgid ""
 "ローカル変換でもサーバ委譲でも、PDF全体が組み上がるのを待たずに書き出せま"
 "す。 ローカルは確定したページから順に、サーバはその`?stream=1`(chunked "
@@ -4102,7 +4115,7 @@ msgstr ""
 "is finalised; with a server, its `?stream=1` response, sent with chunked "
 "transfer encoding, is passed straight through."
 
-#: src/usage/ruby_rails.md:272
+#: src/usage/ruby_rails.md:273
 msgid ""
 "ただし逐次になるのはPDFの書き出しだけで、HTMLのパースとレイアウトは文書全体に"
 "対して先に行います。 そのため最初のチャンクが届くのは変換の終盤で、ピークメモ"
@@ -4115,7 +4128,7 @@ msgstr ""
 "block. To have pages finalised while the HTML is still being read, combine "
 "this with [streaming mode](#when-you-need-to-keep-memory-down)."
 
-#: src/usage/ruby_rails.md:276
+#: src/usage/ruby_rails.md:277
 msgid ""
 "1回に渡すバイト数の目安は`chunk_size:`で変えられます(既定64KiB、ローカル変換"
 "のみ)。 小さくすると細かく届きますが、そのたびにGVLを取り直すのでレンダリング"
@@ -4126,11 +4139,11 @@ msgstr ""
 "more finely, but the GVL has to be reacquired each time, which slows "
 "rendering down."
 
-#: src/usage/ruby_rails.md:283
+#: src/usage/ruby_rails.md:284
 msgid "`Thread#kill`とタイムアウトが効く"
 msgstr "`Thread#kill` and timeouts work"
 
-#: src/usage/ruby_rails.md:285
+#: src/usage/ruby_rails.md:286
 msgid ""
 "ブロックの呼び出しはRubyのメソッド呼び出しなので、その時点で保留中の割り込み"
 "が処理されます。 ブロック付きで呼んでいる限り、`Thread#kill`や`Timeout."
@@ -4140,11 +4153,11 @@ msgstr ""
 "is handled at that point. As long as you pass a block, `Thread#kill`, "
 "`Timeout.timeout`, and `Rack::Timeout` all take effect at chunk boundaries."
 
-#: src/usage/ruby_rails.md:290
+#: src/usage/ruby_rails.md:291
 msgid "# 10秒で中断できる\n"
 msgstr "# can be interrupted after 10 seconds\n"
 
-#: src/usage/ruby_rails.md:294
+#: src/usage/ruby_rails.md:295
 msgid ""
 "ブロックを渡さない`render`/`render_to_file`は変換の間まったくRubyへ戻らないた"
 "め、途中で止められません。 長い変換に上限をかけたい場合はブロック付きで呼んで"
@@ -4154,11 +4167,11 @@ msgstr ""
 "the conversion and therefore cannot be stopped part way. To put a limit on a "
 "long conversion, call them with a block."
 
-#: src/usage/ruby_rails.md:297
+#: src/usage/ruby_rails.md:298
 msgid "Railsで逐次返却する"
 msgstr "Streaming the response from Rails"
 
-#: src/usage/ruby_rails.md:299
+#: src/usage/ruby_rails.md:300
 msgid ""
 "`render pdf:`のレンダラは、組み上がったPDFを`send_data`で一括返却します。 確"
 "定したページから順に返したい場合は`ActionController::Live`と組み合わせます。"
@@ -4167,15 +4180,15 @@ msgstr ""
 "`send_data`. To send pages as they are finalised, combine it with "
 "`ActionController::Live`."
 
-#: src/usage/ruby_rails.md:307
+#: src/usage/ruby_rails.md:308
 msgid "\"Content-Type\""
 msgstr "\"Content-Type\""
 
-#: src/usage/ruby_rails.md:307 src/usage/ruby_rails.md:326
+#: src/usage/ruby_rails.md:308 src/usage/ruby_rails.md:327
 msgid "\"application/pdf\""
 msgstr "\"application/pdf\""
 
-#: src/usage/ruby_rails.md:316
+#: src/usage/ruby_rails.md:317
 msgid ""
 "途中まで書き出したあとに失敗すると、クライアントには壊れたPDFが届きます(ヘッ"
 "ダは既に送信済みなのでステータスを変えられません)。 サーバモードの`?stream=1`"
@@ -4185,11 +4198,11 @@ msgstr ""
 "broken PDF, because the headers have already gone out and the status can no "
 "longer be changed. This is the same property as `?stream=1` in server mode."
 
-#: src/usage/ruby_rails.md:319
+#: src/usage/ruby_rails.md:320
 msgid "S3へ直接上げる"
 msgstr "Uploading straight to S3"
 
-#: src/usage/ruby_rails.md:321
+#: src/usage/ruby_rails.md:322
 msgid ""
 "gemはS3向けの実装を持ちません(依存を増やさず、書き方も短いためです)。 マルチ"
 "パートアップロードは最後のパート以外は5MB以上という制約があるので、溜めてから"
@@ -4199,20 +4212,20 @@ msgstr ""
 "the code is short anyway. A multipart upload requires every part except the "
 "last to be at least 5MB, so buffer before sending."
 
-#: src/usage/ruby_rails.md:327
+#: src/usage/ruby_rails.md:328
 msgid "\"\""
 msgstr "\"\""
 
-#: src/usage/ruby_rails.md:350
+#: src/usage/ruby_rails.md:351
 msgid "小さいPDFなら`put_object(body: Sghtmltopdf.render(html))`で十分です。"
 msgstr ""
 "For a small PDF, `put_object(body: Sghtmltopdf.render(html))` is enough."
 
-#: src/usage/ruby_rails.md:352
+#: src/usage/ruby_rails.md:353
 msgid "メモリを抑えたいとき"
 msgstr "When you need to keep memory down"
 
-#: src/usage/ruby_rails.md:354
+#: src/usage/ruby_rails.md:355
 msgid ""
 "数万要素規模のHTMLでは、エンジンの[ストリーミングモード](./cli/streaming.md)"
 "を使うとメモリが大きく減ります(実測: 60,000要素で 228MB → 28MB。[メモリと処理"
@@ -4223,7 +4236,7 @@ msgstr ""
 "goes from 228MB to 28MB. See [Memory and processing time](./cli/streaming."
 "md#memory-and-processing-time)."
 
-#: src/usage/ruby_rails.md:360
+#: src/usage/ruby_rails.md:361
 msgid ""
 "その代わり、`<body>`より後の`<style>`などが使えません。 `toc`・"
 "`counter(pages)`・`[topage]`は、総ページ数が確定してから目次と装飾を描画する"
@@ -4760,10 +4773,14 @@ msgstr ""
 
 #: src/supports/properties.md:24
 msgid "`overflow`"
-msgstr "`overflow`"
+msgstr ""
+"Anything other than `visible`, that is `hidden`, `scroll`, and `auto`, clips "
+"alike; they are not told apart. The clip area is the padding box, and with "
+"`border-radius` it follows the rounded padding edge, whose radius is reduced "
+"by the border width. There is no notion of a scrollbar. `overflow-x` and "
+"`overflow-y` are not supported"
 
 #: src/supports/properties.md:24
-#, fuzzy
 msgid ""
 "`visible`以外(`hidden`/`scroll`/`auto`)は区別せず一律クリップ。クリップ領域は"
 "padding boxで、`border-radius`があればborderの太さだけ半径を小さくした角丸"
@@ -4771,8 +4788,10 @@ msgid ""
 "非対応"
 msgstr ""
 "Anything other than `visible`, that is `hidden`, `scroll`, and `auto`, clips "
-"alike; they are not told apart. There is no notion of a scrollbar. `overflow-"
-"x` and `overflow-y` are not supported"
+"alike; they are not told apart. The clip area is the padding box, and with "
+"`border-radius` it follows the rounded padding edge, whose radius is reduced "
+"by the border width. There is no notion of a scrollbar. `overflow-x` and "
+"`overflow-y` are not supported"
 
 #: src/supports/properties.md:25
 msgid "`opacity`"
@@ -5067,10 +5086,16 @@ msgstr "`currentcolor` by default"
 
 #: src/supports/properties.md:55
 msgid "`border-radius`"
-msgstr "`border-radius`"
+msgstr ""
+"One to four values, plus the elliptical syntax with `/`. Percentages are not "
+"supported; `<length>` only. When the four sides do not share the same width, "
+"style, and colour, the rounding is abandoned and four straight sides are "
+"drawn instead. Combining it with `groove`, `ridge`, `inset`, or `outset` "
+"falls back in the same way. Background images, `overflow` clipping, and "
+"`<img>` images are clipped to the rounded corners as well (CSS Backgrounds 3 "
+"§ 5.3)"
 
 #: src/supports/properties.md:55
-#, fuzzy
 msgid ""
 "1〜4値+`/`区切りの楕円構文に対応。パーセンテージ指定は非対応(`<length>`の"
 "み)。4辺の太さ・スタイル・色が揃っていない場合は角丸を諦めて直線4辺へフォール"
@@ -5082,7 +5107,9 @@ msgstr ""
 "supported; `<length>` only. When the four sides do not share the same width, "
 "style, and colour, the rounding is abandoned and four straight sides are "
 "drawn instead. Combining it with `groove`, `ridge`, `inset`, or `outset` "
-"falls back in the same way"
+"falls back in the same way. Background images, `overflow` clipping, and "
+"`<img>` images are clipped to the rounded corners as well (CSS Backgrounds 3 "
+"§ 5.3)"
 
 #: src/supports/properties.md:56
 msgid "`border-top-left-radius`ほか3隅"
@@ -5686,6 +5713,8 @@ msgid ""
 "`border-radius`を指定した場合、`background-image`も背景色と同じ角丸(border "
 "edge)でクリップする。"
 msgstr ""
+"With `border-radius`, `background-image` is clipped to the same rounded "
+"corners (the border edge) as the background colour."
 
 #: src/supports/properties.md:126
 msgid "テーブル"
@@ -8232,6 +8261,9 @@ msgid ""
 "`padding`がある場合は、その分だけ半径を小さくした内側の角丸(content edge)に沿"
 "います"
 msgstr ""
+"With `border-radius`, the image is clipped to rounded corners. When there is "
+"a `border` or `padding`, it follows the inner rounded corners (the content "
+"edge), whose radius is reduced by that amount"
 
 #: src/supports/images.md:176
 msgid "`object-fit` / `object-position`"
@@ -8267,6 +8299,8 @@ msgstr ""
 msgid ""
 "`border-radius`を指定すると、背景画像は背景色と同じ角丸でクリップされます。"
 msgstr ""
+"With `border-radius`, a background image is clipped to the same rounded "
+"corners as the background colour."
 
 #: src/supports/images.md:206
 msgid "リモート画像の取得"
@@ -10933,6 +10967,11 @@ msgstr ""
 "Embedding a JavaScript engine remains something to consider if the need "
 "arises. Items above that are not deliberate non-goals, such as PDF outlines, "
 "may well be supported later."
+
+#~ msgid "余白に入りきらない分はクリップされます(マージンは自動で広がりません)"
+#~ msgstr ""
+#~ "Anything that does not fit in the margin is clipped; the margin does not "
+#~ "grow to accommodate it"
 
 #~ msgid "`counter(pages)` / ヘッダー・フッターの`[topage]`"
 #~ msgstr "`counter(pages)`, and `[topage]` in headers and footers"
