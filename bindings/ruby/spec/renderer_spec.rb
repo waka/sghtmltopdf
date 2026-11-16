@@ -66,7 +66,7 @@ RSpec.describe Sghtmltopdf::Renderer do
 
   describe "#send_data_options" do
     it "returns the PDF Content-Type and the file name" do
-      expect(renderer.send_data_options)
+      expect(renderer.send_data_options(encoding: Encoding::Shift_JIS))
         .to eq(type: "application/pdf", disposition: "inline", filename: "invoice.pdf")
     end
 
@@ -77,6 +77,11 @@ RSpec.describe Sghtmltopdf::Renderer do
     it "returns HTML with show_as_html (and no file name)" do
       expect(renderer(show_as_html: true).send_data_options)
         .to eq(type: "text/html", disposition: "inline")
+    end
+
+    it "includes the HTML encoding when supplied" do
+      expect(renderer(show_as_html: true).send_data_options(encoding: Encoding::Shift_JIS))
+        .to eq(type: "text/html; charset=Shift_JIS", disposition: "inline")
     end
   end
 

@@ -162,7 +162,7 @@ RSpec.describe "a Rails controller", type: :rails do
     it "returns HTML with show_as_html" do
       get "/invoices/as_html"
 
-      expect(last_response.headers["content-type"]).to start_with("text/html")
+      expect(last_response.headers["content-type"]).to eq("text/html; charset=utf-8")
       expect(last_response.body).to include("<h1>Invoice #1234</h1>")
     end
 
