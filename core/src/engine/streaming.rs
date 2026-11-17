@@ -30,8 +30,8 @@ use crate::layout::{
     PositionedKind, PositionedLeftovers, StreamingPaginator, TopLevelKind,
 };
 use crate::pdf::{
-    anchor_destination_name, ImageAssetCache, LinkSettings, PageRole, PreparedImage,
-    StreamingPdfWriter, SvgFontDb,
+    anchor_destination_name, collect_tag_roles_in_subtree, ImageAssetCache, LinkSettings, PageRole,
+    PreparedImage, StreamingPdfWriter, SvgFontDb,
 };
 use crate::sink::Sink;
 use crate::style::{
@@ -361,14 +361,6 @@ impl<S: Sink> Engine<S> {
         };
         let _ = html_style;
 
-        if self.options.output.tagged {
-            return Err(EngineError::UnsupportedInStreamingMode(
-                "a tagged PDF cannot be written in streaming mode\n  \
-                 (the structure tree needs the document's elements, which streaming frees as it goes).\n  \
-                 To use it, drop --streaming",
-            ));
-        }
-
         let body_border = resolve_border(&body_style);
         if has_visible_decoration(&body_style, &body_border) {
             return Err(EngineError::UnsupportedInStreamingMode(
@@ -429,7 +421,8 @@ impl<S: Sink> Engine<S> {
                 bookmarks: HashMap::new(),
             },
             output,
-            // Tagging is refused in streaming mode above.
+            // Tag roles are added one top-level element at a time, as each
+            // is processed (see `process_top_level_element`).
             HashMap::new(),
         )
         .map_err(EngineError::Io)?;
@@ -552,6 +545,13 @@ impl<S: Sink> Engine<S> {
                 &sub_styles,
                 &mut state.warned_uncovered_chars,
             );
+            // The tag roles too: this subtree is freed after layout, so they
+            // are collected now and retained by the writer's tagger.
+            if options.output.tagged {
+                state
+                    .writer
+                    .add_tag_roles(collect_tag_roles_in_subtree(&dom, node));
+            }
             // Read here, while the subtree's text and attributes are still in the DOM.
             state.writer.add_bookmarks(collect_bookmarks(
                 &dom,
@@ -950,6 +950,9 @@ impl<S: Sink> Engine<S> {
                     // body's anchors or bookmarks.
                     writer.replace_anchor_names(HashMap::new());
                     writer.clear_bookmarks();
+                    // The TOC is a separate document whose `NodeId`s alias the
+                    // body's, so its pages are not tagged.
+                    writer.suspend_tagging();
                     let total = numbering.total_pages()?;
                     for (index, page) in toc_pages.iter().enumerate() {
                         check_deadline(self.options.deadline)?;
@@ -959,6 +962,7 @@ impl<S: Sink> Engine<S> {
                             .write_page(page, &toc_styles, &HashMap::new(), &fonts, Some(total))
                             .map_err(EngineError::Io)?;
                     }
+                    writer.resume_tagging();
                 }
                 let deferred_overlays =
                     self.options.toc.enabled || self.options.header_footer_html.uses_total_pages();

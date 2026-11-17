@@ -1677,7 +1677,8 @@ msgid ""
 msgstr ""
 "Write a tagged PDF: a structure tree of headings, paragraphs, lists, tables, "
 "links and images with alt text, with headers, footers and backgrounds marked "
-"as `Artifact`. It cannot be combined with `--streaming`"
+"as `Artifact`. It can be combined with `--streaming` (the structure tree "
+"is retained until the end of the document)"
 
 #: src/usage/cli/reference.md:97
 msgid ""
