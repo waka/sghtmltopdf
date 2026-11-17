@@ -62,6 +62,19 @@ RSpec.describe "PDF controller rendering" do
     expect(Sghtmltopdf).not_to have_received(:render)
   end
 
+  {"UTF-8" => "utf-8", "Shift_JIS" => "shift_jis"}.each do |encoding, charset|
+    it "serves the rendered #{encoding} HTML with a matching charset" do
+      html = "<h1>請求書</h1>".encode(encoding)
+      allow(controller).to receive(:render_to_string).with(template: "invoices/show").and_return(html)
+
+      controller.render(pdf: "invoice", template: "invoices/show", show_as_html: true)
+
+      expect(controller.content_type).to eq("text/html; charset=#{charset}")
+      expect(controller.response_body.join.b).to eq(html.b)
+      expect(Sghtmltopdf).not_to have_received(:render)
+    end
+  end
+
   it "delegates ordinary render_to_string to Rails" do
     expect(controller.render_to_string(inline: "Invoice")).to eq("Invoice")
     expect(controller.response_body).to be_nil

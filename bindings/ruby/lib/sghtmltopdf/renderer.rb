@@ -56,7 +56,7 @@ module Sghtmltopdf
       ::ActionController::Renderers.add(:pdf) do |name, options|
         renderer = ::Sghtmltopdf::Renderer.new(name, options, default_name: action_name)
         html = render_to_string(**renderer.render_options)
-        send_data(renderer.body_for(html), **renderer.send_data_options)
+        send_data(renderer.body_for(html), **renderer.send_data_options(encoding: html.encoding))
       end
     end
 
@@ -76,8 +76,10 @@ module Sghtmltopdf
       show_as_html? ? html : Sghtmltopdf.render(html, **convert_options)
     end
 
-    def send_data_options
-      opts = {type: content_type, disposition: disposition}
+    def send_data_options(encoding: nil)
+      type = content_type
+      type = "#{type}; charset=#{encoding.name}" if show_as_html? && encoding
+      opts = {type: type, disposition: disposition}
       opts[:filename] = filename unless show_as_html?
       opts[:status] = options[:status] if options.key?(:status)
       opts

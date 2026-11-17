@@ -1,0 +1,1 @@
+Rails `show_as_html` responses now declare the rendered HTML's character encoding in `Content-Type`, preventing Japanese and other non-ASCII text from being misdecoded when the HTML has no charset declaration.
