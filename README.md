@@ -165,7 +165,7 @@ To keep the server around next to your app, Compose is the shortest route the im
 ```yaml
 services:
   pdf:
-    image: ghcr.io/waka/sghtmltopdf:0.1
+    image: ghcr.io/waka/sghtmltopdf:0.8
     ports: ["8080:8080"]
     healthcheck:
       test: ["CMD", "sghtmltopdf", "--version"]
@@ -174,6 +174,8 @@ services:
 
 `curl` is not in the image, so the health check uses `--version`; hit `GET /healthz` from the outside (a load balancer, say) if you want the server itself checked.
 Point the Ruby side at it with `Sghtmltopdf.configure { |c| c.server_url = "http://pdf:8080" }`, and add `--font` and a mounted volume to the service's `command` if you need fonts other than the bundled ones.
+Every release (a `v*` tag) publishes the image under the same version as the gem: `0.8.0`, `0.8` and `latest`, with `edge` following `main`.
+To run the gem inside your own Ruby image instead, see [Using with Docker](https://waka.github.io/sghtmltopdf/en/usage/ruby_rails.html#using-with-docker).
 
 ### Rust
 

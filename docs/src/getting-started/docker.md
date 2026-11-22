@@ -10,6 +10,20 @@ docker pull ghcr.io/waka/sghtmltopdf:latest
 対応プラットフォームは`linux/amd64`と`linux/arm64`(どちらもglibc。Alpine等のmuslは対象外)です。
 同じタグでどちらも引けます。
 
+## タグ
+
+リリース(`v*`のタグ)のたびに、gemと同じバージョンでイメージが公開されます。
+
+| タグ | 内容 |
+|---|---|
+| `latest` | 最新のリリース |
+| `0.8.0` | そのリリース |
+| `0.8` | 0.8系の最新のパッチリリース |
+| `edge` | `main`の最新(リリース前) |
+| `sha-<コミット>` | そのコミット(`main`のものだけ) |
+
+本番では`latest`や`edge`ではなく、`0.8`のようにバージョンを固定することをおすすめします。
+
 ## サーバとして使う
 
 引数なしで起動すると[HTTPサーバ](../usage/server.md)になります。
@@ -42,7 +56,7 @@ docker run --rm -p 8080:8080 ghcr.io/waka/sghtmltopdf \
 ```yaml
 services:
   pdf:
-    image: ghcr.io/waka/sghtmltopdf:0.1
+    image: ghcr.io/waka/sghtmltopdf:0.8
     ports: ["8080:8080"]
     healthcheck:
       test: ["CMD", "sghtmltopdf", "--version"]
@@ -50,6 +64,8 @@ services:
 ```
 
 `curl`はイメージに入っていないので、ヘルスチェックは`--version`で代用するか、外側(ロードバランサ等)から`GET /healthz`を叩いてください。
+
+RubyのアプリからこのサーバへPDF変換を任せる設定は、[Ruby / RailsのDockerで使う](../usage/ruby_rails.md#dockerで使う)にあります。
 
 ## CLIとして使う
 

@@ -2,7 +2,7 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: sghtmltopdf\n"
-"POT-Creation-Date: 2026-11-15T17:27:21+09:00\n"
+"POT-Creation-Date: 2026-11-22T18:04:24+02:00\n"
 "PO-Revision-Date: \n"
 "Last-Translator: \n"
 "Language-Team: \n"
@@ -529,8 +529,9 @@ msgstr ""
 msgid "# Gemfile\n"
 msgstr ""
 
-#: src/getting-started/install.md:58 src/getting-started/docker.md:48
-#: src/usage/ruby_rails.md:16 src/migration/wicked-pdf.md:14
+#: src/getting-started/install.md:58 src/getting-started/docker.md:62
+#: src/usage/ruby_rails.md:16 src/usage/ruby_rails.md:328
+#: src/migration/wicked-pdf.md:14
 msgid "\"sghtmltopdf\""
 msgstr ""
 
@@ -584,113 +585,177 @@ msgid ""
 "同じタグでどちらも引けます。"
 msgstr ""
 
-#: src/getting-started/docker.md:13
-msgid "サーバとして使う"
+#: src/getting-started/docker.md:13 src/getting-started/docker.md:17
+msgid "タグ"
 msgstr ""
 
 #: src/getting-started/docker.md:15
-msgid "引数なしで起動すると[HTTPサーバ](../usage/server.md)になります。"
+msgid "リリース(`v*`のタグ)のたびに、gemと同じバージョンでイメージが公開されます。"
+msgstr ""
+
+#: src/getting-started/docker.md:17 src/getting-started/docker.md:109
+#: src/usage/rust.md:133 src/migration/wkhtmltopdf-options.md:153
+msgid "内容"
+msgstr ""
+
+#: src/getting-started/docker.md:19
+msgid "`latest`"
+msgstr ""
+
+#: src/getting-started/docker.md:19
+msgid "最新のリリース"
+msgstr ""
+
+#: src/getting-started/docker.md:20
+msgid "`0.8.0`"
+msgstr ""
+
+#: src/getting-started/docker.md:20
+msgid "そのリリース"
+msgstr ""
+
+#: src/getting-started/docker.md:21 src/usage/cli/reference.md:199
+msgid "`0.8`"
+msgstr ""
+
+#: src/getting-started/docker.md:21
+msgid "0.8系の最新のパッチリリース"
+msgstr ""
+
+#: src/getting-started/docker.md:22
+msgid "`edge`"
+msgstr ""
+
+#: src/getting-started/docker.md:22
+msgid "`main`の最新(リリース前)"
+msgstr ""
+
+#: src/getting-started/docker.md:23
+msgid "`sha-<コミット>`"
+msgstr ""
+
+#: src/getting-started/docker.md:23
+msgid "そのコミット(`main`のものだけ)"
+msgstr ""
+
+#: src/getting-started/docker.md:25
+msgid "本番では`latest`や`edge`ではなく、`0.8`のようにバージョンを固定することをおすすめします。"
 msgstr ""
 
 #: src/getting-started/docker.md:27
+msgid "サーバとして使う"
+msgstr ""
+
+#: src/getting-started/docker.md:29
+msgid "引数なしで起動すると[HTTPサーバ](../usage/server.md)になります。"
+msgstr ""
+
+#: src/getting-started/docker.md:41
 msgid ""
 "コンテナの中では`--listen 0.0.0.0:8080`で待ち受けます。 "
 "サーバモードの既定は`127.0.0.1`(何も設定しないまま外部公開されるのを防ぐため)ですが、それだとコンテナの外から届かないので、イメージ側の`CMD`で明示しています。"
 msgstr ""
 
-#: src/getting-started/docker.md:30
+#: src/getting-started/docker.md:44
 msgid "起動オプションを変えたいときは、`server`から書き直します。"
 msgstr ""
 
-#: src/getting-started/docker.md:37 src/usage/server.md:35
+#: src/getting-started/docker.md:51 src/usage/server.md:35
 msgid "認証とTLSは持ちません。 外部へ公開する場合はリバースプロキシを前段に置いてください。"
 msgstr ""
 
-#: src/getting-started/docker.md:40
+#: src/getting-started/docker.md:54
 msgid "docker compose"
 msgstr ""
 
-#: src/getting-started/docker.md:43
+#: src/getting-started/docker.md:57 src/usage/ruby_rails.md:318
 msgid "services"
 msgstr ""
 
-#: src/getting-started/docker.md:44
+#: src/getting-started/docker.md:58 src/usage/ruby_rails.md:323
+#: src/usage/ruby_rails.md:324
 msgid "pdf"
 msgstr ""
 
-#: src/getting-started/docker.md:45
+#: src/getting-started/docker.md:59 src/usage/ruby_rails.md:325
 msgid "image"
 msgstr ""
 
-#: src/getting-started/docker.md:45
-msgid "ghcr.io/waka/sghtmltopdf:0.1"
+#: src/getting-started/docker.md:59 src/usage/ruby_rails.md:325
+msgid "ghcr.io/waka/sghtmltopdf:0.8"
 msgstr ""
 
-#: src/getting-started/docker.md:46
+#: src/getting-started/docker.md:60
 msgid "ports"
 msgstr ""
 
-#: src/getting-started/docker.md:46
+#: src/getting-started/docker.md:60
 msgid "\"8080:8080\""
 msgstr ""
 
-#: src/getting-started/docker.md:47
+#: src/getting-started/docker.md:61
 msgid "healthcheck"
 msgstr ""
 
-#: src/getting-started/docker.md:48
+#: src/getting-started/docker.md:62 src/usage/ruby_rails.md:328
 msgid "test"
 msgstr ""
 
-#: src/getting-started/docker.md:48
+#: src/getting-started/docker.md:62 src/usage/ruby_rails.md:328
 msgid "\"CMD\""
 msgstr ""
 
-#: src/getting-started/docker.md:48
+#: src/getting-started/docker.md:62 src/usage/ruby_rails.md:328
 msgid "\"--version\""
 msgstr ""
 
-#: src/getting-started/docker.md:49
+#: src/getting-started/docker.md:63 src/usage/ruby_rails.md:329
 msgid "interval"
 msgstr ""
 
-#: src/getting-started/docker.md:49
+#: src/getting-started/docker.md:63 src/usage/ruby_rails.md:329
 msgid "30s"
 msgstr ""
 
-#: src/getting-started/docker.md:52
+#: src/getting-started/docker.md:66
 msgid ""
 "`curl`はイメージに入っていないので、ヘルスチェックは`--version`で代用するか、外側(ロードバランサ等)から`GET "
 "/healthz`を叩いてください。"
 msgstr ""
 
-#: src/getting-started/docker.md:54
+#: src/getting-started/docker.md:68
+msgid ""
+"RubyのアプリからこのサーバへPDF変換を任せる設定は、[Ruby / "
+"RailsのDockerで使う](../usage/ruby_rails.md#dockerで使う)にあります。"
+msgstr ""
+
+#: src/getting-started/docker.md:70
 msgid "CLIとして使う"
 msgstr ""
 
-#: src/getting-started/docker.md:56
+#: src/getting-started/docker.md:72
 msgid "`ENTRYPOINT`が実行ファイルそのものなので、引数を渡せばCLIとして動きます。"
 msgstr ""
 
-#: src/getting-started/docker.md:59 src/getting-started/docker.md:86
+#: src/getting-started/docker.md:75 src/getting-started/docker.md:102
 msgid "\"$PWD:/work\""
 msgstr ""
 
-#: src/getting-started/docker.md:59 src/getting-started/docker.md:86
+#: src/getting-started/docker.md:75 src/getting-started/docker.md:102
 msgid "\"$(id -u):$(id -g)\""
 msgstr ""
 
-#: src/getting-started/docker.md:63
+#: src/getting-started/docker.md:79
 msgid ""
 "コンテナはrootでは動きません(UID 10001)。 "
 "ホストのディレクトリへPDFを書き出すときは、上のように`--user`でホスト側の所有者に合わせてください。"
 msgstr ""
 
-#: src/getting-started/docker.md:66
+#: src/getting-started/docker.md:82
 msgid "同梱しているフォント"
 msgstr ""
 
-#: src/getting-started/docker.md:68
+#: src/getting-started/docker.md:84
 msgid ""
 "[BIZ UDPGothic](https://fonts.google.com/specimen/BIZ+UDPGothic)と[BIZ "
 "UDPMincho](https://fonts.google.com/specimen/BIZ+UDPMincho)のRegular・Bold(計4本、SIL "
@@ -698,112 +763,107 @@ msgid ""
 "ライセンス全文はイメージ内の`/usr/share/doc/sghtmltopdf/fonts/`にあります。"
 msgstr ""
 
-#: src/getting-started/docker.md:71
+#: src/getting-started/docker.md:87
 msgid "CSSの指定"
 msgstr ""
 
-#: src/getting-started/docker.md:71 src/supports/images.md:74
+#: src/getting-started/docker.md:87 src/supports/images.md:74
 msgid "使われるフォント"
 msgstr ""
 
-#: src/getting-started/docker.md:73
+#: src/getting-started/docker.md:89
 msgid "`font-family`未指定"
 msgstr ""
 
-#: src/getting-started/docker.md:73
+#: src/getting-started/docker.md:89
 msgid "BIZ UDPMincho(明朝)"
 msgstr ""
 
-#: src/getting-started/docker.md:74
+#: src/getting-started/docker.md:90
 msgid "`font-family: sans-serif`"
 msgstr ""
 
-#: src/getting-started/docker.md:74
+#: src/getting-started/docker.md:90
 msgid "BIZ UDPGothic(ゴシック)"
 msgstr ""
 
-#: src/getting-started/docker.md:75
+#: src/getting-started/docker.md:91
 msgid "`font-family: serif`"
 msgstr ""
 
-#: src/getting-started/docker.md:75
+#: src/getting-started/docker.md:91
 msgid "BIZ UDPMincho"
 msgstr ""
 
-#: src/getting-started/docker.md:76
+#: src/getting-started/docker.md:92
 msgid "`font-family: monospace`"
 msgstr ""
 
-#: src/getting-started/docker.md:76
+#: src/getting-started/docker.md:92
 msgid "等幅フォントは同梱していないため、BIZ UDPMinchoにフォールバック"
 msgstr ""
 
-#: src/getting-started/docker.md:77
+#: src/getting-started/docker.md:93
 msgid "`font-weight: bold`"
 msgstr ""
 
-#: src/getting-started/docker.md:77
+#: src/getting-started/docker.md:93
 msgid "各書体のBold(合成太字ではありません)"
 msgstr ""
 
-#: src/getting-started/docker.md:79
+#: src/getting-started/docker.md:95
 msgid ""
 "フォントが固定されているので、同じHTMLからは同じPDFが出ます(PDF内の作成日時を除く)。 "
 "ホストのフォント構成に出力が左右されないのがイメージを使う利点のひとつです。"
 msgstr ""
 
-#: src/getting-started/docker.md:82
+#: src/getting-started/docker.md:98
 msgid ""
 "別のフォントを使いたい場合は、マウントして[`--font`](../supports/fonts.md)で渡してください。 "
 "同梱フォントより優先されます。"
 msgstr ""
 
-#: src/getting-started/docker.md:91
+#: src/getting-started/docker.md:107
 msgid "イメージの中身"
 msgstr ""
 
-#: src/getting-started/docker.md:93
+#: src/getting-started/docker.md:109
 msgid "パス"
 msgstr ""
 
-#: src/getting-started/docker.md:93 src/usage/rust.md:133
-#: src/migration/wkhtmltopdf-options.md:153
-msgid "内容"
-msgstr ""
-
-#: src/getting-started/docker.md:95
+#: src/getting-started/docker.md:111
 msgid "`/usr/local/bin/sghtmltopdf`"
 msgstr ""
 
-#: src/getting-started/docker.md:95
+#: src/getting-started/docker.md:111
 msgid "実行ファイル"
 msgstr ""
 
-#: src/getting-started/docker.md:96
+#: src/getting-started/docker.md:112
 msgid "`/usr/share/fonts/truetype/sghtmltopdf/*.ttf`"
 msgstr ""
 
-#: src/getting-started/docker.md:96
+#: src/getting-started/docker.md:112
 msgid "同梱フォント"
 msgstr ""
 
-#: src/getting-started/docker.md:97
+#: src/getting-started/docker.md:113
 msgid "`/usr/share/doc/sghtmltopdf/fonts/OFL-*.txt`"
 msgstr ""
 
-#: src/getting-started/docker.md:97
+#: src/getting-started/docker.md:113
 msgid "フォントのライセンス"
 msgstr ""
 
-#: src/getting-started/docker.md:98
+#: src/getting-started/docker.md:114
 msgid "`/work`"
 msgstr ""
 
-#: src/getting-started/docker.md:98
+#: src/getting-started/docker.md:114
 msgid "既定の作業ディレクトリ"
 msgstr ""
 
-#: src/getting-started/docker.md:100
+#: src/getting-started/docker.md:116
 msgid ""
 "ベースは`debian:bookworm-slim`で、追加のシステムパッケージはありません(TLSのルート証明書は実行ファイルに埋め込まれているため`ca-certificates`も不要です)。"
 msgstr ""
@@ -1606,10 +1666,6 @@ msgstr ""
 
 #: src/usage/cli/reference.md:199
 msgid "`--toc-text-size-shrink <REAL>`"
-msgstr ""
-
-#: src/usage/cli/reference.md:199
-msgid "`0.8`"
 msgstr ""
 
 #: src/usage/cli/reference.md:199
@@ -2944,14 +3000,14 @@ msgstr ""
 msgid "# ファイル名(.pdfは自動で付く)\n"
 msgstr ""
 
-#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:309
+#: src/usage/ruby_rails.md:147 src/usage/ruby_rails.md:395
 #: src/migration/wicked-pdf.md:22 src/migration/wicked-pdf.md:89
 #: src/migration/wicked-pdf.md:103
 msgid "\"invoices/show\""
 msgstr ""
 
 #: src/usage/ruby_rails.md:148 src/usage/ruby_rails.md:185
-#: src/usage/ruby_rails.md:309 src/migration/wicked-pdf.md:22
+#: src/usage/ruby_rails.md:395 src/migration/wicked-pdf.md:22
 #: src/migration/wicked-pdf.md:135
 msgid "\"pdf\""
 msgstr ""
@@ -3205,107 +3261,236 @@ msgid ""
 msgstr ""
 
 #: src/usage/ruby_rails.md:261
-msgid "チャンクごとに受け取る"
+msgid "Dockerで使う"
 msgstr ""
 
 #: src/usage/ruby_rails.md:263
+msgid "方法は2つあります。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:265
+msgid "gemをアプリのイメージに入れて、同じコンテナの中で変換する"
+msgstr ""
+
+#: src/usage/ruby_rails.md:266
+msgid "[公式イメージ](../getting-started/docker.md)を別のコンテナで動かし、[サーバへ委譲](#サーバへ委譲する)する"
+msgstr ""
+
+#: src/usage/ruby_rails.md:268
+msgid "アプリのイメージにgemを入れる"
+msgstr ""
+
+#: src/usage/ruby_rails.md:270
+msgid ""
+"ビルド済みgemなので、イメージにRustもビルドツールも要りません。 "
+"公式の`ruby`イメージは、Debian系(`-slim`を含む)もAlpineもそのまま使えます。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:284
+msgid "つまずきやすい点が3つあります。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:286
+msgid ""
+"**`Gemfile.lock`にLinuxのプラットフォームを足す。** macOSやWindowsで`bundle "
+"install`したロックファイルは、その環境のプラットフォームしか含みません。 そのままLinuxのイメージで`bundle "
+"install`(`frozen`・`deployment`)すると、プラットフォームが合わず失敗します。 手元で足しておいてください。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:292
+msgid ""
+"# Alpineなら: bundle lock --add-platform x86_64-linux-musl aarch64-linux-musl\n"
+msgstr ""
+
+#: src/usage/ruby_rails.md:296
+msgid ""
+"**`force_ruby_platform`を有効にしない。** `BUNDLE_FORCE_RUBY_PLATFORM=1`や`bundle "
+"config set force_ruby_platform true`があると、ビルド済みgemではなくソースgemが選ばれます。 "
+"ソースgemはRustのコアを持たないので、ビルドを断って終了します。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:300
+msgid ""
+"**フォントを入れて明示する。** `ruby`イメージにはフォントが入っていません。 "
+"システムのフォントに任せると、日本語が豆腐(□)になったり、出力が環境によって変わったりします。 "
+"フォントファイルをイメージに入れ、[フォント](#フォント)のとおり設定してください。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:307
+msgid "\"/app/vendor/fonts/NotoSansJP-Regular.ttf\""
+msgstr ""
+
+#: src/usage/ruby_rails.md:308
+msgid "\"/app/vendor/fonts/NotoSerifJP-Regular.ttf\""
+msgstr ""
+
+#: src/usage/ruby_rails.md:312
+msgid "公式イメージを別コンテナで動かす"
+msgstr ""
+
+#: src/usage/ruby_rails.md:314
+msgid "アプリのCPUを変換に使わずに済み、フォントも公式イメージが持っているものをそのまま使えます。 Composeなら次のようになります。"
+msgstr ""
+
+#: src/usage/ruby_rails.md:319
+msgid "web"
+msgstr ""
+
+#: src/usage/ruby_rails.md:320
+msgid "build"
+msgstr ""
+
+#: src/usage/ruby_rails.md:321
+msgid "environment"
+msgstr ""
+
+#: src/usage/ruby_rails.md:322
+msgid "PDF_SERVER_URL"
+msgstr ""
+
+#: src/usage/ruby_rails.md:322
+msgid "http://pdf:8080"
+msgstr ""
+
+#: src/usage/ruby_rails.md:323
+msgid "depends_on"
+msgstr ""
+
+#: src/usage/ruby_rails.md:326
+msgid "# portsは公開しない。webからだけ、Composeのネットワーク越しに届く\n    healthcheck"
+msgstr ""
+
+#: src/usage/ruby_rails.md:333 src/migration/wicked-pdf.md:32
+msgid "# config/initializers/sghtmltopdf.rb\n"
+msgstr ""
+
+#: src/usage/ruby_rails.md:335
+msgid "\"PDF_SERVER_URL\""
+msgstr ""
+
+#: src/usage/ruby_rails.md:339
+msgid "gemとイメージは同じリリースから配布されます。バージョン(上の例なら`0.8`)を揃えてください"
+msgstr ""
+
+#: src/usage/ruby_rails.md:340
+msgid ""
+"`gothic_font`などのフォント指定はサーバでは指定できません(`UsageError`)。 "
+"`server_url`を使う環境では`configure`に書かず、サーバ側の`command`に`--font`を足してマウントしたフォントを渡します。 "
+"日本語は同梱フォント(BIZ UDPGothic / BIZ UDPMincho)で出るので、そのままで構いません"
+msgstr ""
+
+#: src/usage/ruby_rails.md:343
+msgid ""
+"サーバのコンテナからアプリのファイルは見えません。 画像やCSSはHTMLへ埋め込んでください(`sghtmltopdf_image_tag "
+"\"logo.png\", inline: true`、`sghtmltopdf_stylesheet_link_tag`など)"
+msgstr ""
+
+#: src/usage/ruby_rails.md:345
+msgid "認証とTLSはありません。ポートをホストへ公開せず、内部ネットワークだけに置いてください"
+msgstr ""
+
+#: src/usage/ruby_rails.md:347
+msgid "チャンクごとに受け取る"
+msgstr ""
+
+#: src/usage/ruby_rails.md:349
 msgid ""
 "ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとにブロックが呼ばれます(返り値は`nil`)。 "
 "Rackの`response.stream`へ流したり、S3のマルチパートアップロードへ繋いだりするための口です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:270
+#: src/usage/ruby_rails.md:356
 msgid ""
 "ローカル変換でもサーバ委譲でも、PDF全体が組み上がるのを待たずに書き出せます。 "
 "ローカルは確定したページから順に、サーバはその`?stream=1`(chunked transfer encoding)をそのまま流します。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:273
+#: src/usage/ruby_rails.md:359
 msgid ""
 "ただし逐次になるのはPDFの書き出しだけで、HTMLのパースとレイアウトは文書全体に対して先に行います。 "
 "そのため最初のチャンクが届くのは変換の終盤で、ピークメモリもブロックを渡さない場合と変わりません。 "
 "HTMLを読みながらページを確定させたい場合は[ストリーミングモード](#メモリを抑えたいとき)と併せて使ってください。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:277
+#: src/usage/ruby_rails.md:363
 msgid ""
 "1回に渡すバイト数の目安は`chunk_size:`で変えられます(既定64KiB、ローカル変換のみ)。 "
 "小さくすると細かく届きますが、そのたびにGVLを取り直すのでレンダリングは遅くなります。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:284
+#: src/usage/ruby_rails.md:370
 msgid "`Thread#kill`とタイムアウトが効く"
 msgstr ""
 
-#: src/usage/ruby_rails.md:286
+#: src/usage/ruby_rails.md:372
 msgid ""
 "ブロックの呼び出しはRubyのメソッド呼び出しなので、その時点で保留中の割り込みが処理されます。 "
 "ブロック付きで呼んでいる限り、`Thread#kill`や`Timeout.timeout`・`Rack::Timeout`がチャンク境界で効きます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:291
+#: src/usage/ruby_rails.md:377
 msgid "# 10秒で中断できる\n"
 msgstr ""
 
-#: src/usage/ruby_rails.md:295
+#: src/usage/ruby_rails.md:381
 msgid ""
 "ブロックを渡さない`render`/`render_to_file`は変換の間まったくRubyへ戻らないため、途中で止められません。 "
 "長い変換に上限をかけたい場合はブロック付きで呼んでください。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:298
+#: src/usage/ruby_rails.md:384
 msgid "Railsで逐次返却する"
 msgstr ""
 
-#: src/usage/ruby_rails.md:300
+#: src/usage/ruby_rails.md:386
 msgid ""
 "`render pdf:`のレンダラは、組み上がったPDFを`send_data`で一括返却します。 "
 "確定したページから順に返したい場合は`ActionController::Live`と組み合わせます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:308
+#: src/usage/ruby_rails.md:394
 msgid "\"Content-Type\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:308 src/usage/ruby_rails.md:327
+#: src/usage/ruby_rails.md:394 src/usage/ruby_rails.md:413
 msgid "\"application/pdf\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:317
+#: src/usage/ruby_rails.md:403
 msgid ""
 "途中まで書き出したあとに失敗すると、クライアントには壊れたPDFが届きます(ヘッダは既に送信済みなのでステータスを変えられません)。 "
 "サーバモードの`?stream=1`と同じ性質です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:320
+#: src/usage/ruby_rails.md:406
 msgid "S3へ直接上げる"
 msgstr ""
 
-#: src/usage/ruby_rails.md:322
+#: src/usage/ruby_rails.md:408
 msgid ""
 "gemはS3向けの実装を持ちません(依存を増やさず、書き方も短いためです)。 "
 "マルチパートアップロードは最後のパート以外は5MB以上という制約があるので、溜めてから上げます。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:328
+#: src/usage/ruby_rails.md:414
 msgid "\"\""
 msgstr ""
 
-#: src/usage/ruby_rails.md:351
+#: src/usage/ruby_rails.md:437
 msgid "小さいPDFなら`put_object(body: Sghtmltopdf.render(html))`で十分です。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:353
+#: src/usage/ruby_rails.md:439
 msgid "メモリを抑えたいとき"
 msgstr ""
 
-#: src/usage/ruby_rails.md:355
+#: src/usage/ruby_rails.md:441
 msgid ""
 "数万要素規模のHTMLでは、エンジンの[ストリーミングモード](./cli/streaming.md)を使うとメモリが大きく減ります(実測: "
 "60,000要素で 228MB → 28MB。[メモリと処理時間](./cli/streaming.md#メモリと処理時間))。"
 msgstr ""
 
-#: src/usage/ruby_rails.md:361
+#: src/usage/ruby_rails.md:447
 msgid ""
 "その代わり、`<body>`より後の`<style>`などが使えません。 "
 "`toc`・`counter(pages)`・`[topage]`は、総ページ数が確定してから目次と装飾を描画することで対応しています。 "
@@ -7818,10 +8003,6 @@ msgstr ""
 
 #: src/migration/wicked-pdf.md:29
 msgid "設定の置き場所"
-msgstr ""
-
-#: src/migration/wicked-pdf.md:32
-msgid "# config/initializers/sghtmltopdf.rb\n"
 msgstr ""
 
 #: src/migration/wicked-pdf.md:40

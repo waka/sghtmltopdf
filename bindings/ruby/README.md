@@ -146,6 +146,16 @@ Sghtmltopdf.configure { |c| c.server_url = "http://pdf:8080" }
 
 The [official Docker image](https://waka.github.io/sghtmltopdf/en/getting-started/docker.html) runs that server and bundles Japanese fonts.
 
+## Docker
+
+The precompiled gem installs in the official `ruby` images, Debian (including `-slim`) and Alpine alike, with no Rust or build tools. Three things to watch:
+
+- **Add the Linux platforms to `Gemfile.lock`.** A lockfile created on macOS or Windows lists only that platform, so `bundle install` in a Linux image fails. Run `bundle lock --add-platform x86_64-linux aarch64-linux` (for Alpine, `x86_64-linux-musl aarch64-linux-musl`).
+- **Do not enable `force_ruby_platform`.** It selects the source gem, which carries no Rust core and refuses to build.
+- **Put fonts in the image and set them.** The `ruby` images ship none, so Japanese text would render as tofu or depend on the host. Copy font files in and set `gothic_font` / `serif_font`.
+
+To keep rendering out of the app container, run the official image next to it and set `server_url`; the image bundles BIZ UDPGothic and BIZ UDPMincho. Font options cannot be sent to a server, so don't set `gothic_font` there. See [Using with Docker](https://waka.github.io/sghtmltopdf/en/usage/ruby_rails.html#using-with-docker) for a Compose example.
+
 ## License
 
 MIT License ([LICENSE](LICENSE)).
