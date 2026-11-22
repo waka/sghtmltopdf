@@ -6,6 +6,9 @@
 pub mod convert;
 mod converter;
 pub mod header_footer;
+/// Reading `multipart/form-data` request bodies (HTTP server mode).
+#[cfg(feature = "server")]
+mod multipart;
 pub mod options;
 /// HTTP server mode. Only available with the `server` feature (on by default).
 #[cfg(feature = "server")]
@@ -13,6 +16,9 @@ pub mod server;
 pub mod toc;
 pub mod units;
 pub mod unsupported;
+/// The files of a multipart request, in a directory of their own (HTTP server mode).
+#[cfg(feature = "server")]
+mod upload;
 
 use std::process::ExitCode;
 

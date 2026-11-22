@@ -1,7 +1,9 @@
 //! The `server` subcommand (HTTP server mode).
 //!
 //! * `POST /pdf?<the same option names as the CLI>` with raw HTML as the body
-//! * Only the keys listed in [`ALLOWED_QUERY_KEYS`] may appear in the query
+//! * `POST /pdf` with a `multipart/form-data` body: the document, the files it refers to, and
+//!   options (see [`super::upload`] for the form)
+//! * Only the keys listed in [`ALLOWED_QUERY_KEYS`] may appear in the query or as a form option
 
 use std::io::{Read, Write};
 use std::sync::mpsc;
@@ -13,7 +15,9 @@ use tiny_http::{Header, Request, Response, Server, StatusCode};
 
 use crate::sink::{MemorySink, Sink};
 
+use super::multipart::{self, ContentTypeError};
 use super::options::{Cli, ConvertArgs, ServerArgs};
+use super::upload::Upload;
 use super::ConvertError;
 
 /// Options allowed in the query string.
@@ -44,7 +48,8 @@ const ALLOWED_QUERY_KEYS: &[&str] = &[
     "keywords",
     "creator",
     "creation-date",
-    // Header/footer (text, styling, and inline HTML; HTML files cannot be specified)
+    // Header/footer (text, styling, and inline HTML; HTML files cannot be named, but a
+    // multipart request can upload `header.html` and `footer.html`)
     "header-html-content",
     "footer-html-content",
     "default-header",
@@ -269,52 +274,14 @@ fn respond_chunked(
     ctx: &ServerContext,
     deadline: Instant,
 ) -> Result<(), (u16, String)> {
-    let too_large = || {
-        (
-            413,
-            format!("the body exceeds the limit of {} bytes", ctx.max_body_size),
-        )
-    };
-    if let Some(len) = request.body_length() {
-        if len > ctx.max_body_size {
-            let _ = respond_text(request, 413, &too_large().1);
-            return Ok(());
-        }
-    }
-
-    let stripped = strip_stream_key(query);
-    let args = match build_convert_args(&stripped, &ctx.args).map(|mut a| {
-        a.deadline = Some(deadline);
-        a
-    }) {
-        Ok(args) => args,
-        Err(message) => {
-            let _ = respond_text(request, 400, &message);
+    let (args, job) = match prepare_stream(&mut request, query, ctx, deadline) {
+        Ok(prepared) => prepared,
+        Err((status, message)) => {
+            let _ = respond_text(request, status, &message);
             return Ok(());
         }
     };
     let fonts = ctx.args.font_specs();
-
-    let mut html = Vec::new();
-    let read = request
-        .as_reader()
-        .take(ctx.max_body_size as u64 + 1)
-        .read_to_end(&mut html);
-    match read {
-        Ok(_) if html.len() > ctx.max_body_size => {
-            let _ = respond_text(request, 413, &too_large().1);
-            return Ok(());
-        }
-        Ok(_) if html.is_empty() => {
-            let _ = respond_text(request, 400, "put the HTML in the request body");
-            return Ok(());
-        }
-        Ok(_) => {}
-        Err(e) => {
-            let _ = respond_text(request, 400, &format!("failed to read the body: {e}"));
-            return Ok(());
-        }
-    }
 
     let (pipe_reader, pipe_writer) = match std::io::pipe() {
         Ok(pair) => pair,
@@ -331,15 +298,26 @@ fn respond_chunked(
         .name("render-stream".to_string())
         .stack_size(crate::render_stack::STACK_SIZE)
         .spawn(move || {
-            if let Err(e) = super::convert::render_with(
-                &args,
-                &fonts,
-                std::io::Cursor::new(html),
-                PipeSink(pipe_writer),
-            ) {
+            let result = match &job {
+                Job::Html(html) => super::convert::render_with(
+                    &args,
+                    &fonts,
+                    std::io::Cursor::new(html),
+                    PipeSink(pipe_writer),
+                ),
+                Job::Upload(upload) => match std::fs::File::open(&upload.index) {
+                    Ok(file) => {
+                        super::convert::render_with(&args, &fonts, file, PipeSink(pipe_writer))
+                    }
+                    Err(e) => Err(ConvertError::Input(format!("cannot open index.html: {e}"))),
+                },
+            };
+            if let Err(e) = result {
                 // The headers have already been sent, so all we can do here is log.
                 eprintln!("error: the streamed response failed part-way through: {e}");
             }
+            // The uploaded files go away here, once nothing reads them any more.
+            drop(job);
         });
     if let Err(e) = spawned {
         let _ = respond_text(
@@ -411,18 +389,22 @@ fn render_request(
     ctx: &ServerContext,
     deadline: Instant,
 ) -> Result<Vec<u8>, (u16, String)> {
-    let too_large = || {
-        (
-            413,
-            format!("the body exceeds the limit of {} bytes", ctx.max_body_size),
-        )
-    };
-
     // If the body length is known, reject before reading anything.
     if let Some(len) = request.body_length() {
         if len > ctx.max_body_size {
-            return Err(too_large());
+            return Err(too_large(ctx));
         }
+    }
+
+    // A multipart request carries files as well as the HTML, so it takes its own path.
+    if let Some(boundary) = upload_boundary(request)? {
+        let upload = read_upload(request, &boundary, ctx)?;
+        let args = upload_convert_args(query, &upload, ctx, deadline)?;
+        let file = open_index(&upload)?;
+        let fonts = ctx.args.font_specs();
+        // `upload` stays alive until the rendering is done: its drop removes the files.
+        return super::convert::render_with(&args, &fonts, file, MemorySink::new())
+            .map_err(convert_error_status);
     }
 
     // Parse the query before reading the body (a bad query is a 400 with nothing read).
@@ -441,22 +423,139 @@ fn render_request(
     let result = super::convert::render_with(&args, &fonts, &mut reader, sink);
 
     if reader.exceeded {
-        return Err(too_large());
+        return Err(too_large(ctx));
     }
     if !reader.read_any {
         return Err((400, "put the HTML in the request body".to_string()));
     }
 
-    result.map_err(|e| match e {
+    result.map_err(convert_error_status)
+}
+
+fn convert_error_status(e: ConvertError) -> (u16, String) {
+    match e {
         ConvertError::Usage(msg) => (400, msg),
         ConvertError::Input(msg) => (400, msg),
         ConvertError::Render(msg) => (500, msg),
         ConvertError::Timeout(msg) => (504, msg),
+    }
+}
+
+fn too_large(ctx: &ServerContext) -> (u16, String) {
+    (
+        413,
+        format!("the body exceeds the limit of {} bytes", ctx.max_body_size),
+    )
+}
+
+/// What a `?stream=1` response renders: the HTML of the body, or the files of an upload.
+enum Job {
+    Html(Vec<u8>),
+    Upload(Upload),
+}
+
+/// Everything a `?stream=1` response needs to know before its headers go out, so that a
+/// bad request is still answered with its own status.
+fn prepare_stream(
+    request: &mut Request,
+    query: &str,
+    ctx: &ServerContext,
+    deadline: Instant,
+) -> Result<(ConvertArgs, Job), (u16, String)> {
+    if let Some(len) = request.body_length() {
+        if len > ctx.max_body_size {
+            return Err(too_large(ctx));
+        }
+    }
+    let stripped = strip_stream_key(query);
+
+    if let Some(boundary) = upload_boundary(request)? {
+        let upload = read_upload(request, &boundary, ctx)?;
+        let args = upload_convert_args(&stripped, &upload, ctx, deadline)?;
+        // Fail now, with a status, rather than after the headers went out.
+        open_index(&upload)?;
+        return Ok((args, Job::Upload(upload)));
+    }
+
+    let mut args = build_convert_args(&stripped, &ctx.args).map_err(|e| (400, e))?;
+    args.deadline = Some(deadline);
+    let html = read_body(request, ctx)?;
+    if html.is_empty() {
+        return Err((400, "put the HTML in the request body".to_string()));
+    }
+    Ok((args, Job::Html(html)))
+}
+
+/// The whole body, up to the size limit (413 beyond it).
+fn read_body(request: &mut Request, ctx: &ServerContext) -> Result<Vec<u8>, (u16, String)> {
+    let mut body = Vec::new();
+    request
+        .as_reader()
+        .take(ctx.max_body_size as u64 + 1)
+        .read_to_end(&mut body)
+        .map_err(|e| (400, format!("failed to read the body: {e}")))?;
+    if body.len() > ctx.max_body_size {
+        return Err(too_large(ctx));
+    }
+    Ok(body)
+}
+
+/// The boundary when the request is `multipart/form-data`, and `None` for a raw HTML body.
+fn upload_boundary(request: &Request) -> Result<Option<String>, (u16, String)> {
+    let content_type = request
+        .headers()
+        .iter()
+        .find(|header| header.field.equiv("Content-Type"))
+        .map(|header| header.value.as_str());
+    multipart::boundary(content_type).map_err(|e| match e {
+        ContentTypeError::Unsupported(message) => (415, message),
+        ContentTypeError::Malformed(message) => (400, message),
     })
+}
+
+/// Read a multipart body and store its files.
+fn read_upload(
+    request: &mut Request,
+    boundary: &str,
+    ctx: &ServerContext,
+) -> Result<Upload, (u16, String)> {
+    let body = read_body(request, ctx)?;
+    Upload::from_body(&body, boundary).map_err(|e| (400, e))
+}
+
+fn open_index(upload: &Upload) -> Result<std::fs::File, (u16, String)> {
+    std::fs::File::open(&upload.index)
+        .map_err(|e| (500, format!("cannot open the uploaded index.html: {e}")))
+}
+
+/// The options of an upload request: the query, then the option parts of the form.
+fn upload_convert_args(
+    query: &str,
+    upload: &Upload,
+    ctx: &ServerContext,
+    deadline: Instant,
+) -> Result<ConvertArgs, (u16, String)> {
+    let mut pairs = parse_query(query).map_err(|e| (400, e))?;
+    pairs.extend(upload.fields.iter().cloned());
+    let mut args = build_convert_args_from(pairs, &ctx.args, Some(upload)).map_err(|e| (400, e))?;
+    args.deadline = Some(deadline);
+    Ok(args)
 }
 
 /// Turn the query string into a CLI argument list and run it through the same clap parser.
 fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, String> {
+    build_convert_args_from(parse_query(query)?, server, None)
+}
+
+/// [`build_convert_args`] for options already split into keys and values.
+///
+/// With an `upload`, the directory holding its files is the base directory and the only place
+/// local files may be read from, and the uploaded header, footer and cover are used.
+fn build_convert_args_from(
+    options: Vec<(String, Option<String>)>,
+    server: &ServerArgs,
+    upload: Option<&Upload>,
+) -> Result<ConvertArgs, String> {
     let command = Cli::command();
     let mut argv: Vec<String> = vec!["sghtmltopdf".to_string()];
     // The input is the body, so the positional argument is `-` for stdin (never actually read).
@@ -482,19 +581,45 @@ fn build_convert_args(query: &str, server: &ServerArgs) -> Result<ConvertArgs, S
     if server.disable_system_fonts {
         argv.push("--disable-system-fonts".to_string());
     }
-    if !server.enable_local_file_access {
-        argv.push("--disable-local-file-access".to_string());
-    }
-    for dir in &server.allow {
-        argv.push("--allow-path".to_string());
-        argv.push(dir.display().to_string());
+    match upload {
+        None => {
+            if !server.enable_local_file_access {
+                argv.push("--disable-local-file-access".to_string());
+            }
+            for dir in &server.allow {
+                argv.push("--allow-path".to_string());
+                argv.push(dir.display().to_string());
+            }
+        }
+        Some(upload) => {
+            // The request's own files are the base for relative references and, unless the
+            // operator opened local file access, the only thing that may be read. The values
+            // are joined to their flags (`--flag=value`) like every value below.
+            argv.push(format!("--base-url={}", upload.dir().display()));
+            argv.push(format!("--allow-path={}", upload.dir().display()));
+            if server.enable_local_file_access {
+                for dir in &server.allow {
+                    argv.push(format!("--allow-path={}", dir.display()));
+                }
+            }
+            for (flag, path) in [
+                ("--header-html", upload.header.as_ref()),
+                ("--footer-html", upload.footer.as_ref()),
+                ("--cover", upload.cover.as_ref()),
+                ("--user-style-sheet", upload.user_style_sheet.as_ref()),
+            ] {
+                if let Some(path) = path {
+                    argv.push(format!("{flag}={}", path.display()));
+                }
+            }
+        }
     }
     if server.allow_remote_assets {
         argv.push("--allow-remote-assets".to_string());
     }
     argv.push("--quiet".to_string());
 
-    for (key, value) in parse_query(query)? {
+    for (key, value) in options {
         // Unsupported options come back with the same reason as in the CLI.
         if let Some(reason) = super::unsupported::unsupported_reason(&format!("--{key}")) {
             return Err(format!("{key} is not supported. {reason}"));

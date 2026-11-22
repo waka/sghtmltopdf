@@ -3093,6 +3093,156 @@ msgstr ""
 "can only be set when the server starts."
 
 #: src/usage/server.md:80
+msgid "ファイルを添えて送る(multipart)"
+msgstr "Sending files along (multipart)"
+
+#: src/usage/server.md:82
+msgid ""
+"HTMLが参照するスタイルシート・画像・フォントがあるときは、`multipart/form-"
+"data`でHTMLと一緒に送れます。 `data:` URIとして埋め込む必要も、サーバのローカ"
+"ルファイルアクセスを開ける必要もありません。"
+msgstr ""
+"When the HTML refers to style sheets, images or fonts, send them together "
+"with the HTML as `multipart/form-data`. They do not have to be embedded as "
+"`data:` URIs, and the server's local file access does not have to be opened."
+
+#: src/usage/server.md:86
+msgid "'http://127.0.0.1:8080/pdf?page-size=A4'"
+msgstr "'http://127.0.0.1:8080/pdf?page-size=A4'"
+
+#: src/usage/server.md:91
+msgid "フォームの形は[Gotenberg](https://gotenberg.dev/)に合わせてあります。"
+msgstr "The form follows that of [Gotenberg](https://gotenberg.dev/)."
+
+#: src/usage/server.md:93
+msgid "パート"
+msgstr "Part"
+
+#: src/usage/server.md:95
+msgid "`files`(ファイル)"
+msgstr "`files` (a file)"
+
+#: src/usage/server.md:95
+msgid ""
+"送るファイル。いくつでも送れます。名前からフォルダ部分は捨てられるので、HTML"
+"からは名前だけで参照します(`<img src=\"logo.png\">`)"
+msgstr ""
+"The files to send, as many as you like. The folder part of a name is "
+"dropped, so the HTML refers to each file by its name alone (`<img "
+"src=\"logo.png\">`)"
+
+#: src/usage/server.md:96
+msgid "`index.html`という名前のファイル"
+msgstr "The file named `index.html`"
+
+#: src/usage/server.md:96
+msgid "変換するHTML。必須です"
+msgstr "The HTML to convert. Required"
+
+#: src/usage/server.md:97
+msgid "`header.html`・`footer.html`という名前のファイル"
+msgstr "The files named `header.html` and `footer.html`"
+
+#: src/usage/server.md:97
+msgid "ヘッダー・フッターのHTML(`--header-html`・`--footer-html`と同じ)"
+msgstr ""
+"The header and footer HTML, as with `--header-html` and `--footer-html`"
+
+#: src/usage/server.md:98
+msgid "`cover.html`という名前のファイル"
+msgstr "The file named `cover.html`"
+
+#: src/usage/server.md:98
+msgid "表紙のHTML(`--cover`と同じ)"
+msgstr "The cover HTML, as with `--cover`"
+
+#: src/usage/server.md:99
+msgid "`user-style-sheet.css`という名前のファイル"
+msgstr "The file named `user-style-sheet.css`"
+
+#: src/usage/server.md:99
+msgid ""
+"ユーザーオリジンのCSS(`--user-style-sheet`と同じ)。UAスタイルより強く、HTML自"
+"身のCSSより弱い"
+msgstr ""
+"User-origin CSS, as with `--user-style-sheet`. Stronger than the built-in "
+"styles and weaker than the HTML's own CSS"
+
+#: src/usage/server.md:100
+msgid "ファイル名のないパート"
+msgstr "A part without a file name"
+
+#: src/usage/server.md:100
+msgid ""
+"オプション。名前と意味はクエリのキーと同じ(`page-size`など)で、許可リストも同"
+"じです"
+msgstr ""
+"An option. Its name and meaning are those of the query key (`page-size` and "
+"so on), and the allowlist is the same"
+
+#: src/usage/server.md:102
+msgid ""
+"`user-style-sheet.css`は、自分では書き換えないHTML(他システムの出力、HTMLメー"
+"ルなど)に、既定の見た目を足したいときに使います。 HTML自身のCSSのほうが強いの"
+"で、HTMLが何も指定していないところだけに効きます。"
+msgstr ""
+"Use `user-style-sheet.css` to add default styling to HTML you do not edit "
+"yourself, such as the output of another system or an HTML email. The HTML's "
+"own CSS is stronger, so it only takes effect where the HTML specifies "
+"nothing."
+
+#: src/usage/server.md:105
+msgid "たとえば、次の内容を`user-style-sheet.css`として送ります。"
+msgstr "For example, send this as `user-style-sheet.css`:"
+
+#: src/usage/server.md:118
+msgid ""
+"送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消さ"
+"れます。相対参照の基準になり、読めるのもそのディレクトリの中だけです"
+msgstr ""
+"The files are placed in a directory made for the request alone and removed "
+"when the conversion ends. It is the base for relative references, and the "
+"only place that can be read"
+
+#: src/usage/server.md:119
+msgid ""
+"`../`や絶対パスで外を参照しても読み込まれません(既定では無視され、`--load-"
+"media-error-handling abort`では失敗します)"
+msgstr ""
+"A reference to the outside through `../` or an absolute path is not loaded "
+"(it is ignored by default, and fails with `--load-media-error-handling "
+"abort`)"
+
+#: src/usage/server.md:120
+msgid ""
+"同じ名前を2回送る(大文字小文字だけが違う名前も同じ扱い)、`..`やWindowsの予約"
+"名(`con`など)、`<>:\"|?*`を含む名前は`400`です"
+msgstr ""
+"Sending the same name twice (names that differ only in case count as the "
+"same), `..`, a name Windows reserves (such as `con`), and a name containing "
+"`<>:\"|?*` are `400`"
+
+#: src/usage/server.md:121
+msgid ""
+"`--max-body-size`はファイルを含めたリクエスト全体に掛かります。画像やフォント"
+"を添えるなら引き上げてください"
+msgstr ""
+"`--max-body-size` applies to the whole request, files included. Raise it if "
+"you send images or fonts"
+
+#: src/usage/server.md:122
+msgid "`?stream=1`とも併せて使えます"
+msgstr "It can be combined with `?stream=1`"
+
+#: src/usage/server.md:123
+msgid ""
+"リモートの画像は、これまでどおり`--allow-remote-assets`で起動したときだけ読み"
+"込まれます"
+msgstr ""
+"Remote images are, as before, loaded only when the server was started with "
+"`--allow-remote-assets`"
+
+#: src/usage/server.md:80
 msgid "ステータスコード"
 msgstr "Status codes"
 
@@ -3116,9 +3266,14 @@ msgstr "Success, with `Content-Type: application/pdf`"
 msgid "400"
 msgstr "400"
 
-#: src/usage/server.md:85
-msgid "未知/禁止のクエリキー、値の形式不正、ボディが空"
-msgstr "An unknown or forbidden query key, a malformed value, or an empty body"
+#: src/usage/server.md:130
+msgid ""
+"未知/禁止のクエリキー、値の形式不正、ボディが空、multipartの不備(`index.html`"
+"が無い、使えないファイル名など)"
+msgstr ""
+"An unknown or forbidden query key, a malformed value, an empty body, or a "
+"faulty multipart request (no `index.html`, a file name that cannot be used, "
+"and so on)"
 
 #: src/usage/server.md:86
 msgid "404"
@@ -3143,6 +3298,14 @@ msgstr "413"
 #: src/usage/server.md:88
 msgid "ボディが`--max-body-size`超過"
 msgstr "The body is larger than `--max-body-size`"
+
+#: src/usage/server.md:134
+msgid "415"
+msgstr "415"
+
+#: src/usage/server.md:134
+msgid "`multipart/form-data`以外のmultipart"
+msgstr "A multipart type other than `multipart/form-data`"
 
 #: src/usage/server.md:89
 msgid "500"

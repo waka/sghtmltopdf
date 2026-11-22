@@ -77,15 +77,61 @@ user-style-sheet, base-url, allow, enable-local-file-access,
 disable-local-file-access, allow-remote-assets, log-level, quiet
 ```
 
+## ファイルを添えて送る(multipart)
+
+HTMLが参照するスタイルシート・画像・フォントがあるときは、`multipart/form-data`でHTMLと一緒に送れます。
+`data:` URIとして埋め込む必要も、サーバのローカルファイルアクセスを開ける必要もありません。
+
+```sh
+curl 'http://127.0.0.1:8080/pdf?page-size=A4' \
+     -F files=@index.html -F files=@style.css -F files=@logo.png \
+     -o invoice.pdf
+```
+
+フォームの形は[Gotenberg](https://gotenberg.dev/)に合わせてあります。
+
+| パート | 意味 |
+|---|---|
+| `files`(ファイル) | 送るファイル。いくつでも送れます。名前からフォルダ部分は捨てられるので、HTMLからは名前だけで参照します(`<img src="logo.png">`) |
+| `index.html`という名前のファイル | 変換するHTML。必須です |
+| `header.html`・`footer.html`という名前のファイル | ヘッダー・フッターのHTML(`--header-html`・`--footer-html`と同じ) |
+| `cover.html`という名前のファイル | 表紙のHTML(`--cover`と同じ) |
+| `user-style-sheet.css`という名前のファイル | ユーザーオリジンのCSS(`--user-style-sheet`と同じ)。UAスタイルより強く、HTML自身のCSSより弱い |
+| ファイル名のないパート | オプション。名前と意味はクエリのキーと同じ(`page-size`など)で、許可リストも同じです |
+
+`user-style-sheet.css`は、自分では書き換えないHTML(他システムの出力、HTMLメールなど)に、既定の見た目を足したいときに使います。
+HTML自身のCSSのほうが強いので、HTMLが何も指定していないところだけに効きます。
+
+たとえば、次の内容を`user-style-sheet.css`として送ります。
+
+```css
+body { font-size: 11pt; }
+img  { max-width: 100%; }
+```
+
+```sh
+curl http://127.0.0.1:8080/pdf \
+     -F files=@index.html -F files=@user-style-sheet.css \
+     -o out.pdf
+```
+
+* 送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消されます。相対参照の基準になり、読めるのもそのディレクトリの中だけです
+  * `../`や絶対パスで外を参照しても読み込まれません(既定では無視され、`--load-media-error-handling abort`では失敗します)
+* 同じ名前を2回送る(大文字小文字だけが違う名前も同じ扱い)、`..`やWindowsの予約名(`con`など)、`<>:"|?*`を含む名前は`400`です
+* `--max-body-size`はファイルを含めたリクエスト全体に掛かります。画像やフォントを添えるなら引き上げてください
+* `?stream=1`とも併せて使えます
+* リモートの画像は、これまでどおり`--allow-remote-assets`で起動したときだけ読み込まれます
+
 ## ステータスコード
 
 | コード | 状況 |
 |---|---|
 | 200 | 成功(`Content-Type: application/pdf`) |
-| 400 | 未知/禁止のクエリキー、値の形式不正、ボディが空 |
+| 400 | 未知/禁止のクエリキー、値の形式不正、ボディが空、multipartの不備(`index.html`が無い、使えないファイル名など) |
 | 404 | 未知のパス |
 | 405 | 使えないメソッド |
 | 413 | ボディが`--max-body-size`超過 |
+| 415 | `multipart/form-data`以外のmultipart |
 | 500 | レンダリング失敗 |
 | 503 | キュー溢れ(`--max-queue`超過) |
 | 504 | `--timeout`超過(キュー待ち、または変換が長すぎる) |

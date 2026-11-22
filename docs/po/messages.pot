@@ -2430,6 +2430,115 @@ msgid ""
 msgstr ""
 
 #: src/usage/server.md:80
+msgid "ファイルを添えて送る(multipart)"
+msgstr ""
+
+#: src/usage/server.md:82
+msgid ""
+"HTMLが参照するスタイルシート・画像・フォントがあるときは、`multipart/form-data`でHTMLと一緒に送れます。 `data:` "
+"URIとして埋め込む必要も、サーバのローカルファイルアクセスを開ける必要もありません。"
+msgstr ""
+
+#: src/usage/server.md:86
+msgid "'http://127.0.0.1:8080/pdf?page-size=A4'"
+msgstr ""
+
+#: src/usage/server.md:91
+msgid "フォームの形は[Gotenberg](https://gotenberg.dev/)に合わせてあります。"
+msgstr ""
+
+#: src/usage/server.md:93
+msgid "パート"
+msgstr ""
+
+#: src/usage/server.md:95
+msgid "`files`(ファイル)"
+msgstr ""
+
+#: src/usage/server.md:95
+msgid ""
+"送るファイル。いくつでも送れます。名前からフォルダ部分は捨てられるので、HTMLからは名前だけで参照します(`<img "
+"src=\"logo.png\">`)"
+msgstr ""
+
+#: src/usage/server.md:96
+msgid "`index.html`という名前のファイル"
+msgstr ""
+
+#: src/usage/server.md:96
+msgid "変換するHTML。必須です"
+msgstr ""
+
+#: src/usage/server.md:97
+msgid "`header.html`・`footer.html`という名前のファイル"
+msgstr ""
+
+#: src/usage/server.md:97
+msgid "ヘッダー・フッターのHTML(`--header-html`・`--footer-html`と同じ)"
+msgstr ""
+
+#: src/usage/server.md:98
+msgid "`cover.html`という名前のファイル"
+msgstr ""
+
+#: src/usage/server.md:98
+msgid "表紙のHTML(`--cover`と同じ)"
+msgstr ""
+
+#: src/usage/server.md:99
+msgid "`user-style-sheet.css`という名前のファイル"
+msgstr ""
+
+#: src/usage/server.md:99
+msgid "ユーザーオリジンのCSS(`--user-style-sheet`と同じ)。UAスタイルより強く、HTML自身のCSSより弱い"
+msgstr ""
+
+#: src/usage/server.md:100
+msgid "ファイル名のないパート"
+msgstr ""
+
+#: src/usage/server.md:100
+msgid "オプション。名前と意味はクエリのキーと同じ(`page-size`など)で、許可リストも同じです"
+msgstr ""
+
+#: src/usage/server.md:102
+msgid ""
+"`user-style-sheet.css`は、自分では書き換えないHTML(他システムの出力、HTMLメールなど)に、既定の見た目を足したいときに使います。 "
+"HTML自身のCSSのほうが強いので、HTMLが何も指定していないところだけに効きます。"
+msgstr ""
+
+#: src/usage/server.md:105
+msgid "たとえば、次の内容を`user-style-sheet.css`として送ります。"
+msgstr ""
+
+#: src/usage/server.md:118
+msgid "送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消されます。相対参照の基準になり、読めるのもそのディレクトリの中だけです"
+msgstr ""
+
+#: src/usage/server.md:119
+msgid ""
+"`../`や絶対パスで外を参照しても読み込まれません(既定では無視され、`--load-media-error-handling "
+"abort`では失敗します)"
+msgstr ""
+
+#: src/usage/server.md:120
+msgid ""
+"同じ名前を2回送る(大文字小文字だけが違う名前も同じ扱い)、`..`やWindowsの予約名(`con`など)、`<>:\"|?*`を含む名前は`400`です"
+msgstr ""
+
+#: src/usage/server.md:121
+msgid "`--max-body-size`はファイルを含めたリクエスト全体に掛かります。画像やフォントを添えるなら引き上げてください"
+msgstr ""
+
+#: src/usage/server.md:122
+msgid "`?stream=1`とも併せて使えます"
+msgstr ""
+
+#: src/usage/server.md:123
+msgid "リモートの画像は、これまでどおり`--allow-remote-assets`で起動したときだけ読み込まれます"
+msgstr ""
+
+#: src/usage/server.md:80
 msgid "ステータスコード"
 msgstr ""
 
@@ -2453,8 +2562,8 @@ msgstr ""
 msgid "400"
 msgstr ""
 
-#: src/usage/server.md:85
-msgid "未知/禁止のクエリキー、値の形式不正、ボディが空"
+#: src/usage/server.md:130
+msgid "未知/禁止のクエリキー、値の形式不正、ボディが空、multipartの不備(`index.html`が無い、使えないファイル名など)"
 msgstr ""
 
 #: src/usage/server.md:86
@@ -2479,6 +2588,14 @@ msgstr ""
 
 #: src/usage/server.md:88
 msgid "ボディが`--max-body-size`超過"
+msgstr ""
+
+#: src/usage/server.md:134
+msgid "415"
+msgstr ""
+
+#: src/usage/server.md:134
+msgid "`multipart/form-data`以外のmultipart"
 msgstr ""
 
 #: src/usage/server.md:89
@@ -8654,4 +8771,3 @@ msgid ""
 "JavaScriptエンジンの組み込みは、必要性が出てきた段階での検討事項として残してあります。 "
 "上記のうちPDFのアウトラインなど、設計上の非目標ではないものは将来対応する可能性があります。"
 msgstr ""
-
