@@ -258,6 +258,92 @@ allow-remote-assets, log-level, quiet
 Railtieが入れる`base_url`/`allow_path`の既定値は自動的に外れるので、Railsでそのまま`server_url`を足しても400にはなりません。
 `configure`で明示的に設定している場合は、サーバ側の起動オプションへ移してください。
 
+## Dockerで使う
+
+方法は2つあります。
+
+* gemをアプリのイメージに入れて、同じコンテナの中で変換する
+* [公式イメージ](../getting-started/docker.md)を別のコンテナで動かし、[サーバへ委譲](#サーバへ委譲する)する
+
+### アプリのイメージにgemを入れる
+
+ビルド済みgemなので、イメージにRustもビルドツールも要りません。
+公式の`ruby`イメージは、Debian系(`-slim`を含む)もAlpineもそのまま使えます。
+
+```dockerfile
+FROM ruby:3.4-slim
+
+WORKDIR /app
+COPY Gemfile Gemfile.lock ./
+RUN bundle install
+
+COPY vendor/fonts ./vendor/fonts
+COPY . .
+```
+
+つまずきやすい点が3つあります。
+
+**`Gemfile.lock`にLinuxのプラットフォームを足す。**
+macOSやWindowsで`bundle install`したロックファイルは、その環境のプラットフォームしか含みません。
+そのままLinuxのイメージで`bundle install`(`frozen`・`deployment`)すると、プラットフォームが合わず失敗します。
+手元で足しておいてください。
+
+```sh
+bundle lock --add-platform x86_64-linux aarch64-linux
+# Alpineなら: bundle lock --add-platform x86_64-linux-musl aarch64-linux-musl
+```
+
+**`force_ruby_platform`を有効にしない。**
+`BUNDLE_FORCE_RUBY_PLATFORM=1`や`bundle config set force_ruby_platform true`があると、ビルド済みgemではなくソースgemが選ばれます。
+ソースgemはRustのコアを持たないので、ビルドを断って終了します。
+
+**フォントを入れて明示する。**
+`ruby`イメージにはフォントが入っていません。
+システムのフォントに任せると、日本語が豆腐(□)になったり、出力が環境によって変わったりします。
+フォントファイルをイメージに入れ、[フォント](#フォント)のとおり設定してください。
+
+```ruby
+Sghtmltopdf.configure do |c|
+  c.gothic_font = "/app/vendor/fonts/NotoSansJP-Regular.ttf"
+  c.serif_font  = "/app/vendor/fonts/NotoSerifJP-Regular.ttf"
+end
+```
+
+### 公式イメージを別コンテナで動かす
+
+アプリのCPUを変換に使わずに済み、フォントも公式イメージが持っているものをそのまま使えます。
+Composeなら次のようになります。
+
+```yaml
+services:
+  web:
+    build: .
+    environment:
+      PDF_SERVER_URL: http://pdf:8080
+    depends_on: [pdf]
+  pdf:
+    image: ghcr.io/waka/sghtmltopdf:0.8
+    # portsは公開しない。webからだけ、Composeのネットワーク越しに届く
+    healthcheck:
+      test: ["CMD", "sghtmltopdf", "--version"]
+      interval: 30s
+```
+
+```ruby
+# config/initializers/sghtmltopdf.rb
+Sghtmltopdf.configure do |c|
+  c.server_url = ENV["PDF_SERVER_URL"] if ENV["PDF_SERVER_URL"]
+end
+```
+
+* gemとイメージは同じリリースから配布されます。バージョン(上の例なら`0.8`)を揃えてください
+* `gothic_font`などのフォント指定はサーバでは指定できません(`UsageError`)。
+  `server_url`を使う環境では`configure`に書かず、サーバ側の`command`に`--font`を足してマウントしたフォントを渡します。
+  日本語は同梱フォント(BIZ UDPGothic / BIZ UDPMincho)で出るので、そのままで構いません
+* サーバのコンテナからアプリのファイルは見えません。
+  画像やCSSはHTMLへ埋め込んでください(`sghtmltopdf_image_tag "logo.png", inline: true`、`sghtmltopdf_stylesheet_link_tag`など)
+* 認証とTLSはありません。ポートをホストへ公開せず、内部ネットワークだけに置いてください
+
 ## チャンクごとに受け取る
 
 ブロックを渡すと、PDF全体を組み立ててから返す代わりにチャンクごとにブロックが呼ばれます(返り値は`nil`)。
