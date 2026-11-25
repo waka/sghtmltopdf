@@ -92,7 +92,7 @@ cat invoice.html | sghtmltopdf - -o - > invoice.pdf
 | `--zoom <FACTOR>` | 1.0 | 拡大率。`--dpi`の係数に掛かる |
 | `-g`, `--grayscale` | オフ | 塗り・線をグレースケール化(sRGB相対輝度) |
 | `--no-pdf-compression` | オフ | PDFオブジェクトのFlate圧縮を止める(画像データは対象外) |
-| `--tagged` | オフ | タグ付きPDFを出力する。見出し・段落・リスト・表・リンク・代替テキスト付き画像の構造ツリーを書き、ヘッダー・フッター・背景は`Artifact`にする。`--streaming`とは併用できない |
+| `--tagged` | オフ | タグ付きPDFを出力する。見出し・段落・リスト・表・リンク・代替テキスト付き画像の構造ツリーを書き、ヘッダー・フッター・背景は`Artifact`にする。`--streaming`と併用できる(構造ツリーの情報は文書末尾まで保持される) |
 
 `/Producer`と`/CreationDate`、`/ModDate`は常に書かれます。
 `/ModDate`は`/CreationDate`と同じ値です(ファイルは1度しか書かれず、更新されないため)。

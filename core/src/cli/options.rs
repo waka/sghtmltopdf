@@ -266,7 +266,7 @@ pub struct ConvertArgs {
     pub no_pdf_compression: bool,
 
     /// Write a tagged PDF: a structure tree for screen readers, with headers, footers and
-    /// backgrounds marked as artifacts (not available with --streaming)
+    /// backgrounds marked as artifacts
     #[arg(long, action = ArgAction::SetTrue)]
     pub tagged: bool,
 
