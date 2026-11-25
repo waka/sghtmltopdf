@@ -620,6 +620,25 @@ fn an_upload_cannot_read_files_outside_its_own_directory() {
 }
 
 #[test]
+fn an_upload_reads_outside_itself_only_in_allowed_directories_with_local_access_enabled() {
+    // The rule: the request's own files are the only place that may be read, plus the
+    // operator's `--allow-path` directories when local file access is enabled.
+    let outside = format!("{IMAGES}/spike_opaque.png").replace('\\', "/");
+    let html = format!(r#"<body><img src="{outside}" width="20" height="20">"#);
+    let images = |server_args: &[&str]| {
+        let server = TestServer::start(server_args);
+        let pdf = render_form(&server, "/pdf", &[file("index.html", html.as_str())]);
+        count_occurrences(&pdf, b"/Subtype /Image")
+    };
+
+    // Enabling local file access alone does not open the file system to an upload.
+    assert_eq!(images(&["--enable-local-file-access"]), 0);
+    // An allowed directory counts only when local file access is enabled.
+    assert_eq!(images(&["--allow-path", IMAGES]), 0);
+    assert!(images(&["--enable-local-file-access", "--allow-path", IMAGES]) > 0);
+}
+
+#[test]
 fn an_upload_does_not_widen_what_the_operator_allowed_remotely() {
     // Remote fetching stays off without --allow-remote-assets, also for uploads.
     let server = TestServer::start(&[]);

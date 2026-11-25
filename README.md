@@ -78,42 +78,13 @@ pdf = Sghtmltopdf.render("<h1>Invoice</h1>", page_size: "A4")
 ```
 
 Local references (`<img src>`, external CSS, `@font-face`) stay inside the base directory (`--base-url`, defaulting to the input HTML's own directory); a `../` that would escape it is an error, so untrusted HTML cannot read arbitrary files.
-Pass `--allow-path <DIR>` to widen the boundary, or `--disable-local-file-access` to close it entirely (the HTTP server does the latter by default, and never lets a request loosen it; a [multipart request](#http-server-sending-files-with-the-html) can only read the files it uploaded itself).
+Pass `--allow-path <DIR>` to widen the boundary, or `--disable-local-file-access` to close it entirely (the HTTP server does the latter by default, and never lets a request loosen it; a [multipart request](#http-server-sending-files-with-the-html) can additionally read the files it uploaded itself).
 
 The CLI flags are the ones you already know: most of them keep the same name and meaning as [wkhtmltopdf](https://wkhtmltopdf.org/usage/wkhtmltopdf.txt) (`--page-size`, `--margin-top`, `--orientation`, `--header-html`, `--toc`, …).
 Flags that will not be implemented exit 1 with the reason and an alternative instead of being silently ignored — see the [option table](https://waka.github.io/sghtmltopdf/migration/wkhtmltopdf-options.html) for the full list, and [migrating from wkhtmltopdf](https://waka.github.io/sghtmltopdf/migration/wkhtmltopdf.html) for the cases where the same name behaves differently (CSS `@page` wins over the CLI, the default margin is 1in, cover and TOC are options rather than positional arguments).
 
 Option names are the CLI long options without `--` and with `-` replaced by `_`, so `--page-size A4` becomes `page_size: "A4"`.
 The engine runs inside the same process through a native extension (magnus + rb-sys) no subprocess, no temporary files and releases the GVL while rendering, so other Puma threads keep running.
-
-### Styling
-
-Style the document with ordinary CSS: a `<style>` element, `<link rel="stylesheet" href="style.css">` (also `@import` and `@font-face`), or `style` attributes.
-`@page` sets the paper and the margins, and wins over `--page-size` and `--margin-*`:
-
-```css
-@page { size: A4; margin: 20mm; @bottom-center { content: counter(page) " / " counter(pages) } }
-h2 { break-before: page }
-```
-
-A style sheet the HTML links to is read like any other local reference: relative to the base directory, never outside it.
-With the HTTP server, send it in a [multipart request](#http-server-sending-files-with-the-html) beside the HTML.
-
-To style HTML you do not control (another system's export, an HTML email), pass a **user style sheet**.
-It is stronger than the built-in styles and weaker than the document's own CSS, so it adds defaults and does not override what the HTML sets:
-
-```css
-/* defaults.css */
-body { font-size: 11pt; }
-img  { max-width: 100%; }
-```
-
-```sh
-sghtmltopdf report.html -o report.pdf --user-style-sheet defaults.css      # repeatable
-
-# HTTP server: the file named user-style-sheet.css
-curl -F files=@index.html -F files=@user-style-sheet.css http://127.0.0.1:8080/pdf -o report.pdf
-```
 
 ### HTTP server: sending files with the HTML
 
@@ -126,7 +97,7 @@ The form follows [Gotenberg](https://gotenberg.dev/)'s, so a client written for 
 | `files` (a file, as many as you like) | The files to send. The folder part of a name is dropped, so the HTML refers to each by its bare name (`<img src="logo.png">`, `<link href="style.css">`, `url(font.ttf)` in `@font-face`) |
 | the file named `index.html` | The document. Required |
 | `header.html`, `footer.html`, `cover.html` | The page header, footer and cover, as `--header-html`, `--footer-html` and `--cover` |
-| `user-style-sheet.css` | User-origin CSS, as `--user-style-sheet`: stronger than the built-in styles, weaker than the document's own CSS. Handy for adding default styling (a font size, `img { max-width: 100% }`) to HTML you do not edit |
+| `user-style-sheet.css` | User-origin CSS, as `--user-style-sheet` |
 | a part without a file name | An option, named like the query key (`page-size`, `margin-top`, ...), with the same allow list |
 
 ```sh
@@ -137,8 +108,16 @@ curl http://127.0.0.1:8080/pdf \
     -o invoice.pdf
 ```
 
+`user-style-sheet.css` adds default styling to HTML you do not edit yourself.
+It is stronger than the built-in styles and weaker than the document's own CSS, so it only applies where the HTML says nothing:
+
+```css
+body { font-size: 11pt; }
+img  { max-width: 100%; }
+```
+
 The query string still works next to the form (`?page-size=A5`), and so does `?stream=1`.
-Each request's files live in a directory made for it and removed when the request ends; that directory is the base for relative references and the only place the request can read, so `../` and absolute paths do not escape it.
+Each request's files live in a directory made for it and removed when the request ends; that directory is the base for relative references and the only place the request can read, plus the server's `--allow-path` directories when it was started with `--enable-local-file-access`.
 `--max-body-size` (4 MiB by default) covers the whole request, files included, so raise it when sending images or fonts.
 Remote images are still loaded only when the server was started with `--allow-remote-assets`.
 A body with any other `Content-Type` is read as the HTML itself, as before.

@@ -592,9 +592,12 @@ fn build_convert_args_from(
             }
         }
         Some(upload) => {
-            // The request's own files are the base for relative references and, unless the
-            // operator opened local file access, the only thing that may be read. The values
-            // are joined to their flags (`--flag=value`) like every value below.
+            // The request's own files are the base and the only place that may be read, plus
+            // the operator's `--allow-path` directories when local file access is enabled.
+            // Enabling it without `--allow-path` adds nothing: the upload directory is always
+            // allowed, so the allow list is never empty here and nothing outside it can be
+            // read. The values are joined to their flags (`--flag=value`) like every value
+            // below.
             argv.push(format!("--base-url={}", upload.dir().display()));
             argv.push(format!("--allow-path={}", upload.dir().display()));
             if server.enable_local_file_access {

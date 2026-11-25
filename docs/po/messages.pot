@@ -2512,12 +2512,13 @@ msgid "たとえば、次の内容を`user-style-sheet.css`として送ります
 msgstr ""
 
 #: src/usage/server.md:118
-msgid "送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消されます。相対参照の基準になり、読めるのもそのディレクトリの中だけです"
+msgid ""
+"送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消されます。相対参照の基準になり、読めるのはそのディレクトリの中だけです。`--enable-local-file-access`で起動した場合は、サーバの`--allow-path`で指定したディレクトリも読めます"
 msgstr ""
 
 #: src/usage/server.md:119
 msgid ""
-"`../`や絶対パスで外を参照しても読み込まれません(既定では無視され、`--load-media-error-handling "
+"`../`や絶対パスで読める範囲の外を参照しても読み込まれません(既定では無視され、`--load-media-error-handling "
 "abort`では失敗します)"
 msgstr ""
 
@@ -2536,6 +2537,27 @@ msgstr ""
 
 #: src/usage/server.md:123
 msgid "リモートの画像は、これまでどおり`--allow-remote-assets`で起動したときだけ読み込まれます"
+msgstr ""
+
+#: src/usage/server.md:125
+msgid "アップロードを受け付けるサーバの運用"
+msgstr ""
+
+#: src/usage/server.md:127
+msgid ""
+"ファイルはOSの一時ディレクトリ(Linuxでは`TMPDIR`、未指定なら`/tmp`)に置きます。ルートファイルシステムが読み取り専用のコンテナでは、書き込める`/tmp`か`TMPDIR`が必要です。無いと、アップロードはすべて`400`になります"
+msgstr ""
+
+#: src/usage/server.md:128
+msgid ""
+"一時ディレクトリには、最大で「ワーカー数 × "
+"`--max-body-size`」分のファイルが同時に置かれます。`/tmp`がtmpfsの場合は、その分のメモリを使います"
+msgstr ""
+
+#: src/usage/server.md:129
+msgid ""
+"ディレクトリはリクエストの終了時に消しますが、後始末をせずにプロセスが終了した場合(SIGTERM、SIGKILL、OOM "
+"killer、abort)は`sghtmltopdf-upload-*`ディレクトリが残ります"
 msgstr ""
 
 #: src/usage/server.md:80

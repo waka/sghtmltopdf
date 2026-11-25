@@ -3196,22 +3196,20 @@ msgid "たとえば、次の内容を`user-style-sheet.css`として送ります
 msgstr "For example, send this as `user-style-sheet.css`:"
 
 #: src/usage/server.md:118
-msgid ""
-"送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消さ"
-"れます。相対参照の基準になり、読めるのもそのディレクトリの中だけです"
+msgid "送ったファイルはリクエストごとの専用ディレクトリに置かれ、変換が終わると消されます。相対参照の基準になり、読めるのはそのディレクトリの中だけです。`--enable-local-file-access`で起動した場合は、サーバの`--allow-path`で指定したディレクトリも読めます"
 msgstr ""
 "The files are placed in a directory made for the request alone and removed "
 "when the conversion ends. It is the base for relative references, and the "
-"only place that can be read"
+"only place that can be read. A server started with "
+"`--enable-local-file-access` also lets the request read the directories "
+"named by the server's `--allow-path`"
 
 #: src/usage/server.md:119
-msgid ""
-"`../`や絶対パスで外を参照しても読み込まれません(既定では無視され、`--load-"
-"media-error-handling abort`では失敗します)"
+msgid "`../`や絶対パスで読める範囲の外を参照しても読み込まれません(既定では無視され、`--load-media-error-handling abort`では失敗します)"
 msgstr ""
-"A reference to the outside through `../` or an absolute path is not loaded "
-"(it is ignored by default, and fails with `--load-media-error-handling "
-"abort`)"
+"A reference outside what can be read, through `../` or an absolute path, is "
+"not loaded (it is ignored by default, and fails with "
+"`--load-media-error-handling abort`)"
 
 #: src/usage/server.md:120
 msgid ""
@@ -3241,6 +3239,31 @@ msgid ""
 msgstr ""
 "Remote images are, as before, loaded only when the server was started with "
 "`--allow-remote-assets`"
+
+#: src/usage/server.md:125
+msgid "アップロードを受け付けるサーバの運用"
+msgstr "Operating a server that accepts uploads"
+
+#: src/usage/server.md:127
+msgid "ファイルはOSの一時ディレクトリ(Linuxでは`TMPDIR`、未指定なら`/tmp`)に置きます。ルートファイルシステムが読み取り専用のコンテナでは、書き込める`/tmp`か`TMPDIR`が必要です。無いと、アップロードはすべて`400`になります"
+msgstr ""
+"The files go to the operating system's temporary directory (on Linux, "
+"`TMPDIR`, or `/tmp` when unset). A container with a read-only root file "
+"system needs a writable `/tmp` or `TMPDIR`. Without one, every upload is a "
+"`400`"
+
+#: src/usage/server.md:128
+msgid "一時ディレクトリには、最大で「ワーカー数 × `--max-body-size`」分のファイルが同時に置かれます。`/tmp`がtmpfsの場合は、その分のメモリを使います"
+msgstr ""
+"Up to the number of workers times `--max-body-size` of files can be in the "
+"temporary directory at once. When `/tmp` is a tmpfs, that is memory"
+
+#: src/usage/server.md:129
+msgid "ディレクトリはリクエストの終了時に消しますが、後始末をせずにプロセスが終了した場合(SIGTERM、SIGKILL、OOM killer、abort)は`sghtmltopdf-upload-*`ディレクトリが残ります"
+msgstr ""
+"The directory is removed when the request ends, but a process that exits "
+"without cleaning up (SIGTERM, SIGKILL, the OOM killer, an abort) leaves its "
+"`sghtmltopdf-upload-*` directories behind"
 
 #: src/usage/server.md:80
 msgid "ステータスコード"
